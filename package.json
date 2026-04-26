@@ -1,0 +1,19 @@
+{
+  "name": "ragreplaystats",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "build:db": "node tools/build-db.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  },
+  "dependencies": {
+    "uplot": "^1.6.30"
+  }
+}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+*.local
+.env*
+.claude/
+
+# Sample replay — drop your own .rrf in the browser instead
+rag_test.rrf

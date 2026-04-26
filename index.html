@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RagReplayStats</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css" />
+    <link rel="stylesheet" href="/src/ui/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>RagReplayStats</h1>
+      <p class="muted" id="tagline"></p>
+    </header>
+
+    <main id="app">
+      <section id="drop-zone" class="drop-zone">
+        <p id="drop-prompt"></p>
+        <input id="file-input" type="file" accept=".rrf" hidden />
+        <p class="muted small" id="drop-status"></p>
+      </section>
+
+      <section id="summary" hidden></section>
+
+      <section id="explorer" hidden>
+        <div class="mode-toggle" role="tablist">
+          <button type="button" class="mode-btn active" data-mode="byPlayer" role="tab"></button>
+          <button type="button" class="mode-btn" data-mode="byMonster" role="tab"></button>
+        </div>
+
+        <nav id="breadcrumb" class="breadcrumb" hidden></nav>
+
+        <div id="primary-pane"></div>
+        <div id="secondary-pane"></div>
+        <div id="bar-pane"></div>
+        <div id="chart-pane"></div>
+        <div id="skill-pane"></div>
+        <div id="skill-uses-pane"></div>
+        <div id="kills-pane"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
