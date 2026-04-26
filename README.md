@@ -1,5 +1,7 @@
 # RagReplayStats
 
+**Live: <https://adsonpleal.github.io/ragreplaystats/>**
+
 Static, **fully client-side** website that parses Ragnarok Online `.rrf` replay files and shows damage / skill / kill statistics. Drop a replay in the browser; nothing is uploaded.
 
 UI is in **Brazilian Portuguese**. The decoder is server-agnostic but the bundled reference data (skill / mob / job names) was extracted from a brAthena-style Latam client (Event Horizon GRF) and rAthena's renewal `mob_db.yml`.
