@@ -24,6 +24,7 @@ import {
   skillUsageByPlayer,
 } from "./aggregate/index.js";
 import { loadReferenceDb, type ReferenceDb } from "./db/loader.js";
+import { prefetchReplay } from "./divine-pride.js";
 import { fetchReplay, uploadReplay } from "./firebase.js";
 import { t, locale } from "./i18n.js";
 import { decodeReplay } from "./rrf/decode.js";
@@ -147,6 +148,12 @@ function parseAndRender(
   );
   rerender();
   renderShareControls();
+
+  // Pull names from Divine Pride in the background; re-render when finished
+  // so any `mob#1234` / `skill#999` fallbacks become real names.
+  void prefetchReplay(replay).then(() => {
+    if (state.replay === replay) rerender();
+  });
 }
 
 function paintStaticStrings() {

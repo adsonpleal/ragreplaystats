@@ -1,15 +1,15 @@
-export type MobInfo = { name: string; isBoss: boolean; lvl: number; hp?: number };
-export type SkillInfo = { name: string };
+import {
+  getBuffName,
+  getItemName,
+  getMonsterHp,
+  getMonsterName,
+  getSkillName,
+} from "../divine-pride.js";
+
 export type JobInfo = string;
-export type ItemInfo = string;
-export type EfstInfo = { name: string };
 
 export type ReferenceDb = {
-  mob: Record<string, MobInfo>;
-  skill: Record<string, SkillInfo>;
   job: Record<string, JobInfo>;
-  item: Record<string, ItemInfo>;
-  efst: Record<string, EfstInfo>;
   resolveMob(id: number): string;
   resolveMobHp(id: number): number;
   resolveSkill(id: number): string;
@@ -28,30 +28,19 @@ async function fetchJson<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
+// Job names stay local: Divine Pride doesn't expose a server-localized job
+// endpoint, and the GRF's `pcjobnamegender.lub` is the only source of strings
+// like "Sentinela Trans" for the Latam server.
 export async function loadReferenceDb(base = "./db"): Promise<ReferenceDb> {
-  const [mob, skill, job, item, efst] = await Promise.all([
-    fetchJson<Record<string, MobInfo>>(`${base}/mob.json`, {}),
-    fetchJson<Record<string, SkillInfo>>(`${base}/skill.json`, {}),
-    fetchJson<Record<string, JobInfo>>(`${base}/job.json`, {}),
-    fetchJson<Record<string, ItemInfo>>(`${base}/item.json`, {}),
-    fetchJson<Record<string, EfstInfo>>(`${base}/efst.json`, {}),
-  ]);
+  const job = await fetchJson<Record<string, JobInfo>>(`${base}/job.json`, {});
 
   return {
-    mob,
-    skill,
     job,
-    item,
-    efst,
-    resolveMob: (id: number) => mob[String(id)]?.name ?? `mob#${id}`,
-    resolveMobHp: (id: number) => mob[String(id)]?.hp ?? 0,
-    resolveSkill: (id: number) => skill[String(id)]?.name ?? `skill#${id}`,
+    resolveMob: (id: number) => getMonsterName(id) ?? `mob#${id}`,
+    resolveMobHp: (id: number) => getMonsterHp(id),
+    resolveSkill: (id: number) => getSkillName(id) ?? `skill#${id}`,
     resolveJob: (id: number) => job[String(id)] ?? `job#${id}`,
-    resolveItem: (id: number) => {
-      const raw = item[String(id)];
-      // GRF item names use underscores in place of spaces.
-      return raw ? raw.replace(/_/g, " ") : `item#${id}`;
-    },
-    resolveStatus: (id: number) => efst[String(id)]?.name ?? `efst#${id}`,
+    resolveItem: (id: number) => getItemName(id) ?? `item#${id}`,
+    resolveStatus: (id: number) => getBuffName(id) ?? `efst#${id}`,
   };
 }
