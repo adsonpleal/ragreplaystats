@@ -54,32 +54,32 @@ export function decodeItemUseAck(reader: ByteReader, time: number): ItemUseAckPa
 }
 
 /**
- * 0x0a37 — ZC_ADD_ITEM_TO_INVENTORY3 (variable length).
+ * 0x0a37 — ZC_ITEM_PICKUP_ACK (fixed length, ~67 bytes).
  * After pkt id:
- *   pktLen u16
  *   index u16
- *   amount u16
- *   nameid u32
+ *   count u16
+ *   nameid u32         (clients >= 2018-11-21; older variants use u16)
  *   identified u8
- *   damage u8
+ *   damaged u8
  *   refine u8
- *   cards i32 × 4
- *   expireTime i32
- *   bindOnEquip u16
- *   equipLocation u32
- *   itemType u8
+ *   slot (4 cards × u16 = 8 bytes)
+ *   location u32
+ *   type u8
  *   result u8
- *   ... possibly more in newer versions
+ *   ... + HireExpireDate, bindOnEquip, options, favorite/look on newer builds
  *
- * We only need slot/itemId/amount/refine.
+ * Earlier versions of this decoder mistakenly read a `pktLen u16` first,
+ * shifting every field two bytes and turning a stack of 1 item with id 7642
+ * into "id 65536, qty 7642". `nameid` is the u32 form on the Latam server.
+ *
+ * We only need slot / itemId / amount / refine.
  */
 export function decodeItemAdd(reader: ByteReader, time: number): ItemAddEvent {
-  reader.u16(); // pktLen
   const slot = reader.u16() - 2;
   const amount = reader.u16();
   const itemId = reader.u32();
   reader.u8(); // identified
-  reader.u8(); // damage
+  reader.u8(); // damaged
   const refine = reader.u8();
   return { time, slot, itemId, amount, refine };
 }
