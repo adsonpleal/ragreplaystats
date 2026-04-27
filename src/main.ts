@@ -6,6 +6,7 @@ import {
   consumablesByItem,
   damageTimelineMulti,
   damageTimelineSingle,
+  isPlayerSource,
   killsByPlayerAndMob,
   lootByItem,
   monstersDamagedByPlayer,
@@ -1055,6 +1056,10 @@ function renderByMonsterMode(replay: Replay) {
 
   const monsterLabel = monsterName(replay, state.selectedMonster);
   const events = replay.damage.filter((d) => d.target === state.selectedMonster);
+  // Damage events whose source is a known player-affiliated entity (pc /
+  // homun / merc). Mob-on-mob splash from instance hordes ends up in `events`
+  // too, but it isn't useful in the per-player chart or skill table.
+  const playerEvents = events.filter((d) => isPlayerSource(replay, d.source));
   const players = playersThatDamaged(replay, state.selectedMonster);
 
   secondary.innerHTML = `<h2 class="section-title">${escape(t.playersWhoDamaged(monsterLabel))}</h2>
@@ -1104,12 +1109,15 @@ function renderByMonsterMode(replay: Replay) {
     renderBarChart($("#dps-bars"), bars);
   }
 
-  const bucketMs = pickBucketMs(events);
+  const bucketMs = pickBucketMs(playerEvents);
   chartPane.innerHTML = `<h2 class="section-title">${t.damageOverTimeMultiTitle}</h2>
     <div id="dps-chart"></div>`;
-  renderDamageMulti($("#dps-chart"), damageTimelineMulti(replay, events, bucketMs));
+  renderDamageMulti(
+    $("#dps-chart"),
+    damageTimelineMulti(replay, playerEvents, bucketMs),
+  );
 
-  renderSkillByPlayerTable(skillPane, events, t.skillsAgainstMonster);
+  renderSkillByPlayerTable(skillPane, playerEvents, t.skillsAgainstMonster);
 }
 
 function renderSkillTable(host: HTMLElement, events: DamageEvent[], title: string) {

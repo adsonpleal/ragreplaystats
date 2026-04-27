@@ -28,7 +28,7 @@ function effectiveDuration(replay: Replay, range: Range): number {
 
 const PLAYER_KINDS = new Set(["pc", "homun", "merc"]);
 
-function isPlayerSource(replay: Replay, aid: number): boolean {
+export function isPlayerSource(replay: Replay, aid: number): boolean {
   const ent = replay.entities.get(aid);
   return !!ent && PLAYER_KINDS.has(ent.kind);
 }
