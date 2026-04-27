@@ -1032,7 +1032,6 @@ function renderByPlayerMode(replay: Replay) {
       {
         key: "view",
         label: t.colMobId,
-        numeric: true,
         format: (r) => String(r.view),
         href: (r) => (r.view ? mobDpUrl(r.view) : null),
       },
@@ -1111,7 +1110,6 @@ function renderByMonsterMode(replay: Replay) {
       {
         key: "view",
         label: t.colMobId,
-        numeric: true,
         format: (r) => String(r.view),
         href: (r) => (r.view ? mobDpUrl(r.view) : null),
       },
@@ -1478,7 +1476,6 @@ function renderMobSkills(
       {
         key: "skillId",
         label: t.colId,
-        numeric: true,
         format: (r) => String(r.skillId),
         href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
       },
