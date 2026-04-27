@@ -188,6 +188,7 @@ export async function prefetchReplay(replay: Replay): Promise<void> {
   for (const e of replay.itemAdds) if (e.itemId) items.add(e.itemId);
   for (const inv of replay.initialInventory.values()) {
     if (inv.itemId) items.add(inv.itemId);
+    for (const cardId of inv.cards) if (cardId) items.add(cardId);
   }
 
   const monsters = new Set<number>();

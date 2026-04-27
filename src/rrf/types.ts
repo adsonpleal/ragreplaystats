@@ -118,6 +118,20 @@ export type SessionInfo = {
   aid: number;
 };
 
+export type InventoryRecord = {
+  itemId: number;
+  qty: number;
+  /**
+   * `equipLocation` bitmask from the spawn record. 0 = not equipped.
+   * Bits follow rAthena's `e_equip_pos` (1 head-low, 2 weapon, 4 garment,
+   * 16 armor, 32 shield, 64 shoes, etc.).
+   */
+  equipped: number;
+  refine: number;
+  /** Up to 4 card item ids. 0 = empty slot. */
+  cards: [number, number, number, number];
+};
+
 export type Replay = {
   sessionInfo: SessionInfo;
   entities: Map<number, Entity>;
@@ -127,7 +141,7 @@ export type Replay = {
   skillUses: SkillUse[];
   mobHp: MobHpUpdate[];
   mapChanges: MapChange[];
-  initialInventory: Map<number, { itemId: number; qty: number }>;
+  initialInventory: Map<number, InventoryRecord>;
   itemDeletes: ItemDeleteEvent[];
   itemAdds: ItemAddEvent[];
   paramChanges: ParamChangeEvent[];

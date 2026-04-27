@@ -13,6 +13,7 @@ import type {
   DamageEvent,
   Entity,
   EntityKind,
+  InventoryRecord,
   ItemAddEvent,
   ItemDeleteEvent,
   MapChange,
@@ -260,7 +261,13 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         if (existing && existing.itemId === ev.itemId) {
           existing.qty += ev.amount;
         } else {
-          inventory.set(ev.slot, { itemId: ev.itemId, qty: ev.amount });
+          inventory.set(ev.slot, {
+            itemId: ev.itemId,
+            qty: ev.amount,
+            equipped: 0,
+            refine: ev.refine,
+            cards: [0, 0, 0, 0],
+          });
         }
         itemAdds.push(ev);
         break;
@@ -272,7 +279,13 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         if (ev.aid !== session.aid) break;
         // Patch the inventory map so subsequent 0x07fa for the same slot
         // can resolve to itemId.
-        inventory.set(ev.slot, { itemId: ev.itemId, qty: ev.amount });
+        inventory.set(ev.slot, {
+          itemId: ev.itemId,
+          qty: ev.amount,
+          equipped: 0,
+          refine: 0,
+          cards: [0, 0, 0, 0],
+        });
         // For a successful use, also emit a synthetic delete event so the
         // consumables panel counts it. Stackable consumables only fire
         // 0x01c8 per use; 0x07fa wouldn't fire until the slot drains.
@@ -404,19 +417,27 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
 /**
  * Walk the Items container (type 8) for the initial inventory snapshot.
  *
- * Each chunk concatenates fixed-size 172-byte item records with these
- * offsets (per `Tokeiburu/Rrf-Parser` `ReplayService.cs:154-184`):
- *   +22  pos i16   (slot index, with -2 base)
- *   +52  qty i16
- *   +104 nameid i32
+ * Each chunk concatenates fixed-size 172-byte item records. The record is
+ * actually a TLV stream of ~19 small tagged fields, but every record has
+ * the same field order so the data lives at predictable offsets (per
+ * `Tokeiburu/Rrf-Parser` `ReplayService.cs:154-184`):
  *
- * We skip the rest of the per-record fields (cards, refine, equipped, etc.)
- * — the stats tab only needs slot → itemId mapping.
+ *   +22  pos i16     (slot index, with -2 base)
+ *   +42  equipped i32 (equipLocation bitmask, 0 = not equipped)
+ *   +52  qty i16
+ *   +82..+97  card[0..3] i32 × 4 (item ids in the upper card slots, 0 = empty)
+ *   +104 nameid i32
+ *   +134 refine u8
+ *
+ * Random options / enchants are NOT in this layout on the Latam server —
+ * the TLV stream ends at tag 0x011a (the trailing 4-byte field is a counter
+ * that varies but doesn't decode as the rAthena `ItemOptions` triple). If a
+ * future server's snapshots carry them, append the offsets here.
  */
 function readItemsContainer(
   containers: AnyContainer[],
-): Map<number, { itemId: number; qty: number }> {
-  const out = new Map<number, { itemId: number; qty: number }>();
+): Map<number, InventoryRecord> {
+  const out = new Map<number, InventoryRecord>();
   const itemsContainer = containers.find(
     (c): c is GenericContainer =>
       c.kind === "generic" && c.type === ContainerType.Items,
@@ -424,13 +445,22 @@ function readItemsContainer(
   if (!itemsContainer) return out;
 
   const RECORD = 172;
-  // The Items container has chunks for several inventory stores (main bag,
-  // cart, equipped, possibly storage). The same `pos` shows up in more than
-  // one chunk with different qty values. We want the main bag — which on
-  // observed recordings is the FIRST chunk with the highest record count.
-  // Strategy: keep the first observed entry for each slot (`if !has`), so
-  // the largest store wins as long as it's processed first.
-  for (const chunk of itemsContainer.chunks) {
+  // The Items container has multiple chunks. Order matters because the same
+  // `pos` shows up in two of them per equipped item:
+  //   chunks 4601..4606  — per-equip-slot lists; carry the real
+  //                        equipped / cards / refine data
+  //   chunk 4510         — main bag; same items appear but with
+  //                        equipped=0, cards=zeros (the bag view doesn't
+  //                        carry slot-specific metadata)
+  // We process the equipped chunks first so the rich per-item record wins,
+  // then fall back to the main bag (`if !has`) for consumables / loot that
+  // aren't equipped anywhere.
+  const sortedChunks = [...itemsContainer.chunks].sort((a, b) => {
+    const aEquip = a.id >= 4601 && a.id <= 4606 ? 0 : 1;
+    const bEquip = b.id >= 4601 && b.id <= 4606 ? 0 : 1;
+    return aEquip - bEquip;
+  });
+  for (const chunk of sortedChunks) {
     const view = new DataView(
       chunk.data.buffer,
       chunk.data.byteOffset,
@@ -439,10 +469,22 @@ function readItemsContainer(
     let p = 0;
     while (p + RECORD <= chunk.data.byteLength) {
       const pos = view.getInt16(p + 22, true) - 2;
+      const equipped = view.getInt32(p + 42, true);
       const qty = view.getInt16(p + 52, true);
+      const card0 = view.getInt32(p + 82, true);
+      const card1 = view.getInt32(p + 86, true);
+      const card2 = view.getInt32(p + 90, true);
+      const card3 = view.getInt32(p + 94, true);
       const nameid = view.getInt32(p + 104, true);
+      const refine = view.getUint8(p + 134);
       if (nameid > 0 && qty > 0 && pos >= 0 && !out.has(pos)) {
-        out.set(pos, { itemId: nameid, qty });
+        out.set(pos, {
+          itemId: nameid,
+          qty,
+          equipped,
+          refine,
+          cards: [card0, card1, card2, card3],
+        });
       }
       p += RECORD;
     }

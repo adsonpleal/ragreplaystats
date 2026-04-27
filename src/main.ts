@@ -340,6 +340,7 @@ const BRUSH_BUCKET_MS = 1_000;
 function clearStatsOnlyPanes() {
   $("#brush-pane").innerHTML = "";
   $("#status-pane").innerHTML = "";
+  $("#equipment-pane").innerHTML = "";
 }
 
 function clearByModeOnlyPanes() {
@@ -363,6 +364,7 @@ function renderStatsMode(replay: Replay) {
 
   renderResumoCard(replay);
   renderBrush(replay);
+  renderEquipment(replay);
   renderConsumables(replay);
   renderLoot(replay);
   renderHpSpChart(replay);
@@ -736,6 +738,117 @@ function renderStatusList(replay: Replay) {
 function pct(n: number, total: number): number {
   if (total <= 0) return 0;
   return Math.round((n / total) * 100);
+}
+
+/**
+ * Bit → label mapping for the `equipped` (equipLocation) bitmask. Values
+ * follow rAthena's `e_equip_pos`. First matching bit wins as the row's
+ * primary slot; order also drives the row sort within the equipment table.
+ */
+const EQUIP_SLOTS: Array<readonly [bit: number, label: () => string]> = [
+  [256, () => t.slotHeadTop],          // EQP_HEAD_TOP
+  [512, () => t.slotHeadMid],          // EQP_HEAD_MID
+  [1, () => t.slotHeadLow],            // EQP_HEAD_LOW
+  [16, () => t.slotArmor],             // EQP_ARMOR
+  [2, () => t.slotWeapon],             // EQP_HAND_R
+  [32, () => t.slotShield],            // EQP_HAND_L
+  [4, () => t.slotGarment],            // EQP_GARMENT
+  [64, () => t.slotShoes],             // EQP_SHOES
+  [8, () => t.slotAccLeft],            // EQP_ACC_L
+  [128, () => t.slotAccRight],         // EQP_ACC_R
+  [32768, () => t.slotAmmo],           // EQP_AMMO
+  [1024, () => t.slotCostumeHeadTop],  // EQP_COSTUME_HEAD_TOP
+  [2048, () => t.slotCostumeHeadMid],  // EQP_COSTUME_HEAD_MID
+  [4096, () => t.slotCostumeHeadLow],  // EQP_COSTUME_HEAD_LOW
+  [8192, () => t.slotCostumeGarment],  // EQP_COSTUME_GARMENT
+  [65536, () => t.slotShadowArmor],    // EQP_SHADOW_ARMOR
+  [131072, () => t.slotShadowWeapon],  // EQP_SHADOW_WEAPON
+  [262144, () => t.slotShadowShield],  // EQP_SHADOW_SHIELD
+  [524288, () => t.slotShadowShoes],   // EQP_SHADOW_SHOES
+  [1048576, () => t.slotShadowAccRight], // EQP_SHADOW_ACC_R
+  [2097152, () => t.slotShadowAccLeft],  // EQP_SHADOW_ACC_L
+];
+
+type EquippedRow = {
+  slotOrder: number;
+  slotLabel: string;
+  itemId: number;
+  itemName: string;
+  refine: number;
+  cards: number[];
+};
+
+function renderEquipment(replay: Replay) {
+  const host = $("#equipment-pane");
+  const itemResolver = (id: number) =>
+    state.db?.resolveItem(id) ?? t.itemFallback(id);
+
+  const rows: EquippedRow[] = [];
+  for (const inv of replay.initialInventory.values()) {
+    if (!inv.equipped) continue;
+    if (!inv.itemId) continue;
+    let slotOrder = EQUIP_SLOTS.length;
+    let slotLabel = t.slotOther;
+    for (let i = 0; i < EQUIP_SLOTS.length; i++) {
+      const [bit, label] = EQUIP_SLOTS[i];
+      if (inv.equipped & bit) {
+        slotOrder = i;
+        slotLabel = label();
+        break;
+      }
+    }
+    rows.push({
+      slotOrder,
+      slotLabel,
+      itemId: inv.itemId,
+      itemName: itemResolver(inv.itemId),
+      refine: inv.refine,
+      cards: inv.cards.filter((c) => c > 0),
+    });
+  }
+
+  if (!rows.length) {
+    host.innerHTML = "";
+    return;
+  }
+  rows.sort((a, b) => a.slotOrder - b.slotOrder);
+
+  host.innerHTML = `<h2 class="section-title">${t.equipmentTitle}</h2>
+    <div id="equipment-table"></div>`;
+
+  renderTable<EquippedRow>(
+    $("#equipment-table"),
+    [
+      { key: "slotLabel", label: t.colSlot, sortValue: (r) => r.slotOrder },
+      {
+        key: "itemId",
+        label: t.colId,
+        format: (r) => String(r.itemId),
+        href: (r) => itemDpUrl(r.itemId),
+      },
+      { key: "itemName", label: t.colItem },
+      {
+        key: "refine",
+        label: t.colRefine,
+        numeric: true,
+        format: (r) => (r.refine > 0 ? `+${r.refine}` : t.none),
+        sortValue: (r) => r.refine,
+      },
+      {
+        key: "cards",
+        label: t.colCards,
+        format: (r) =>
+          r.cards.length
+            ? r.cards
+                .map((id) => `#${id} · ${itemResolver(id)}`)
+                .join(", ")
+            : t.equipmentEmptyCardSlot,
+        sortValue: (r) => r.cards.length,
+      },
+    ],
+    rows,
+    { initialSort: { key: "slotLabel", asc: true } },
+  );
 }
 
 
