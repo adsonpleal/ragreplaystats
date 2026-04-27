@@ -3,17 +3,23 @@ import type { DamageEvent, HitType } from "../types.js";
 
 /**
  * Classify the damage event from rAthena's `e_damage_type` byte. Reference:
- * `src/map/clif.cpp` `enum e_damage_type` — values 0..12.
+ * `src/map/clif.cpp` `enum e_damage_type`.
  *
- *   0  DMG_NORMAL              normal hit
- *   5  DMG_SPLASH              splash / multi-target hit
- *   6  DMG_SINGLE              single-target skill hit
- *   7  DMG_REPEAT              repeated hit (chained)
- *   8  DMG_MULTI_HIT           multi-hit (e.g., Double Attack)
- *   9  DMG_MULTI_HIT_ENDURE    multi-hit while target endures
- *   10 DMG_CRITICAL            critical
- *   11 DMG_LUCY_DODGE          attacker rolled a miss / target lucky-dodged
- *   12 DMG_TOUCH               touch skill
+ *   0  DMG_NORMAL                normal hit
+ *   5  DMG_SPLASH                splash / multi-target hit
+ *   6  DMG_SINGLE                single-target skill hit
+ *   7  DMG_REPEAT                repeated hit (chained)
+ *   8  DMG_MULTI_HIT             multi-hit (e.g., Double Attack)
+ *   9  DMG_MULTI_HIT_ENDURE      multi-hit while target endures
+ *   10 DMG_CRITICAL              critical
+ *   11 DMG_LUCY_DODGE            attacker rolled a miss / lucky-dodged
+ *   12 DMG_TOUCH                 touch skill
+ *   13 DMG_MULTI_HIT_CRITICAL    multi-hit attack that crit
+ *
+ * Note: not every server reports crits. The Latam Event Horizon recordings
+ * we tested never set action=10 or 13 — crits exist mechanically but the
+ * server keeps the action byte at the non-crit value. The UI hides crit
+ * columns when the whole replay has no action-10/13 events.
  *
  * Damage-event "miss" classification combines two signals:
  *  - DMG_LUCY_DODGE (11), OR
@@ -22,7 +28,7 @@ import type { DamageEvent, HitType } from "../types.js";
  */
 export function classifyHit(action: number, damage: number): HitType {
   if (action === 11) return "miss"; // explicit lucky dodge
-  if (action === 10) return "critical";
+  if (action === 10 || action === 13) return "critical";
   if (action === 8 || action === 9) return "double";
   // damage=0 on a normal-style action means the swing missed.
   if (damage <= 0 && (action === 0 || action === 5 || action === 6 || action === 7)) {

@@ -324,12 +324,16 @@ function renderResumoCard(replay: Replay) {
       label: t.cellHits,
       value: fmt(stats.hitsLanded),
     },
-    {
-      label: t.cellCrits,
-      value: stats.hitsLanded
-        ? `${fmt(stats.crits)} (${pct(stats.crits, stats.hitsLanded)}%)`
-        : "0",
-    },
+    ...(hasCritData(replay)
+      ? [
+          {
+            label: t.cellCrits,
+            value: stats.hitsLanded
+              ? `${fmt(stats.crits)} (${pct(stats.crits, stats.hitsLanded)}%)`
+              : "0",
+          } as SummaryCell,
+        ]
+      : []),
     {
       label: t.cellMisses,
       value: stats.hitsLanded
@@ -816,6 +820,24 @@ function effectiveMaxHp(rawMaxHp: number, view: number): number {
   return state.db?.resolveMobHp(view) ?? 0;
 }
 
+/**
+ * Whether the recording carries any crit information at all. Some servers
+ * (Latam Event Horizon among them) never tag damage as DMG_CRITICAL or
+ * DMG_MULTI_HIT_CRITICAL, so showing a "Críticos" column full of zeros
+ * would be misleading — we hide the column entirely instead.
+ */
+const critDataCache = new WeakMap<Replay, boolean>();
+function hasCritData(replay: Replay): boolean {
+  const cached = critDataCache.get(replay);
+  if (cached !== undefined) return cached;
+  let result = false;
+  for (const d of replay.damage) {
+    if (d.rawAction === 10 || d.rawAction === 13) { result = true; break; }
+  }
+  critDataCache.set(replay, result);
+  return result;
+}
+
 function renderBreadcrumb() {
   const r = state.replay!;
   const host = $("#breadcrumb");
@@ -921,7 +943,9 @@ function renderByPlayerMode(replay: Replay) {
       },
       { key: "totalDealt", label: t.colDamageDealt, numeric: true, format: (r) => fmt(r.totalDealt) },
       { key: "hits", label: t.colHits, numeric: true, format: (r) => fmt(r.hits) },
-      { key: "crits", label: t.colCrits, numeric: true, format: (r) => fmt(r.crits) },
+      ...(hasCritData(replay)
+        ? [{ key: "crits", label: t.colCrits, numeric: true, format: (r: PlayerAgg) => fmt(r.crits) }]
+        : []),
       { key: "misses", label: t.colMisses, numeric: true, format: (r) => fmt(r.misses) },
       { key: "monstersHit", label: t.colMonstersHit, numeric: true, format: (r) => fmt(r.monstersHit) },
       { key: "kills", label: t.colKills, numeric: true, format: (r) => fmt(r.kills) },
@@ -1108,7 +1132,9 @@ function renderByMonsterMode(replay: Replay) {
       },
       { key: "totalDealt", label: t.colDamageDealt, numeric: true, format: (r) => fmt(r.totalDealt) },
       { key: "hits", label: t.colHits, numeric: true, format: (r) => fmt(r.hits) },
-      { key: "crits", label: t.colCrits, numeric: true, format: (r) => fmt(r.crits) },
+      ...(hasCritData(replay)
+        ? [{ key: "crits", label: t.colCrits, numeric: true, format: (r: PlayerAgg) => fmt(r.crits) }]
+        : []),
       { key: "misses", label: t.colMisses, numeric: true, format: (r) => fmt(r.misses) },
       { key: "kills", label: t.colKillingBlow, numeric: true, format: (r) => fmt(r.kills) },
     ],
