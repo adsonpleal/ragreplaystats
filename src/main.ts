@@ -1,26 +1,41 @@
 import {
+  brushSeries,
   bySkill,
   bySkillAndPlayer,
+  computeResumo,
+  consumablesByItem,
   damageTimelineMulti,
   damageTimelineSingle,
   killsByPlayerAndMob,
+  lootByItem,
   monstersDamagedByPlayer,
   monstersWhoTookDamage,
+  paramCurve,
+  SP_HP,
+  SP_MAXHP,
+  SP_SP,
+  SP_MAXSP,
+  statusUptime,
   type MonsterAgg,
   type PlayerAgg,
   playersThatDamaged,
   playersWhoDamaged,
+  type Range,
   skillUsageByPlayer,
 } from "./aggregate/index.js";
 import { loadReferenceDb, type ReferenceDb } from "./db/loader.js";
+import { fetchReplay, uploadReplay } from "./firebase.js";
 import { t, locale } from "./i18n.js";
 import { decodeReplay } from "./rrf/decode.js";
 import type { DamageEvent, Replay } from "./rrf/types.js";
 import { renderBarChart } from "./ui/bar-chart.js";
 import { renderDamageMulti, renderDamageSingle } from "./ui/dps-chart.js";
+import { renderLineChart } from "./ui/line-chart.js";
+import { renderSummaryCard, type SummaryCell } from "./ui/stats-summary.js";
 import { renderTable } from "./ui/table.js";
+import { renderTimelineBrush } from "./ui/timeline-brush.js";
 
-type Mode = "byPlayer" | "byMonster";
+type Mode = "byPlayer" | "byMonster" | "stats";
 
 type State = {
   replay: Replay | null;
@@ -28,6 +43,10 @@ type State = {
   mode: Mode;
   selectedPlayer: number | null;
   selectedMonster: number | null;
+  /** Brush selection. null = full session. */
+  selectedTimeRange: Range;
+  /** Set once a replay has been uploaded or fetched — used to render the share link. */
+  shareId: string | null;
 };
 
 const state: State = {
@@ -36,6 +55,8 @@ const state: State = {
   mode: "byPlayer",
   selectedPlayer: null,
   selectedMonster: null,
+  selectedTimeRange: null,
+  shareId: null,
 };
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
@@ -49,6 +70,83 @@ function init() {
     state.db = db;
     if (state.replay) rerender();
   });
+  void loadFromUrl();
+}
+
+async function loadFromUrl() {
+  const id = new URLSearchParams(location.search).get("r");
+  if (!id) return;
+  const status = $("#drop-status");
+  status.textContent = t.fetching(id);
+  try {
+    const fetched = await fetchReplay(id);
+    if (!fetched) {
+      status.textContent = t.notFound(id);
+      return;
+    }
+    parseAndRender(fetched.bytes.buffer, fetched.fileName, id);
+  } catch (err) {
+    console.error(err);
+    status.textContent = t.fetchError((err as Error).message);
+  }
+}
+
+function renderShareControls() {
+  const host = $("#share-controls");
+  host.innerHTML = "";
+  if (!state.shareId) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  const url = new URL(location.href);
+  url.searchParams.set("r", state.shareId);
+  const link = url.toString();
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "share-btn";
+  btn.textContent = t.copyLink;
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      btn.textContent = t.linkCopied;
+      setTimeout(() => (btn.textContent = t.copyLink), 1500);
+    } catch {
+      // Fallback: select the link text so the user can copy manually.
+      window.prompt(t.copyLink, link);
+    }
+  });
+  host.appendChild(btn);
+
+  const linkEl = document.createElement("code");
+  linkEl.className = "share-link";
+  linkEl.textContent = link;
+  host.appendChild(linkEl);
+}
+
+function parseAndRender(
+  buf: ArrayBuffer | ArrayBufferLike,
+  fileName: string,
+  shareId: string | null,
+) {
+  const status = $("#drop-status");
+  const t0 = performance.now();
+  const replay = decodeReplay(buf as ArrayBuffer);
+  const ms = (performance.now() - t0).toFixed(0);
+  state.replay = replay;
+  state.selectedPlayer = null;
+  state.selectedMonster = null;
+  state.selectedTimeRange = null;
+  state.shareId = shareId;
+  status.textContent = t.decoded(
+    replay.totals.handledPackets,
+    replay.totals.packetCount,
+    ms,
+    fileName,
+  );
+  rerender();
+  renderShareControls();
 }
 
 function paintStaticStrings() {
@@ -58,8 +156,17 @@ function paintStaticStrings() {
   document
     .querySelectorAll<HTMLButtonElement>(".mode-btn")
     .forEach((btn) => {
-      btn.textContent =
-        btn.dataset.mode === "byPlayer" ? t.modeByPlayer : t.modeByMonster;
+      switch (btn.dataset.mode) {
+        case "byPlayer":
+          btn.textContent = t.modeByPlayer;
+          break;
+        case "byMonster":
+          btn.textContent = t.modeByMonster;
+          break;
+        case "stats":
+          btn.textContent = t.modeStats;
+          break;
+      }
     });
 }
 
@@ -70,26 +177,40 @@ function setupDropZone() {
 
   const handleFile = async (file: File) => {
     status.textContent = t.parsing(file.name, (file.size / 1024).toFixed(1));
+    // Drop any stale ?r=… so a refresh during upload doesn't reload the
+    // previous shared replay.
+    const url = new URL(location.href);
+    if (url.searchParams.has("r")) {
+      url.searchParams.delete("r");
+      history.replaceState(null, "", url.toString());
+    }
     try {
       const buf = await file.arrayBuffer();
-      const t0 = performance.now();
-      const replay = decodeReplay(buf);
-      const ms = (performance.now() - t0).toFixed(0);
-      state.replay = replay;
-      state.selectedPlayer = null;
-      state.selectedMonster = null;
-      status.textContent = t.decoded(
-        replay.totals.handledPackets,
-        replay.totals.packetCount,
-        ms,
-        file.name,
-      );
-      rerender();
+      parseAndRender(buf, file.name, null);
+      void uploadAndShare(buf, file.name);
     } catch (err) {
       console.error(err);
       status.textContent = t.parseError((err as Error).message);
     }
   };
+
+  async function uploadAndShare(buf: ArrayBuffer, fileName: string) {
+    const status = $("#drop-status");
+    const prev = status.textContent;
+    status.textContent = (prev ? prev + " · " : "") + t.uploading;
+    try {
+      const id = await uploadReplay(new Uint8Array(buf), fileName);
+      state.shareId = id;
+      const url = new URL(location.href);
+      url.searchParams.set("r", id);
+      history.replaceState(null, "", url.toString());
+      status.textContent = t.shareReady(url.toString());
+      renderShareControls();
+    } catch (err) {
+      console.error(err);
+      status.textContent = t.uploadError((err as Error).message);
+    }
+  }
 
   input.addEventListener("change", () => {
     const f = input.files?.[0];
@@ -135,16 +256,375 @@ function rerender() {
 
   if (state.mode === "byPlayer") {
     renderByPlayerMode(r);
-  } else {
+    renderSkillUsesChart(r);
+    renderKillsChart(r);
+  } else if (state.mode === "byMonster") {
     renderByMonsterMode(r);
+    renderSkillUsesChart(r);
+    renderKillsChart(r);
+  } else {
+    renderStatsMode(r);
   }
-
-  renderSkillUsesChart(r);
-  renderKillsChart(r);
 }
 
 const SKILL_USES_BAR_LIMIT = 30;
 const KILLS_BAR_LIMIT = 30;
+const ITEM_BAR_LIMIT = 30;
+const BRUSH_BUCKET_MS = 1_000;
+
+function clearStatsOnlyPanes() {
+  $("#brush-pane").innerHTML = "";
+  $("#status-pane").innerHTML = "";
+}
+
+function clearByModeOnlyPanes() {
+  $("#skill-uses-pane").innerHTML = "";
+  $("#kills-pane").innerHTML = "";
+}
+
+function renderStatsMode(replay: Replay) {
+  clearByModeOnlyPanes();
+  $("#skill-pane").innerHTML = "";
+  // Hide the breadcrumb — stats mode is always for the local player.
+  $("#breadcrumb").hidden = true;
+
+  renderResumoCard(replay);
+  renderBrush(replay);
+  renderConsumables(replay);
+  renderLoot(replay);
+  renderHpSpChart(replay);
+  renderKillsByTypeChart(replay);
+  renderStatusList(replay);
+}
+
+function renderResumoCard(replay: Replay) {
+  const stats = computeResumo(replay, state.selectedTimeRange);
+  const skillResolver = (id: number) =>
+    state.db?.resolveSkill(id) ?? t.skillFallback(id);
+  const mobResolver = (id: number) =>
+    state.db?.resolveMob(id) ?? t.mobFallback(id);
+
+  const cells: SummaryCell[] = [
+    { label: t.cellTotalDealt, value: fmt(stats.totalDealt) },
+    { label: t.cellTotalTaken, value: fmt(stats.totalTaken) },
+    {
+      label: t.cellEffectiveDps,
+      value: fmt(stats.effectiveDps),
+      hint: t.cellSessionDuration + ": " + formatDuration(stats.durationMs),
+    },
+    {
+      label: t.cellHits,
+      value: fmt(stats.hitsLanded),
+    },
+    {
+      label: t.cellCrits,
+      value: stats.hitsLanded
+        ? `${fmt(stats.crits)} (${pct(stats.crits, stats.hitsLanded)}%)`
+        : "0",
+    },
+    {
+      label: t.cellMisses,
+      value: stats.hitsLanded
+        ? `${fmt(stats.hitsMissed)} (${pct(stats.hitsMissed, stats.hitsLanded)}%)`
+        : "0",
+    },
+    {
+      label: t.cellHighestHit,
+      value: stats.highestHit ? fmt(stats.highestHit.damage) : t.none,
+      hint: stats.highestHit
+        ? (stats.highestHit.skillId
+            ? skillResolver(stats.highestHit.skillId)
+            : t.autoAttack) +
+          " → " +
+          (replay.entities.get(stats.highestHit.targetAid)?.name ?? mobResolver(replay.entities.get(stats.highestHit.targetAid)?.view ?? 0))
+        : undefined,
+    },
+    {
+      label: t.cellMostUsedSkill,
+      value: stats.mostUsedSkillId ? skillResolver(stats.mostUsedSkillId) : t.none,
+      hint: stats.mostUsedSkillId
+        ? `${fmt(stats.mostUsedSkillCount)} ${stats.mostUsedSkillCount === 1 ? "uso" : "usos"}`
+        : undefined,
+    },
+    { label: t.cellKills, value: fmt(stats.kills) },
+    { label: t.cellBossKills, value: fmt(stats.bossKills) },
+    {
+      label: t.cellTtfk,
+      value: stats.timeToFirstKillMs == null ? t.none : formatDuration(stats.timeToFirstKillMs),
+    },
+    {
+      label: t.cellAvgKillInterval,
+      value: stats.avgKillIntervalMs ? formatDuration(stats.avgKillIntervalMs) : t.none,
+    },
+    {
+      label: t.cellTopSpecies,
+      value: stats.topKilledSpecies
+        ? mobResolver(stats.topKilledSpecies.view)
+        : t.none,
+      hint: stats.topKilledSpecies
+        ? `${fmt(stats.topKilledSpecies.count)} ${stats.topKilledSpecies.count === 1 ? "abate" : "abates"}`
+        : undefined,
+    },
+    { label: t.cellLevelsGained, value: fmt(stats.baseLevelsGained) },
+    { label: t.cellJobLevelsGained, value: fmt(stats.jobLevelsGained) },
+    { label: t.cellZenyDelta, value: fmt(stats.zenyDelta) },
+    { label: t.cellMapsVisited, value: fmt(stats.mapsVisited) },
+    { label: t.cellDeaths, value: fmt(stats.deaths) },
+  ];
+
+  renderSummaryCard($("#primary-pane"), t.statsResumoTitle, cells);
+}
+
+function renderBrush(replay: Replay) {
+  const host = $("#brush-pane");
+  host.innerHTML = "";
+  const series = brushSeries(replay, BRUSH_BUCKET_MS);
+  if (!series.ts.length) return;
+
+  const wrap = document.createElement("section");
+  wrap.className = "stats-card brush-host";
+  const h2 = document.createElement("h2");
+  h2.textContent = t.statsBrushHint;
+  h2.style.fontSize = "0.85rem";
+  h2.style.fontWeight = "400";
+  h2.style.color = "var(--muted)";
+  wrap.appendChild(h2);
+
+  const chartHost = document.createElement("div");
+  chartHost.id = "brush-chart";
+  wrap.appendChild(chartHost);
+
+  const actions = document.createElement("div");
+  actions.className = "brush-actions";
+  if (state.selectedTimeRange) {
+    const label = document.createElement("span");
+    label.textContent = t.statsRangeLabel(
+      formatDuration(state.selectedTimeRange.startMs),
+      formatDuration(state.selectedTimeRange.endMs),
+    );
+    actions.appendChild(label);
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.textContent = t.statsBrushClear;
+    clear.addEventListener("click", () => {
+      state.selectedTimeRange = null;
+      rerender();
+    });
+    actions.appendChild(clear);
+  }
+  wrap.appendChild(actions);
+  host.appendChild(wrap);
+
+  renderTimelineBrush(chartHost, series, {
+    initialRange: state.selectedTimeRange,
+    onSelect: (range) => {
+      // Skip if range is identical to current — happens after the ready
+      // hook restores the selection rect, which fires setSelect again.
+      const cur = state.selectedTimeRange;
+      if (
+        (cur === null && range === null) ||
+        (cur && range && cur.startMs === range.startMs && cur.endMs === range.endMs)
+      ) {
+        return;
+      }
+      state.selectedTimeRange = range;
+      rerender();
+    },
+  });
+}
+
+function renderConsumables(replay: Replay) {
+  const host = $("#secondary-pane");
+  const itemResolver = (id: number) =>
+    state.db?.resolveItem(id) ?? t.itemFallback(id);
+  const rows = consumablesByItem(replay, state.selectedTimeRange, itemResolver);
+  if (!rows.length) {
+    host.innerHTML = `<h2 class="section-title">${t.statsConsumablesTitle}</h2><p class="section-hint">${t.statsConsumablesEmpty}</p>`;
+    return;
+  }
+  host.innerHTML = `<h2 class="section-title">${t.statsConsumablesTitle}</h2>
+    <div id="consumables-bars"></div>`;
+  renderBarChart(
+    $("#consumables-bars"),
+    rows.slice(0, ITEM_BAR_LIMIT).map((r) => ({
+      key: r.itemId,
+      label: r.name,
+      value: r.quantity,
+      display: `${fmt(r.quantity)} (${r.count} usos)`,
+    })),
+  );
+}
+
+function renderLoot(replay: Replay) {
+  const host = $("#bar-pane");
+  const itemResolver = (id: number) =>
+    state.db?.resolveItem(id) ?? t.itemFallback(id);
+  const rows = lootByItem(replay, state.selectedTimeRange, itemResolver);
+  if (!rows.length) {
+    host.innerHTML = `<h2 class="section-title">${t.statsLootTitle}</h2><p class="section-hint">${t.statsLootEmpty}</p>`;
+    return;
+  }
+  host.innerHTML = `<h2 class="section-title">${t.statsLootTitle}</h2>
+    <div id="loot-bars"></div>`;
+  renderBarChart(
+    $("#loot-bars"),
+    rows.slice(0, ITEM_BAR_LIMIT).map((r) => ({
+      key: r.itemId,
+      label: r.name,
+      value: r.quantity,
+      display: fmt(r.quantity),
+    })),
+  );
+}
+
+function renderHpSpChart(replay: Replay) {
+  const host = $("#chart-pane");
+  const range = state.selectedTimeRange;
+  const hp = paramCurve(replay, SP_HP, range);
+  const sp = paramCurve(replay, SP_SP, range);
+  const maxHp = paramCurve(replay, SP_MAXHP, range);
+  const maxSp = paramCurve(replay, SP_MAXSP, range);
+
+  if (!hp.ts.length && !sp.ts.length) {
+    host.innerHTML = "";
+    return;
+  }
+
+  // Merge the time axes by sampling step values at every distinct timestamp.
+  const allTs = new Set<number>([...hp.ts, ...sp.ts, ...maxHp.ts, ...maxSp.ts]);
+  const sortedTs = [...allTs].sort((a, b) => a - b);
+  const sample = (curve: { ts: number[]; values: number[] }, t: number) => {
+    let v = 0;
+    for (let i = 0; i < curve.ts.length; i++) {
+      if (curve.ts[i] > t) break;
+      v = curve.values[i];
+    }
+    return v;
+  };
+
+  host.innerHTML = `<h2 class="section-title">${t.statsHpSpChartTitle}</h2>
+    <div id="hpsp-chart" class="stats-chart"></div>`;
+  renderLineChart(
+    $("#hpsp-chart"),
+    sortedTs,
+    [
+      { label: "HP", values: sortedTs.map((t) => sample(hp, t)), paletteIndex: 6 },
+      { label: "HP máx.", values: sortedTs.map((t) => sample(maxHp, t)), paletteIndex: 7 },
+      { label: "SP", values: sortedTs.map((t) => sample(sp, t)), paletteIndex: 1 },
+      { label: "SP máx.", values: sortedTs.map((t) => sample(maxSp, t)), paletteIndex: 2 },
+    ],
+    { height: 240 },
+  );
+}
+
+function renderKillsByTypeChart(replay: Replay) {
+  const host = $("#kills-pane");
+  const mobResolver = (id: number) =>
+    state.db?.resolveMob(id) ?? t.mobFallback(id);
+  // Stats mode is always the local player's perspective.
+  const rows = killsByPlayerAndMob(
+    replay,
+    {
+      sourceAid: replay.sessionInfo.aid,
+      // Range filtering on kills happens via `replay.kills` time, not via
+      // a separate target filter — we re-aggregate from the full replay
+      // each render and discard out-of-window kills below.
+    },
+    mobResolver,
+  );
+  const range = state.selectedTimeRange;
+  // Re-filter against the brush range. killsByPlayerAndMob doesn't accept a
+  // time filter directly, so we redo aggregation by walking replay.kills.
+  if (range) {
+    const filtered = new Map<number, { name: string; count: number }>();
+    for (const k of replay.kills) {
+      if (k.time < range.startMs || k.time > range.endMs) continue;
+      const ent = replay.entities.get(k.aid);
+      if (!ent || ent.kind !== "mob") continue;
+      // Was it the player's killing blow? Re-use the heuristic from the
+      // aggregator: latest player damage on this mob before vanish.
+      let lastHit: number | null = null;
+      let lastSrc = 0;
+      for (const d of replay.damage) {
+        if (d.target !== k.aid || d.time > k.time) continue;
+        const src = replay.entities.get(d.source);
+        if (!src || (src.kind !== "pc" && src.kind !== "homun" && src.kind !== "merc")) continue;
+        if (lastHit == null || d.time > lastHit) {
+          lastHit = d.time;
+          lastSrc = d.source;
+        }
+      }
+      if (lastSrc !== replay.sessionInfo.aid) continue;
+      const cur = filtered.get(ent.view) ?? { name: mobResolver(ent.view), count: 0 };
+      cur.count += 1;
+      filtered.set(ent.view, cur);
+    }
+    if (!filtered.size) {
+      host.innerHTML = "";
+      return;
+    }
+    const sorted = [...filtered.entries()].sort((a, b) => b[1].count - a[1].count);
+    host.innerHTML = `<h2 class="section-title">${t.statsKillsChartTitle}</h2>
+      <div id="kills-bars"></div>`;
+    renderBarChart(
+      $("#kills-bars"),
+      sorted.map(([view, v]) => ({
+        key: view,
+        label: v.name,
+        value: v.count,
+        display: fmt(v.count),
+      })),
+    );
+    return;
+  }
+
+  if (!rows.length) {
+    host.innerHTML = "";
+    return;
+  }
+  host.innerHTML = `<h2 class="section-title">${t.statsKillsChartTitle}</h2>
+    <div id="kills-bars"></div>`;
+  renderBarChart(
+    $("#kills-bars"),
+    rows.map((r) => ({
+      key: r.monsterView,
+      label: r.monsterName,
+      value: r.count,
+      display: fmt(r.count),
+    })),
+  );
+}
+
+function renderStatusList(replay: Replay) {
+  const host = $("#status-pane");
+  const statusResolver = (id: number) =>
+    state.db?.resolveStatus(id) ?? t.statusFallback(id);
+  const rows = statusUptime(replay, state.selectedTimeRange, statusResolver);
+  if (!rows.length) {
+    host.innerHTML = "";
+    return;
+  }
+
+  const max = rows[0].uptimeMs || 1;
+  let html = `<h2 class="section-title">${t.statsBuffsTitle}</h2>
+    <div class="status-list">`;
+  for (const r of rows.slice(0, 30)) {
+    const pctW = Math.max(2, (r.uptimeMs / max) * 100);
+    html += `<div class="status-row">
+      <span class="bar-label" title="${escape(r.name)}">${escape(r.name)}</span>
+      <span class="uptime-bar"><span class="uptime-fill" style="width:${pctW.toFixed(2)}%"></span></span>
+      <span class="uptime-value">${formatDuration(r.uptimeMs)} · ${fmt(r.appliedCount)}×</span>
+    </div>`;
+  }
+  html += "</div>";
+  host.innerHTML = html;
+}
+
+function pct(n: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.round((n / total) * 100);
+}
+
 
 function renderKillsChart(replay: Replay) {
   const host = $("#kills-pane");
@@ -373,6 +853,7 @@ function renderBreadcrumb() {
 }
 
 function renderByPlayerMode(replay: Replay) {
+  clearStatsOnlyPanes();
   const primary = $("#primary-pane");
   const secondary = $("#secondary-pane");
   const barPane = $("#bar-pane");
@@ -498,6 +979,7 @@ function renderByPlayerMode(replay: Replay) {
 }
 
 function renderByMonsterMode(replay: Replay) {
+  clearStatsOnlyPanes();
   const primary = $("#primary-pane");
   const secondary = $("#secondary-pane");
   const barPane = $("#bar-pane");

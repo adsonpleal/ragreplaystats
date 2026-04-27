@@ -1,4 +1,30 @@
-import type { DamageEvent, Replay } from "../rrf/types.js";
+import type {
+  DamageEvent,
+  Replay,
+  StatusEvent,
+  VanishEvent,
+} from "../rrf/types.js";
+
+// rAthena SP_* enum values we read from paramChanges.
+export const SP_HP = 5;
+export const SP_MAXHP = 6;
+export const SP_SP = 7;
+export const SP_MAXSP = 8;
+export const SP_BASELEVEL = 11;
+export const SP_JOBLEVEL = 12;
+export const SP_ZENY = 20;
+
+export type Range = { startMs: number; endMs: number } | null;
+
+function inRange(t: number, range: Range): boolean {
+  if (!range) return true;
+  return t >= range.startMs && t <= range.endMs;
+}
+
+function effectiveDuration(replay: Replay, range: Range): number {
+  if (!range) return Math.max(1, replay.sessionInfo.durationMs);
+  return Math.max(1, range.endMs - range.startMs);
+}
 
 const PLAYER_KINDS = new Set(["pc", "homun", "merc"]);
 
@@ -621,4 +647,429 @@ export function bySkill(
   }
 
   return result.sort((a, b) => b.totalDamage - a.totalDamage);
+}
+
+// ----------------------------------------------------------------------------
+// Estatísticas tab — player-centric aggregators.
+// ----------------------------------------------------------------------------
+
+export type ResumoStats = {
+  totalDealt: number;
+  totalTaken: number;
+  effectiveDps: number;
+  hitsLanded: number;
+  hitsMissed: number;
+  crits: number;
+  highestHit: { damage: number; skillId: number; targetAid: number; time: number } | null;
+  mostUsedSkillId: number;
+  mostUsedSkillCount: number;
+  kills: number;
+  bossKills: number;
+  timeToFirstKillMs: number | null;
+  avgKillIntervalMs: number;
+  topKilledSpecies: { view: number; count: number } | null;
+  baseLevelsGained: number;
+  jobLevelsGained: number;
+  zenyDelta: number;
+  mapsVisited: number;
+  durationMs: number;
+  deaths: number;
+};
+
+export function computeResumo(replay: Replay, range: Range): ResumoStats {
+  const playerAid = replay.sessionInfo.aid;
+  const durationMs = effectiveDuration(replay, range);
+
+  let totalDealt = 0;
+  let totalTaken = 0;
+  let firstHit = Number.POSITIVE_INFINITY;
+  let lastHit = Number.NEGATIVE_INFINITY;
+  let hitsLanded = 0;
+  let hitsMissed = 0;
+  let crits = 0;
+  const skillCounts = new Map<number, number>();
+  let highest: ResumoStats["highestHit"] = null;
+
+  for (const ev of replay.damage) {
+    if (!inRange(ev.time, range)) continue;
+    if (ev.source === playerAid) {
+      totalDealt += ev.damage;
+      hitsLanded += 1;
+      if (ev.hitType === "miss") hitsMissed += 1;
+      if (ev.hitType === "critical") crits += 1;
+      firstHit = Math.min(firstHit, ev.time);
+      lastHit = Math.max(lastHit, ev.time);
+      if (ev.skillId) {
+        skillCounts.set(ev.skillId, (skillCounts.get(ev.skillId) ?? 0) + 1);
+      }
+      if (!highest || ev.damage > highest.damage) {
+        highest = {
+          damage: ev.damage,
+          skillId: ev.skillId,
+          targetAid: ev.target,
+          time: ev.time,
+        };
+      }
+    }
+    if (ev.target === playerAid) totalTaken += ev.damage;
+  }
+
+  let mostUsedSkillId = 0;
+  let mostUsedSkillCount = 0;
+  for (const [id, count] of skillCounts) {
+    if (count > mostUsedSkillCount) {
+      mostUsedSkillId = id;
+      mostUsedSkillCount = count;
+    }
+  }
+
+  const fightSec =
+    firstHit !== Number.POSITIVE_INFINITY && lastHit > firstHit
+      ? (lastHit - firstHit) / 1000
+      : 0;
+  const effectiveDps = fightSec > 0 ? Math.round(totalDealt / fightSec) : 0;
+
+  const playerKills = killsByPlayer(replay, playerAid, range);
+  const speciesCounts = new Map<number, number>();
+  let bossKills = 0;
+  let firstKillTime: number | null = null;
+  let lastKillTime: number | null = null;
+  for (const k of playerKills) {
+    const ent = replay.entities.get(k.aid);
+    if (ent?.isBoss) bossKills += 1;
+    if (ent?.view) {
+      speciesCounts.set(ent.view, (speciesCounts.get(ent.view) ?? 0) + 1);
+    }
+    if (firstKillTime === null) firstKillTime = k.time;
+    lastKillTime = k.time;
+  }
+  let topSpecies: { view: number; count: number } | null = null;
+  for (const [view, count] of speciesCounts) {
+    if (!topSpecies || count > topSpecies.count) topSpecies = { view, count };
+  }
+  const avgKillIntervalMs =
+    playerKills.length > 1 && firstKillTime !== null && lastKillTime !== null
+      ? Math.round((lastKillTime - firstKillTime) / (playerKills.length - 1))
+      : 0;
+
+  const baseLevelsGained = paramDelta(replay, SP_BASELEVEL, range);
+  const jobLevelsGained = paramDelta(replay, SP_JOBLEVEL, range);
+  const zenyDelta = paramDelta(replay, SP_ZENY, range);
+  // Count DISTINCT map names. The 0x0091 packet fires on every map-server
+  // transition (warps, instance resets, fly-wings to the same map), so a
+  // raw event count overstates the number of unique maps visited.
+  const distinctMaps = new Set<string>();
+  if (replay.sessionInfo.map) distinctMaps.add(replay.sessionInfo.map);
+  for (const m of replay.mapChanges) {
+    if (!inRange(m.time, range)) continue;
+    if (m.map) distinctMaps.add(m.map);
+  }
+  const mapsVisited = distinctMaps.size || 1;
+
+  const deaths = replay.kills.filter(
+    (k) => k.aid === playerAid && inRange(k.time, range),
+  ).length;
+
+  return {
+    totalDealt,
+    totalTaken,
+    effectiveDps,
+    hitsLanded,
+    hitsMissed,
+    crits,
+    highestHit: highest,
+    mostUsedSkillId,
+    mostUsedSkillCount,
+    kills: playerKills.length,
+    bossKills,
+    timeToFirstKillMs: firstKillTime,
+    avgKillIntervalMs,
+    topKilledSpecies: topSpecies,
+    baseLevelsGained,
+    jobLevelsGained,
+    zenyDelta,
+    mapsVisited,
+    durationMs,
+    deaths,
+  };
+}
+
+function killsByPlayer(
+  replay: Replay,
+  playerAid: number,
+  range: Range,
+): VanishEvent[] {
+  const out: VanishEvent[] = [];
+  for (const k of replay.kills) {
+    if (!inRange(k.time, range)) continue;
+    const ent = replay.entities.get(k.aid);
+    if (!ent || ent.kind !== "mob") continue;
+    let lastHit: DamageEvent | null = null;
+    for (const d of replay.damage) {
+      if (d.target !== k.aid || d.time > k.time) continue;
+      if (!isPlayerSource(replay, d.source)) continue;
+      if (!lastHit || d.time > lastHit.time) lastHit = d;
+    }
+    if (lastHit?.source === playerAid) out.push(k);
+  }
+  return out;
+}
+
+function paramDelta(replay: Replay, type: number, range: Range): number {
+  const events = replay.paramChanges.filter(
+    (p) => p.type === type && inRange(p.time, range),
+  );
+  if (events.length < 2) return 0;
+  return Number(events[events.length - 1].value - events[0].value);
+}
+
+export type ParamCurve = {
+  ts: number[];
+  values: number[];
+};
+
+export function paramCurve(replay: Replay, type: number, range: Range): ParamCurve {
+  const events = replay.paramChanges
+    .filter((p) => p.type === type && inRange(p.time, range))
+    .sort((a, b) => a.time - b.time);
+  return {
+    ts: events.map((p) => p.time),
+    values: events.map((p) => Number(p.value)),
+  };
+}
+
+export type ItemUsageRow = {
+  itemId: number;
+  name: string;
+  count: number;
+  quantity: number;
+  reasonBreakdown: Record<number, number>;
+};
+
+export function consumablesByItem(
+  replay: Replay,
+  range: Range,
+  resolveItem: (id: number) => string,
+): ItemUsageRow[] {
+  // Group by (itemId, slot) so unidentified events get one row per slot.
+  // That way the user sees "[Item desconhecido — slot 65]" instead of all
+  // unresolved deletes collapsing into one anonymous row.
+  const map = new Map<string, ItemUsageRow & { slot: number }>();
+  for (const ev of replay.itemDeletes) {
+    if (!inRange(ev.time, range)) continue;
+    const id = ev.itemId;
+    const key = id ? `id:${id}` : `slot:${ev.slot}`;
+    let row = map.get(key);
+    if (!row) {
+      row = {
+        itemId: id,
+        slot: ev.slot,
+        name: id
+          ? resolveItem(id)
+          : `[Item desconhecido — slot ${ev.slot}]`,
+        count: 0,
+        quantity: 0,
+        reasonBreakdown: {},
+      };
+      map.set(key, row);
+    }
+    row.count += 1;
+    row.quantity += ev.amount;
+    row.reasonBreakdown[ev.reason] =
+      (row.reasonBreakdown[ev.reason] ?? 0) + ev.amount;
+  }
+  return [...map.values()]
+    .sort((a, b) => b.quantity - a.quantity)
+    .map(({ slot: _slot, ...rest }) => rest);
+}
+
+export function lootByItem(
+  replay: Replay,
+  range: Range,
+  resolveItem: (id: number) => string,
+): ItemUsageRow[] {
+  const map = new Map<number, ItemUsageRow>();
+  for (const ev of replay.itemAdds) {
+    if (!inRange(ev.time, range)) continue;
+    const id = ev.itemId;
+    let row = map.get(id);
+    if (!row) {
+      row = {
+        itemId: id,
+        name: id ? resolveItem(id) : "—",
+        count: 0,
+        quantity: 0,
+        reasonBreakdown: {},
+      };
+      map.set(id, row);
+    }
+    row.count += 1;
+    row.quantity += ev.amount;
+  }
+  return [...map.values()].sort((a, b) => b.quantity - a.quantity);
+}
+
+export type KillsBucketSeries = {
+  ts: number[];
+  series: Array<{ view: number; name: string; kills: number[] }>;
+};
+
+export function killsPerMinuteByView(
+  replay: Replay,
+  range: Range,
+  bucketMs: number,
+  resolveMob: (id: number) => string,
+): KillsBucketSeries {
+  const filtered = replay.kills.filter((k) => {
+    if (!inRange(k.time, range)) return false;
+    const ent = replay.entities.get(k.aid);
+    return !!ent && ent.kind === "mob";
+  });
+  if (!filtered.length) return { ts: [], series: [] };
+
+  const start = filtered[0].time;
+  const end = filtered[filtered.length - 1].time;
+  const span = Math.max(bucketMs, end - start);
+  const bucketCount = Math.max(1, Math.ceil(span / bucketMs));
+
+  const ts: number[] = [];
+  for (let i = 0; i < bucketCount; i++) ts.push(start + i * bucketMs + bucketMs / 2);
+
+  const buckets = new Map<number, Float64Array>();
+  for (const k of filtered) {
+    const ent = replay.entities.get(k.aid)!;
+    let row = buckets.get(ent.view);
+    if (!row) {
+      row = new Float64Array(bucketCount);
+      buckets.set(ent.view, row);
+    }
+    const idx = Math.min(bucketCount - 1, Math.floor((k.time - start) / bucketMs));
+    row[idx] += 1;
+  }
+
+  const totals = new Map<number, number>();
+  for (const [view, arr] of buckets) {
+    let s = 0;
+    for (let i = 0; i < arr.length; i++) s += arr[i];
+    totals.set(view, s);
+  }
+  const sortedViews = [...buckets.keys()].sort(
+    (a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0),
+  );
+
+  const series = sortedViews.map((view) => {
+    const arr = buckets.get(view)!;
+    return {
+      view,
+      name: resolveMob(view),
+      kills: Array.from(arr),
+    };
+  });
+
+  return { ts, series };
+}
+
+export type StatusUptimeRow = {
+  statusId: number;
+  name: string;
+  uptimeMs: number;
+  appliedCount: number;
+};
+
+export function statusUptime(
+  replay: Replay,
+  range: Range,
+  resolveStatus: (id: number) => string,
+): StatusUptimeRow[] {
+  const playerAid = replay.sessionInfo.aid;
+  const sessionEnd = range?.endMs ?? replay.sessionInfo.durationMs;
+
+  const byStatus = new Map<number, StatusEvent[]>();
+  for (const e of replay.statusEvents) {
+    if (e.aid !== playerAid) continue;
+    if (!inRange(e.time, range)) continue;
+    let arr = byStatus.get(e.statusId);
+    if (!arr) {
+      arr = [];
+      byStatus.set(e.statusId, arr);
+    }
+    arr.push(e);
+  }
+
+  const out: StatusUptimeRow[] = [];
+  for (const [statusId, events] of byStatus) {
+    events.sort((a, b) => a.time - b.time);
+    let uptimeMs = 0;
+    let appliedCount = 0;
+    let onSince: number | null = null;
+    for (const e of events) {
+      if (e.isOn) {
+        if (onSince === null) onSince = e.time;
+        appliedCount += 1;
+      } else if (onSince !== null) {
+        uptimeMs += e.time - onSince;
+        onSince = null;
+      }
+    }
+    if (onSince !== null) uptimeMs += sessionEnd - onSince;
+    if (uptimeMs <= 0 && appliedCount === 0) continue;
+    out.push({ statusId, name: resolveStatus(statusId), uptimeMs, appliedCount });
+  }
+  return out.sort((a, b) => b.uptimeMs - a.uptimeMs);
+}
+
+export type BrushSeries = {
+  ts: number[];
+  damage: number[];
+  killTs: number[];
+  killViews: number[];
+  spanStart: number;
+  spanEnd: number;
+};
+
+export function brushSeries(replay: Replay, bucketMs: number): BrushSeries {
+  const empty: BrushSeries = {
+    ts: [],
+    damage: [],
+    killTs: [],
+    killViews: [],
+    spanStart: 0,
+    spanEnd: 0,
+  };
+  if (!replay.damage.length && !replay.kills.length) return empty;
+
+  const startCandidates: number[] = [];
+  const endCandidates: number[] = [];
+  if (replay.damage.length) {
+    startCandidates.push(replay.damage[0].time);
+    endCandidates.push(replay.damage[replay.damage.length - 1].time);
+  }
+  if (replay.kills.length) {
+    startCandidates.push(replay.kills[0].time);
+    endCandidates.push(replay.kills[replay.kills.length - 1].time);
+  }
+  const start = Math.min(...startCandidates);
+  const end = Math.max(...endCandidates);
+  const span = Math.max(bucketMs, end - start);
+  const bucketCount = Math.max(1, Math.ceil(span / bucketMs));
+
+  const ts: number[] = [];
+  for (let i = 0; i < bucketCount; i++) ts.push(start + i * bucketMs + bucketMs / 2);
+
+  const damage = new Array<number>(bucketCount).fill(0);
+  for (const ev of replay.damage) {
+    const idx = Math.min(bucketCount - 1, Math.floor((ev.time - start) / bucketMs));
+    damage[idx] += ev.damage;
+  }
+
+  const killTs: number[] = [];
+  const killViews: number[] = [];
+  for (const k of replay.kills) {
+    const ent = replay.entities.get(k.aid);
+    if (!ent || ent.kind !== "mob") continue;
+    killTs.push(k.time);
+    killViews.push(ent.view);
+  }
+
+  return { ts, damage, killTs, killViews, spanStart: start, spanEnd: end };
 }

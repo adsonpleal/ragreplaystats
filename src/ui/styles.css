@@ -76,6 +76,39 @@ main > section {
   border-color: var(--accent);
 }
 
+.share-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.share-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.share-btn:hover {
+  filter: brightness(1.1);
+}
+
+.share-link {
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: var(--bg);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  word-break: break-all;
+}
+
 .link {
   color: var(--accent);
   text-decoration: underline;
@@ -197,11 +230,104 @@ button {
   font-size: 1rem;
 }
 
-#dps-chart {
+#dps-chart,
+.stats-chart {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.5rem;
+}
+
+.stats-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-top: 1.25rem;
+}
+
+#explorer > div:not(:empty) {
+  margin-top: 1.25rem;
+}
+
+#explorer > div:empty {
+  margin-top: 0;
+}
+
+.stats-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.stats-cell-hint {
+  display: block !important;
+  color: var(--muted);
+  font-size: 0.7rem;
+  margin-top: 0.1rem;
+}
+
+.brush-host {
+  position: relative;
+}
+
+/* uPlot's drag-selection rect — paint it with the accent color so the
+   user actually sees the window they brushed. */
+.uplot .u-select {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-left: 1px solid var(--accent);
+  border-right: 1px solid var(--accent);
+}
+
+.brush-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.brush-actions button {
+  font: inherit;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg);
+  border-radius: 4px;
+}
+
+.status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.status-row {
+  display: grid;
+  grid-template-columns: minmax(10em, 18em) 1fr minmax(6em, max-content);
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.status-row .uptime-bar {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 4px;
+  position: relative;
+  height: 1.2em;
+  overflow: hidden;
+}
+
+.status-row .uptime-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+.status-row .uptime-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
 .bar-chart {

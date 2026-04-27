@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /replays/{replayId} {
+      // Anyone can read a shared replay.
+      allow read: if true;
+
+      // Anyone can upload, but:
+      //  - the doc must contain only `bytes`, `uploadedAt`, `fileName`
+      //  - bytes must be under 1 MiB (well under Firestore's 1,048,576-byte
+      //    document hard limit) so the rest of the doc fits the limit too
+      allow create: if request.resource.data.keys().hasOnly([
+                       'bytes', 'uploadedAt', 'fileName'
+                     ])
+                    && request.resource.data.bytes is bytes
+                    && request.resource.data.bytes.size() < 1024 * 1024
+                    && request.resource.data.fileName is string
+                    && request.resource.data.fileName.size() < 200;
+
+      // Replays are immutable and never expire by user action.
+      allow update, delete: if false;
+    }
+  }
+}

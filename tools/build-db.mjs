@@ -46,6 +46,8 @@ const WANTED_FILES = [
   "data/luafiles514/lua files/datainfo/pcjobnamegender.lua",
   "data/luafiles514/lua files/admin/pcidentity.lub",
   "data/luafiles514/lua files/admin/pcidentity.lua",
+  "data/luafiles514/lua files/stateicon/efstids.lub",
+  "data/luafiles514/lua files/stateicon/stateiconinfo.lub",
   "data/mob_avail.txt",
 ];
 
@@ -148,11 +150,13 @@ const skill = parseSkillNames(fileMap);
 const job = parseJobNames(fileMap);
 const mob = parseMobNames(fileMap);
 const items = parseItemNames(fileMap);
+const efst = parseEfstNames(fileMap);
 
 writeJson(`${outDir}/skill.json`, skill);
 writeJson(`${outDir}/job.json`, job);
 writeJson(`${outDir}/mob.json`, mob);
 if (Object.keys(items).length) writeJson(`${outDir}/item.json`, items);
+if (Object.keys(efst).length) writeJson(`${outDir}/efst.json`, efst);
 
 console.log(`\nDone:`);
 console.log(`  skill.json — ${Object.keys(skill).length} entries`);
@@ -160,6 +164,8 @@ console.log(`  job.json   — ${Object.keys(job).length} entries`);
 console.log(`  mob.json   — ${Object.keys(mob).length} entries`);
 if (Object.keys(items).length)
   console.log(`  item.json  — ${Object.keys(items).length} entries`);
+if (Object.keys(efst).length)
+  console.log(`  efst.json  — ${Object.keys(efst).length} entries`);
 
 // ---------------------------------------------------------------------------
 // CLI helpers
@@ -760,35 +766,75 @@ function humanizeJtName(jt) {
 }
 
 /**
- * Mob display names. Priority order:
- *   1. rAthena's mob_db.yml (canonical English names) — bundled at
- *      tools/external/mob_db.yml.
- *   2. JT_X identifiers from npcidentity.lub, humanised.
- *
- * Brazilian RO uses the canonical English names (Poring, Baphomet, Deep Sea
- * Sropho, etc.) — they're proper nouns. brAthena and rAthena ship the same
- * mob_db; rAthena is just upstream.
+ * Mob display names + level + hp + isBoss. Priority:
+ *   1. OpenKore `tables/monsters_table.txt` — canonical community-maintained
+ *      list (English mob names follow the bRO/iRO convention).
+ *   2. rAthena `db/re/mob_db.yml` — fills any IDs missing from OpenKore and
+ *      is the source of truth for the `isBoss` flag (OpenKore's Ai column
+ *      doesn't always carry the MVP/mini-boss bits cleanly).
+ *   3. Humanised JT_X names from `npcidentity.lub` for anything still
+ *      missing.
  */
 function parseMobNames(map) {
   const out = {};
 
-  // 1. rAthena yaml (preferred).
-  const ymlPath = resolve(process.cwd(), "tools/external/mob_db.yml");
-  if (existsSync(ymlPath)) {
-    const text = new TextDecoder("utf-8", { fatal: false }).decode(readFileSync(ymlPath));
-    Object.assign(out, parseRathenaMobYaml(text));
-  }
-
-  // 2. Humanised JT names — fill any IDs not covered by yaml.
-  const jt = parseJobAndMobIds(map);
-  for (const [name, id] of jt) {
-    if (id < 1000) continue; // mobs start at 1000 in jobtbl
-    if (!out[id]) {
-      out[id] = { name: humanizeJtName(name), isBoss: false, lvl: 0 };
+  // 1. OpenKore monsters_table.txt — tab-separated:
+  //    ID  Level  Hp  AttackRange  SkillRange  AttackDelay  AttackMotion
+  //    Size  Race  Element  ElementLevel  ChaseRange  Ai  Name
+  const okPath = resolve(process.cwd(), "tools/external/openkore_monsters.txt");
+  if (existsSync(okPath)) {
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(
+      readFileSync(okPath),
+    );
+    for (const line of text.split(/\r?\n/)) {
+      if (!line || line.startsWith("ID\t") || line.startsWith("#")) continue;
+      const cols = line.split("\t");
+      if (cols.length < 14) continue;
+      const id = Number(cols[0]);
+      if (!Number.isFinite(id)) continue;
+      const lvl = Number(cols[1]) || 0;
+      const hp = Number(cols[2]) || 0;
+      const ai = parseInt(cols[12], 16) || 0;
+      const name = (cols[13] ?? "").trim();
+      if (!name) continue;
+      out[id] = {
+        name,
+        isBoss: (ai & 0x20) !== 0, // MVP / boss bit
+        lvl,
+        hp,
+      };
     }
   }
 
-  // 3. mob_avail.txt fallback (rare in renewal).
+  // 2. rAthena yaml — preferred for the explicit boss flag.
+  const ymlPath = resolve(process.cwd(), "tools/external/mob_db.yml");
+  if (existsSync(ymlPath)) {
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(
+      readFileSync(ymlPath),
+    );
+    const rathena = parseRathenaMobYaml(text);
+    for (const id of Object.keys(rathena)) {
+      const r = rathena[id];
+      if (!out[id]) {
+        out[id] = r;
+      } else {
+        // Override isBoss / hp when rAthena has authoritative info.
+        if (r.isBoss) out[id].isBoss = true;
+        if (!out[id].hp && r.hp) out[id].hp = r.hp;
+      }
+    }
+  }
+
+  // 3. Humanised JT names — fill any IDs still uncovered.
+  const jt = parseJobAndMobIds(map);
+  for (const [name, id] of jt) {
+    if (id < 1000) continue;
+    if (!out[id]) {
+      out[id] = { name: humanizeJtName(name), isBoss: false, lvl: 0, hp: 0 };
+    }
+  }
+
+  // 4. mob_avail.txt — rare last-ditch fallback.
   const txt = asText(map.get("data/mob_avail.txt"));
   if (txt) {
     for (const line of txt.split(/\r?\n/)) {
@@ -798,7 +844,7 @@ function parseMobNames(map) {
       const id = Number(cols[0]);
       if (!Number.isFinite(id)) continue;
       const name = (cols[2] ?? "").replace(/_/g, " ");
-      if (name && !out[id]) out[id] = { name, isBoss: false, lvl: 0 };
+      if (name && !out[id]) out[id] = { name, isBoss: false, lvl: 0, hp: 0 };
     }
   }
   return out;
@@ -877,14 +923,147 @@ function parseRathenaMobYaml(text) {
   return out;
 }
 
-/** idnum2itemdisplaynametable.txt: `<itemid>#<name>#` */
+/**
+ * EFST status effects.
+ * - efstids.lub:        ("EFST_X", numeric_id) pairs after the "EFST_IDs" header.
+ * - stateiconinfo.lub:  Each EFST has a metadata block. Display name is the
+ *                       first string AFTER the EFST name that isn't a known
+ *                       config key (haveTimeLimit, posTimeLimitStr, descript,
+ *                       haveDuplicate, etc.) and isn't another EFST_*.
+ */
+function parseEfstNames(map) {
+  const out = {};
+  const idBytes = map.get("data/luafiles514/lua files/stateicon/efstids.lub");
+  const ids = new Map();
+  if (idBytes) {
+    const consts = parseLua51Constants(idBytes);
+    if (consts) {
+      for (let i = 0; i + 1 < consts.length; i++) {
+        const a = consts[i];
+        const b = consts[i + 1];
+        if (
+          a.type === "string" &&
+          /^EFST_/.test(a.value) &&
+          a.value !== "EFST_IDs" &&
+          b.type === "number"
+        ) {
+          if (!ids.has(a.value)) ids.set(a.value, b.value);
+        }
+      }
+    }
+  }
+
+  const META = new Set([
+    "EFST_IDs", "StateIconList", "haveTimeLimit", "posTimeLimitStr",
+    "descript", "haveDuplicate", "%s", "%d", "%c", "haveTimeLimit2",
+  ]);
+
+  const infoBytes = map.get(
+    "data/luafiles514/lua files/stateicon/stateiconinfo.lub",
+  );
+  if (infoBytes) {
+    const consts = parseLua51Constants(infoBytes);
+    if (consts) {
+      for (let i = 0; i < consts.length; i++) {
+        const c = consts[i];
+        if (c.type !== "string" || !c.value.startsWith("EFST_")) continue;
+        if (c.value === "EFST_IDs") continue;
+        const id = ids.get(c.value);
+        if (id == null) continue;
+        for (let j = i + 1; j < consts.length; j++) {
+          const cc = consts[j];
+          if (cc.type !== "string") continue;
+          if (cc.value.startsWith("EFST_")) break;
+          if (META.has(cc.value)) continue;
+          if (cc.value.length === 0) continue;
+          if (!out[id]) out[id] = { name: cc.value };
+          break;
+        }
+      }
+    }
+  }
+
+  // Fall back to humanised EFST names for ids without a display string.
+  for (const [name, id] of ids) {
+    if (!out[id]) {
+      out[id] = {
+        name: name
+          .replace(/^EFST_/, "")
+          .toLowerCase()
+          .split("_")
+          .filter(Boolean)
+          .map((s) => s[0].toUpperCase() + s.slice(1))
+          .join(" "),
+      };
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Item display names. Priority (first match wins, later sources fill gaps):
+ *   1. GRF `data/idnum2itemdisplaynametable.txt` (definitive server data)
+ *   2. OpenKore ROla `tables/ROla/items.txt` (community pt-BR for Latam,
+ *      covers most server-only event/custom items)
+ *   3. rAthena `db/re/item_db_*.yml` (canonical English fallback)
+ */
 function parseItemNames(map) {
   const out = {};
+
+  // 1. GRF (pt-BR from the server's own data file).
   const txt = asText(map.get("data/idnum2itemdisplaynametable.txt"));
-  if (!txt) return out;
-  for (const line of txt.split(/\r?\n/)) {
-    const m = line.match(/^(\d+)#([^#]*)#?/);
-    if (m) out[m[1]] = m[2].trim();
+  if (txt) {
+    for (const line of txt.split(/\r?\n/)) {
+      const m = line.match(/^(\d+)#([^#]*)#?/);
+      if (m && !out[m[1]]) out[m[1]] = m[2].trim();
+    }
   }
+
+  // 2. OpenKore ROla — community-maintained pt-BR table that covers many
+  //    Latam-server-only items missing from the client GRF.
+  const rolaPath = resolve(
+    process.cwd(),
+    "tools/external/openkore_items_rola.txt",
+  );
+  if (existsSync(rolaPath)) {
+    const rola = new TextDecoder("utf-8", { fatal: false }).decode(
+      readFileSync(rolaPath),
+    );
+    for (const line of rola.split(/\r?\n/)) {
+      const m = line.match(/^(\d+)#([^#]*)#?/);
+      if (m && !out[m[1]]) out[m[1]] = m[2].trim();
+    }
+  }
+
+  // 3. rAthena yamls (canonical English).
+  for (const f of ["item_db_usable.yml", "item_db_etc.yml", "item_db_equip.yml"]) {
+    const path = resolve(process.cwd(), `tools/external/${f}`);
+    if (!existsSync(path)) continue;
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(
+      readFileSync(path),
+    );
+    parseRathenaItemYaml(text, out);
+  }
+
   return out;
+}
+
+function parseRathenaItemYaml(text, out) {
+  let curId = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    const idMatch = raw.match(/^\s*-\s+Id:\s*(\d+)\s*$/);
+    if (idMatch) {
+      curId = Number(idMatch[1]);
+      continue;
+    }
+    if (!curId) continue;
+    const nameMatch = raw.match(/^\s+Name:\s*(.+)$/);
+    if (!nameMatch) continue;
+    let value = nameMatch[1].trim();
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+    // Don't override a name we already have from the GRF (pt-BR wins).
+    if (!out[curId]) out[curId] = value.replace(/\s+/g, "_");
+    curId = 0;
+  }
 }

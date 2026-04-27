@@ -31,6 +31,8 @@ export type DamageEvent = {
   hitType: HitType;
   /** "auto" (0x02e1) or "skill" (0x01de) */
   source_packet: "auto" | "skill";
+  /** Raw `e_damage_type` byte from the packet — for debugging. */
+  rawAction: number;
 };
 
 export type SkillCast = {
@@ -68,6 +70,46 @@ export type MapChange = {
   map: string;
 };
 
+export type ItemDeleteEvent = {
+  time: number;
+  /** Inventory slot. */
+  slot: number;
+  amount: number;
+  /** Server reason byte (0=normal/dropped, 6=consumed, etc.). Mapped to a label by the UI. */
+  reason: number;
+  /** Resolved at decode time from the running inventory map; 0 if unknown. */
+  itemId: number;
+};
+
+export type ItemAddEvent = {
+  time: number;
+  slot: number;
+  itemId: number;
+  amount: number;
+  refine: number;
+};
+
+export type ParamChangeEvent = {
+  time: number;
+  /** Parameter type — 1=base exp, 2=job exp, 5=hp, 7=sp, 11=base lvl, 12=job lvl, 20=zeny, 22=next base exp, 23=next job exp. */
+  type: number;
+  /** Always stored as bigint so 64-bit values from 0x0b1b survive without precision loss. */
+  value: bigint;
+};
+
+export type StatusEvent = {
+  time: number;
+  statusId: number;
+  /** Entity the status was applied to. */
+  aid: number;
+  /** True when the buff/debuff starts; false when it ends. */
+  isOn: boolean;
+  /** Total duration in ms (0x043f / 0x0983 only; 0 otherwise). */
+  totalMs: number;
+  /** Remaining duration in ms (0x043f / 0x0983 only; 0 otherwise). */
+  leftMs: number;
+};
+
 export type SessionInfo = {
   player: string;
   map: string;
@@ -85,6 +127,11 @@ export type Replay = {
   skillUses: SkillUse[];
   mobHp: MobHpUpdate[];
   mapChanges: MapChange[];
+  initialInventory: Map<number, { itemId: number; qty: number }>;
+  itemDeletes: ItemDeleteEvent[];
+  itemAdds: ItemAddEvent[];
+  paramChanges: ParamChangeEvent[];
+  statusEvents: StatusEvent[];
   totals: {
     packetCount: number;
     handledPackets: number;

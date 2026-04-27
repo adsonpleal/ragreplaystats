@@ -106,9 +106,24 @@ function hexAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+type Tracked = { chart: uPlot; resize: () => void };
+const trackedByHost = new WeakMap<HTMLElement, Tracked>();
+
 function setupResize(chart: uPlot, host: HTMLElement) {
+  // Reset any previous resize listener attached to this host so we don't
+  // accumulate them across re-renders (memory leak / eventual page crash).
+  const prev = trackedByHost.get(host);
+  if (prev) {
+    window.removeEventListener("resize", prev.resize);
+    try {
+      prev.chart.destroy();
+    } catch {
+      /* already destroyed */
+    }
+  }
   const handler = () => {
     chart.setSize({ width: host.clientWidth, height: chart.height });
   };
   window.addEventListener("resize", handler, { passive: true });
+  trackedByHost.set(host, { chart, resize: handler });
 }

@@ -2,7 +2,7 @@
 
 **Live: <https://adsonpleal.github.io/ragreplaystats/>**
 
-Static, **fully client-side** website that parses Ragnarok Online `.rrf` replay files and shows damage / skill / kill statistics. Drop a replay in the browser; nothing is uploaded.
+Static website that parses Ragnarok Online `.rrf` replay files and shows damage / skill / kill statistics. All decoding and aggregation happen **in the browser** — the file is also stored in Firebase Firestore so a shareable link with a 10-char id is produced. Files >1 MiB stay local and aren't uploaded.
 
 UI is in **Brazilian Portuguese**. The decoder is server-agnostic but the bundled reference data (skill / mob / job names) was extracted from a brAthena-style Latam client (Event Horizon GRF) and rAthena's renewal `mob_db.yml`.
 
@@ -10,7 +10,8 @@ UI is in **Brazilian Portuguese**. The decoder is server-agnostic but the bundle
 
 - Vanilla TypeScript + Vite, single bundled SPA.
 - `uplot` for time-series charts.
-- A 230-line custom GRF reader + Lua 5.1 bytecode constant-pool walker (`tools/build-db.mjs`) that produces `public/db/{skill,mob,job,item}.json` from a client GRF and rAthena's mob db.
+- A 230-line custom GRF reader + Lua 5.1 bytecode constant-pool walker (`tools/build-db.mjs`) that produces `public/db/{skill,mob,job,item,efst}.json` from a client GRF and rAthena's mob db.
+- Firebase Firestore (free Spark tier) holds the uploaded `.rrf` bytes (≤1 MiB / doc). Lazy-loaded — the SDK isn't fetched unless the user shares or opens a shared link.
 
 ## Run
 

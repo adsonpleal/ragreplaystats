@@ -40,6 +40,11 @@ export class ByteReader {
     this.position += 4;
     return v;
   }
+  i64(): bigint {
+    const v = this.view.getBigInt64(this.position, true);
+    this.position += 8;
+    return v;
+  }
 
   bytes(n: number): Uint8Array {
     const out = this.data.subarray(this.position, this.position + n);

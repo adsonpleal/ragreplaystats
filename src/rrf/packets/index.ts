@@ -16,12 +16,28 @@ import {
   decodeSkillNoDamage09cb,
 } from "./skill.js";
 import { decodeMapChange, decodeMobHp, decodeVanish } from "./misc.js";
+import {
+  decodeItemAdd,
+  decodeItemDelete,
+  decodeItemUseAck,
+  type ItemUseAckPacket,
+} from "./inventory.js";
+import { decodeParamChange32, decodeParamChange64 } from "./stats.js";
+import {
+  decodeStatus0196,
+  decodeStatus043f,
+  decodeStatus0983,
+} from "./status.js";
 import type {
   DamageEvent,
+  ItemAddEvent,
+  ItemDeleteEvent,
   MapChange,
   MobHpUpdate,
+  ParamChangeEvent,
   SkillCast,
   SkillUse,
+  StatusEvent,
   VanishEvent,
 } from "../types.js";
 
@@ -39,6 +55,14 @@ export const PacketIds = {
   SKILL_NODMG_NEW: 0x09cb,
   SKILL_CAST: 0x013e,
   MAP_CHANGE: 0x0091,
+  ITEM_DELETE: 0x07fa,
+  ITEM_ADD: 0x0a37,
+  ITEM_USE_ACK: 0x01c8,
+  PARAM_CHANGE_32: 0x00b0,
+  PARAM_CHANGE_64: 0x0b1b,
+  STATUS_0196: 0x0196,
+  STATUS_043F: 0x043f,
+  STATUS_0983: 0x0983,
 } as const;
 
 export type DecodedPacket =
@@ -48,12 +72,13 @@ export type DecodedPacket =
   | { type: "damage"; data: DamageEvent }
   | { type: "skillUse"; data: SkillUse }
   | { type: "skillCast"; data: SkillCast }
-  | { type: "mapChange"; data: MapChange };
+  | { type: "mapChange"; data: MapChange }
+  | { type: "itemDelete"; data: ItemDeleteEvent }
+  | { type: "itemAdd"; data: ItemAddEvent }
+  | { type: "itemUseAck"; data: ItemUseAckPacket }
+  | { type: "paramChange"; data: ParamChangeEvent }
+  | { type: "status"; data: StatusEvent };
 
-/**
- * Decode a packet whose 2-byte header has already been consumed externally?
- * No — actually consumers pass the full chunk bytes here; we re-read the header to dispatch.
- */
 export function decodePacket(
   raw: Uint8Array,
   time: number,
@@ -70,8 +95,6 @@ export function decodePacket(
         return { type: "entity", data: decodeIdle(reader) };
       case PacketIds.WALKING:
       case PacketIds.NEW_ENTRY:
-        // 0x09fd is the renewal "new entry" / walking spawn — same layout
-        // as 0x0915 (moveStartTime + 6-byte MoveData rather than PosDir[3]).
         return { type: "entity", data: decodeWalking(reader) };
       case PacketIds.AUTO_ATTACK_LEGACY:
         return { type: "damage", data: decodeAutoAttackLegacy(reader, time) };
@@ -91,11 +114,26 @@ export function decodePacket(
         return { type: "skillCast", data: decodeSkillCast(reader, time) };
       case PacketIds.MAP_CHANGE:
         return { type: "mapChange", data: decodeMapChange(reader, time) };
+      case PacketIds.ITEM_DELETE:
+        return { type: "itemDelete", data: decodeItemDelete(reader, time) };
+      case PacketIds.ITEM_ADD:
+        return { type: "itemAdd", data: decodeItemAdd(reader, time) };
+      case PacketIds.ITEM_USE_ACK:
+        return { type: "itemUseAck", data: decodeItemUseAck(reader, time) };
+      case PacketIds.PARAM_CHANGE_32:
+        return { type: "paramChange", data: decodeParamChange32(reader, time) };
+      case PacketIds.PARAM_CHANGE_64:
+        return { type: "paramChange", data: decodeParamChange64(reader, time) };
+      case PacketIds.STATUS_0196:
+        return { type: "status", data: decodeStatus0196(reader, time) };
+      case PacketIds.STATUS_043F:
+        return { type: "status", data: decodeStatus043f(reader, time) };
+      case PacketIds.STATUS_0983:
+        return { type: "status", data: decodeStatus0983(reader, time) };
       default:
         return null;
     }
   } catch {
-    // Truncated / malformed packet — skip silently.
     return null;
   }
 }

@@ -18,6 +18,7 @@
         <p id="drop-prompt"></p>
         <input id="file-input" type="file" accept=".rrf" hidden />
         <p class="muted small" id="drop-status"></p>
+        <div id="share-controls" class="share-controls" hidden></div>
       </section>
 
       <section id="summary" hidden></section>
@@ -26,17 +27,20 @@
         <div class="mode-toggle" role="tablist">
           <button type="button" class="mode-btn active" data-mode="byPlayer" role="tab"></button>
           <button type="button" class="mode-btn" data-mode="byMonster" role="tab"></button>
+          <button type="button" class="mode-btn" data-mode="stats" role="tab"></button>
         </div>
 
         <nav id="breadcrumb" class="breadcrumb" hidden></nav>
 
         <div id="primary-pane"></div>
+        <div id="brush-pane"></div>
         <div id="secondary-pane"></div>
         <div id="bar-pane"></div>
         <div id="chart-pane"></div>
+        <div id="kills-pane"></div>
+        <div id="status-pane"></div>
         <div id="skill-pane"></div>
         <div id="skill-uses-pane"></div>
-        <div id="kills-pane"></div>
       </section>
     </main>
 

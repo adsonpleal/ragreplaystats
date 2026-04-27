@@ -1,7 +1,7 @@
 export const t = {
   // Header
   appTagline:
-    "Solte um replay .rrf do Ragnarok Online abaixo — tudo é processado no seu navegador.",
+    "Solte um replay .rrf do Ragnarok Online abaixo. A análise roda no seu navegador; o arquivo é guardado em nuvem para você compartilhar o link.",
   dropPrompt: "Solte um arquivo <code>.rrf</code> aqui, ou",
   browse: "escolha um",
 
@@ -10,10 +10,19 @@ export const t = {
   decoded: (handled: number, total: number, ms: string, file: string) =>
     `${handled.toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")} pacotes lidos em ${ms} ms — ${file}`,
   parseError: (msg: string) => `Falha ao processar: ${msg}`,
+  uploading: "Enviando para a nuvem…",
+  uploadError: (msg: string) => `Falha ao enviar: ${msg}`,
+  fetching: (id: string) => `Buscando replay compartilhado ${id}…`,
+  fetchError: (msg: string) => `Falha ao carregar replay: ${msg}`,
+  notFound: (id: string) => `Replay ${id} não encontrado.`,
+  copyLink: "Copiar link",
+  linkCopied: "Link copiado!",
+  shareReady: (url: string) => `Pronto para compartilhar: ${url}`,
 
   // Mode toggle
   modeByPlayer: "Por jogador",
   modeByMonster: "Por monstro",
+  modeStats: "Estatísticas",
 
   // Breadcrumb
   crumbPlayer: "Jogador",
@@ -106,6 +115,57 @@ export const t = {
   // Fallbacks for unresolved IDs
   skillFallback: (id: number) => `skill#${id}`,
   mobFallback: (id: number) => `mob#${id}`,
+  itemFallback: (id: number) => `item#${id}`,
+  statusFallback: (id: number) => `efst#${id}`,
+
+  // Stats tab
+  statsResumoTitle: "Resumo",
+  statsBrushHint:
+    "Arraste no gráfico para filtrar todas as estatísticas a uma janela específica. Pontos coloridos = abates.",
+  statsBrushClear: "Limpar seleção",
+  statsRangeLabel: (start: string, end: string) =>
+    `Janela: ${start} – ${end}`,
+  statsConsumablesTitle: "Itens consumidos",
+  statsConsumablesEmpty: "Nenhum item consumido nesta janela.",
+  statsLootTitle: "Itens recebidos",
+  statsLootEmpty: "Nenhum item recebido nesta janela.",
+  statsHpSpChartTitle: "HP / SP ao longo do tempo",
+  statsKillsChartTitle: "Abates por tipo de monstro",
+  statsBuffsTitle: "Tempo com buffs / debuffs",
+  statsDeleteReason: (reason: number) => {
+    switch (reason) {
+      case 0: return "Uso normal";
+      case 1: return "Por habilidade";
+      case 2: return "Refino falhou";
+      case 3: return "Material consumido";
+      case 4: return "Ação especial";
+      case 5: return "Vendido";
+      case 6: return "Movido p/ depósito";
+      case 7: return "Movido p/ carrinho";
+      default: return `Razão ${reason}`;
+    }
+  },
+
+  // Resumo cells
+  cellTotalDealt: "Dano causado",
+  cellTotalTaken: "Dano recebido",
+  cellEffectiveDps: "DPS em combate",
+  cellHits: "Acertos",
+  cellMisses: "Erros",
+  cellCrits: "Críticos",
+  cellHighestHit: "Maior dano",
+  cellMostUsedSkill: "Hab. mais usada",
+  cellKills: "Abates",
+  cellBossKills: "Chefes abatidos",
+  cellTtfk: "Tempo até 1º abate",
+  cellAvgKillInterval: "Tempo entre abates",
+  cellTopSpecies: "Mais abatido",
+  cellLevelsGained: "Níveis ganhos",
+  cellJobLevelsGained: "Níveis de classe",
+  cellZenyDelta: "Zeny ganho",
+  cellMapsVisited: "Mapas visitados",
+  cellDeaths: "Mortes",
+  cellSessionDuration: "Duração",
 };
 
 export const locale = "pt-BR";

@@ -2,22 +2,33 @@ import { ByteReader } from "../reader.js";
 import type { DamageEvent, HitType } from "../types.js";
 
 /**
- * Map the action / hit-type byte to a high-level category.
- * Confirmed against PacketDecoder.cs (case 0x8 / 0x6 / 0x0 / 0x5 / 0xa blocks).
+ * Classify the damage event from rAthena's `e_damage_type` byte. Reference:
+ * `src/map/clif.cpp` `enum e_damage_type` — values 0..12.
+ *
+ *   0  DMG_NORMAL              normal hit
+ *   5  DMG_SPLASH              splash / multi-target hit
+ *   6  DMG_SINGLE              single-target skill hit
+ *   7  DMG_REPEAT              repeated hit (chained)
+ *   8  DMG_MULTI_HIT           multi-hit (e.g., Double Attack)
+ *   9  DMG_MULTI_HIT_ENDURE    multi-hit while target endures
+ *   10 DMG_CRITICAL            critical
+ *   11 DMG_LUCY_DODGE          attacker rolled a miss / target lucky-dodged
+ *   12 DMG_TOUCH               touch skill
+ *
+ * Damage-event "miss" classification combines two signals:
+ *  - DMG_LUCY_DODGE (11), OR
+ *  - non-skill action with `damage = 0` (target dodged a normal swing).
+ * The caller passes `damage` so we can do the second check.
  */
-export function classifyHit(action: number): HitType {
-  switch (action) {
-    case 0x06:
-      return "miss";
-    case 0x08:
-      return "lucky";
-    case 0x05:
-      return "double";
-    case 0x0a:
-      return "critical";
-    default:
-      return "normal";
+export function classifyHit(action: number, damage: number): HitType {
+  if (action === 11) return "miss"; // explicit lucky dodge
+  if (action === 10) return "critical";
+  if (action === 8 || action === 9) return "double";
+  // damage=0 on a normal-style action means the swing missed.
+  if (damage <= 0 && (action === 0 || action === 5 || action === 6 || action === 7)) {
+    return "miss";
   }
+  return "normal";
 }
 
 /**
@@ -38,7 +49,7 @@ export function decodeAutoAttack(reader: ByteReader, time: number): DamageEvent 
   const action = reader.u8();
   // leftDamage follows — ignored; it's part of total damage already in some clients.
 
-  const hitType = classifyHit(action);
+  const hitType = classifyHit(action, damage);
   return {
     time,
     source,
@@ -49,6 +60,7 @@ export function decodeAutoAttack(reader: ByteReader, time: number): DamageEvent 
     hits: Math.max(1, hits),
     hitType,
     source_packet: "auto",
+    rawAction: action,
   };
 }
 
@@ -73,7 +85,7 @@ export function decodeAutoAttackLegacy(
   const action = reader.u8();
   // damage2 i16 follows — ignored.
 
-  const hitType = classifyHit(action);
+  const hitType = classifyHit(action, damage);
   return {
     time,
     source,
@@ -84,6 +96,7 @@ export function decodeAutoAttackLegacy(
     hits: Math.max(1, hits),
     hitType,
     source_packet: "auto",
+    rawAction: action,
   };
 }
 
@@ -106,7 +119,7 @@ export function decodeSkillDamage(reader: ByteReader, time: number): DamageEvent
   const hits = reader.i16();
   const action = reader.u8();
 
-  const hitType = classifyHit(action);
+  const hitType = classifyHit(action, damage);
   return {
     time,
     source,
@@ -117,5 +130,6 @@ export function decodeSkillDamage(reader: ByteReader, time: number): DamageEvent
     hits: Math.max(1, hits),
     hitType,
     source_packet: "skill",
+    rawAction: action,
   };
 }

@@ -33,6 +33,46 @@ const mod = await import(dataUrl);
 
 const replay = mod.decodeReplay(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
 
+if (process.argv.includes("--raw")) {
+  const id = Number(process.argv[process.argv.indexOf("--raw") + 1]);
+  console.log(`Looking for packet 0x${id.toString(16)}...`);
+  const containers = mod.inspectContainers(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  const ps = containers.find((c) => c.type === 1);
+  let count = 0;
+  if (ps) {
+    for (const ch of ps.chunkPreview) {
+      const bytes = ch.first16.split(" ").map((h) => parseInt(h, 16));
+      if (bytes.length < 2) continue;
+      const pid = bytes[0] | (bytes[1] << 8);
+      if (pid !== id) continue;
+      count++;
+      if (count > 50) break;
+      console.log(`  len=${bytes.length} bytes=${ch.first16}`);
+    }
+  }
+  console.log(`Total packets with id 0x${id.toString(16)}: ${count}`);
+  process.exit(0);
+}
+if (process.argv.includes("--stats")) {
+  console.log("Initial inventory size:", replay.initialInventory.size);
+  const ii = [...replay.initialInventory.entries()].sort((a, b) => a[0] - b[0]);
+  for (const [slot, v] of ii) console.log("  slot", slot, "=>", v);
+  console.log("\nitemDeletes:", replay.itemDeletes.length);
+  for (const d of replay.itemDeletes.slice(0, 15)) console.log(" ", d);
+  console.log("\nitemAdds:", replay.itemAdds.length);
+  for (const a of replay.itemAdds.slice(0, 5)) console.log(" ", a);
+  console.log("\nparamChanges:", replay.paramChanges.length);
+  const types = new Map();
+  for (const p of replay.paramChanges) types.set(p.type, (types.get(p.type) ?? 0) + 1);
+  console.log("  by type:", [...types.entries()].sort((a, b) => a[0] - b[0]).map(([t, c]) => `${t}:${c}`).join(" "));
+  console.log("\nstatusEvents:", replay.statusEvents.length);
+  const buffs = new Map();
+  for (const s of replay.statusEvents) {
+    if (s.aid === replay.sessionInfo.aid) buffs.set(s.statusId, (buffs.get(s.statusId) ?? 0) + 1);
+  }
+  console.log("  on local player by statusId:", [...buffs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id, c]) => `${id}:${c}`).join(" "));
+  process.exit(0);
+}
 if (process.argv.includes("--skill-events")) {
   const skillId = Number(process.argv[process.argv.indexOf("--skill-events") + 1]);
   console.log(`Looking for skill id=${skillId}`);
@@ -53,6 +93,135 @@ if (process.argv.includes("--skill-events")) {
 if (process.argv.includes("--entities-detail")) {
   for (const e of [...replay.entities.values()].sort((a,b) => a.aid - b.aid)) {
     console.log(`AID=${e.aid} kind=${e.kind} name="${e.name}" view=${e.view} lvl=${e.level} maxHP=${e.maxHp} HP=${e.lastHp} boss=${e.isBoss}`);
+  }
+  process.exit(0);
+}
+if (process.argv.includes("--items-raw")) {
+  // Dump every chunk in the Items container so we can spot non-172 records.
+  const containers = mod.inspectContainers(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  const items = containers.find(c => c.type === 8);
+  if (!items) {
+    console.log("No Items container.");
+    process.exit(0);
+  }
+  console.log(`Items container: ${items.chunkPreview.length} chunks, declaredLength=${items.declaredLength}`);
+  for (const ch of items.chunkPreview) {
+    const len = ch.length;
+    console.log(`  chunk id=${ch.id} length=${len} ${len % 172 === 0 ? "(divides 172)" : `(remainder ${len % 172} of 172)`}`);
+  }
+  process.exit(0);
+}
+if (process.argv.includes("--after-kill")) {
+  const aid = replay.sessionInfo.aid;
+  const playerKills = [];
+  for (const k of replay.kills) {
+    let lastSrc = 0, lastTime = -1;
+    for (const d of replay.damage) {
+      if (d.target !== k.aid || d.time > k.time) continue;
+      if (d.time > lastTime) { lastTime = d.time; lastSrc = d.source; }
+    }
+    if (lastSrc === aid) playerKills.push(k);
+  }
+  const stream = mod.inspectPacketStream(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  console.log(`Player kills: ${playerKills.length}, total stream packets: ${stream.length}`);
+  for (const k of playerKills.slice(0, 5)) {
+    console.log(`\n=== kill at ${k.time}ms (mob aid=${k.aid}) ===`);
+    const window = stream.filter(p => p.time >= k.time && p.time <= k.time + 800);
+    for (const p of window) {
+      const idHex = "0x" + p.id.toString(16).padStart(4, "0");
+      console.log(`  +${(p.time - k.time).toString().padStart(4)}ms  ${idHex}  len=${p.len}  ${p.hex.slice(0, 80)}${p.hex.length > 80 ? "..." : ""}`);
+    }
+  }
+  process.exit(0);
+}
+if (process.argv.includes("--player-dmg")) {
+  const aid = replay.sessionInfo.aid;
+  const breakdown = new Map();
+  const actionByType = new Map();
+  for (const ev of replay.damage) {
+    if (ev.source !== aid) continue;
+    breakdown.set(ev.hitType, (breakdown.get(ev.hitType) ?? 0) + 1);
+    const k = `${ev.hitType}@action=${ev.rawAction}`;
+    actionByType.set(k, (actionByType.get(k) ?? 0) + 1);
+  }
+  console.log("Player damage hit-type breakdown:");
+  for (const [t, c] of breakdown) console.log(`  ${t}: ${c}`);
+  console.log("\nBy (hitType, rawAction):");
+  for (const [k, c] of actionByType) console.log(`  ${k}: ${c}`);
+  console.log("\nSample misses:");
+  let n = 0;
+  for (const ev of replay.damage) {
+    if (ev.source !== aid || ev.hitType !== "miss") continue;
+    console.log(`  t=${ev.time} target=${ev.target} skill=${ev.skillId} dmg=${ev.damage} action=${ev.rawAction} hits=${ev.hits}`);
+    if (++n >= 5) break;
+  }
+  console.log("\nSample crits:");
+  n = 0;
+  for (const ev of replay.damage) {
+    if (ev.source !== aid || ev.hitType !== "critical") continue;
+    console.log("  ", ev);
+    if (++n >= 5) break;
+  }
+  console.log("\nSample normal:");
+  n = 0;
+  for (const ev of replay.damage) {
+    if (ev.source !== aid || ev.hitType !== "normal") continue;
+    console.log("  ", ev);
+    if (++n >= 5) break;
+  }
+  process.exit(0);
+}
+if (process.argv.includes("--items-deep")) {
+  // Walk every record in every chunk of the Items container, using
+  // recSize=172, and print pos/qty/nameid for each — including ones the
+  // current parser skips (qty<=0 or pos<0).
+  const containers = mod.inspectContainers(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  const items = containers.find(c => c.type === 8);
+  if (!items) {
+    console.log("No Items container.");
+    process.exit(0);
+  }
+  for (const ch of items.chunkPreview) {
+    if (ch.length < 172) continue;
+    const bytes = ch.first16.split(" ").map(h => parseInt(h, 16));
+    console.log(`\n--- chunk id=${ch.id} length=${ch.length} ---`);
+    for (let p = 0; p + 172 <= bytes.length; p += 172) {
+      const rawPos = (bytes[p + 22] | (bytes[p + 23] << 8));
+      const pos = rawPos - 2;
+      const qty = (bytes[p + 52] | (bytes[p + 53] << 8));
+      const nameid = bytes[p + 104] | (bytes[p + 105] << 8) | (bytes[p + 106] << 16) | (bytes[p + 107] << 24);
+      console.log(`  rec ${(p/172)|0}: rawPos=${rawPos} pos=${pos} qty=${qty} nameid=${nameid}`);
+    }
+  }
+  process.exit(0);
+}
+if (process.argv.includes("--items-search")) {
+  // Search all chunks of the Items container for slots > 50 (anything that
+  // could be slot 65). Tries 172, 168, and a couple of nearby record sizes.
+  const containers = mod.inspectContainers(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  const items = containers.find(c => c.type === 8);
+  if (!items) {
+    console.log("No Items container.");
+    process.exit(0);
+  }
+  for (const ch of items.chunkPreview) {
+    const bytes = ch.first16.split(" ").map(h => parseInt(h, 16));
+    console.log(`\n--- chunk id=${ch.id} length=${ch.length} ---`);
+    // Look at first 200 bytes of the chunk: candidate "pos" fields are at offsets
+    // 22, 22, 22 + 172, 22 + 168, 22 + 176, ...
+    for (const recSize of [172, 168, 176, 180]) {
+      let count = 0;
+      const slots = [];
+      for (let p = 0; p + 100 <= bytes.length; p += recSize) {
+        const pos = (bytes[p + 22] | (bytes[p + 23] << 8)) - 2;
+        if (pos >= 0 && pos < 200) slots.push(pos);
+        count++;
+        if (count > 80) break;
+      }
+      if (slots.length) {
+        console.log(`  recSize=${recSize}: slots=${slots.slice(0, 30).join(",")}${slots.length > 30 ? "..." : ""}`);
+      }
+    }
   }
   process.exit(0);
 }
