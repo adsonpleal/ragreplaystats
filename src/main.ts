@@ -1385,17 +1385,18 @@ function lastDamageBeforeFromPlayer(
 function renderMobHpCurve(replay: Replay, mobAid: number) {
   const host = $("#hp-curve-pane");
   const ent = replay.entities.get(mobAid);
-  // Resolve maxHp fallback once and feed it into the aggregator so the
-  // firstSeenMs anchor exists even when the server hides HP for the boss.
-  const fallbackMax = ent ? effectiveMaxHp(ent.maxHp, ent.view) : 0;
+  // Only show the curve if the server actually reported HP at some point
+  // (either the spawn packet carried a real maxHp, or there is at least one
+  // mobHp snapshot). Otherwise the chart degenerates to a straight line
+  // from "full HP" to 0 at vanish time — purely decorative and misleading,
+  // even if Divine Pride happens to know a max HP for the species.
   const hasServerSamples = replay.mobHp.some((m) => m.aid === mobAid);
-  // No way to plot anything meaningful — no max HP from any source AND no
-  // server-side HP snapshots. Drop the card entirely instead of showing a
-  // chart with a lone "hp = 0" dot at vanish time.
-  if (fallbackMax <= 0 && !hasServerSamples) {
+  const serverMaxHp = ent && ent.maxHp > 0 ? ent.maxHp : 0;
+  if (!hasServerSamples && serverMaxHp <= 0) {
     host.innerHTML = "";
     return;
   }
+  const fallbackMax = ent ? effectiveMaxHp(ent.maxHp, ent.view) : 0;
   const series = mobHpCurve(replay, mobAid, fallbackMax);
   if (!series.ts.length) {
     host.innerHTML = "";
