@@ -1559,7 +1559,7 @@ function renderMobSkills(
       {
         key: "skillId",
         label: t.colId,
-        format: (r) => String(r.skillId),
+        format: (r) => (r.skillId ? String(r.skillId) : t.none),
         href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
       },
       { key: "name", label: t.colSkill },
@@ -1617,7 +1617,7 @@ function renderSkillTable(host: HTMLElement, events: DamageEvent[], title: strin
       {
         key: "skillId",
         label: t.colId,
-        format: (r) => String(r.skillId),
+        format: (r) => (r.skillId ? String(r.skillId) : t.none),
         href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
       },
       { key: "name", label: t.colSkill },
@@ -1658,7 +1658,7 @@ function renderSkillByPlayerTable(
       {
         key: "skillId",
         label: t.colId,
-        format: (r) => String(r.skillId),
+        format: (r) => (r.skillId ? String(r.skillId) : t.none),
         href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
       },
       { key: "name", label: t.colSkill },
