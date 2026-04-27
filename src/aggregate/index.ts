@@ -1051,6 +1051,15 @@ export type ItemUsageRow = {
   reasonBreakdown: Record<number, number>;
 };
 
+/**
+ * Reasons that count as "the player consumed this item": potions / scrolls
+ * (1), arrows or other skill-driven uses (2), consumed in production (4),
+ * consumed in special action (5). Reason 0 is dropped/sold/traded; 3 is
+ * refine-fail destruction; 6/7 are storage/cart moves. None of those mean
+ * the item was used.
+ */
+const CONSUME_REASONS = new Set([1, 2, 4, 5]);
+
 export function consumablesByItem(
   replay: Replay,
   range: Range,
@@ -1062,6 +1071,7 @@ export function consumablesByItem(
   const map = new Map<string, ItemUsageRow & { slot: number }>();
   for (const ev of replay.itemDeletes) {
     if (!inRange(ev.time, range)) continue;
+    if (!CONSUME_REASONS.has(ev.reason)) continue;
     const id = ev.itemId;
     const key = id ? `id:${id}` : `slot:${ev.slot}`;
     let row = map.get(key);
