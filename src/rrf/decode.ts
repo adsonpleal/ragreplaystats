@@ -248,9 +248,13 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         const inv = inventory.get(ev.slot);
         if (inv) {
           ev.itemId = inv.itemId;
-          const remaining = inv.qty - ev.amount;
-          if (remaining <= 0) inventory.delete(ev.slot);
-          else inv.qty = remaining;
+          // Decrement the running count but DON'T drop the slot from the
+          // map at qty=0. The equipped-items chunks (4601-4606) report
+          // qty=1 even for ammo-style stacks whose real count lives in the
+          // main-bag chunk; if we delete on the first decrement we lose
+          // the itemId for the next 13 ammo consumes. The slot only
+          // genuinely changes identity when 0x0a37 lands a new itemId.
+          inv.qty = Math.max(0, inv.qty - ev.amount);
         }
         itemDeletes.push(ev);
         break;
