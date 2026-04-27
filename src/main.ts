@@ -109,6 +109,7 @@ function init() {
   paintStaticStrings();
   setupDropZone();
   setupModeToggle();
+  setupHomeLink();
   void loadReferenceDb().then((db) => {
     state.db = db;
     if (state.replay) rerender();
@@ -119,6 +120,37 @@ function init() {
   } else {
     void loadRecentReplays();
   }
+}
+
+function setupHomeLink() {
+  const link = document.querySelector<HTMLAnchorElement>("#home-link");
+  if (!link) return;
+  link.addEventListener("click", (e) => {
+    // Soft navigation: clear ?r=, drop the current replay, re-show the
+    // recent-uploads list — no full reload.
+    e.preventDefault();
+    if (!state.replay && !new URLSearchParams(location.search).get("r")) return;
+    const url = new URL(location.href);
+    url.searchParams.delete("r");
+    history.pushState(null, "", url.pathname + url.search);
+    state.replay = null;
+    state.shareId = null;
+    state.selectedPlayer = null;
+    state.selectedMonster = null;
+    state.selectedTimeRange = null;
+    state.selectedMobSkillTarget = null;
+    $("#summary").hidden = true;
+    $("#explorer").hidden = true;
+    $("#share-controls").innerHTML = "";
+    $("#share-controls").hidden = true;
+    $("#drop-status").textContent = "";
+    // Reset pagination so the user sees page 1 of the freshest list.
+    state.recent.pageIndex = 0;
+    state.recent.pageCursors = [undefined];
+    state.recent.items = [];
+    state.recent.error = null;
+    void loadRecentReplays();
+  });
 }
 
 async function loadFromUrl() {

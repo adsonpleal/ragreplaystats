@@ -41,6 +41,15 @@ body {
   letter-spacing: 0.02em;
 }
 
+.topbar h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.topbar h1 a:hover {
+  color: var(--accent);
+}
+
 .topbar p {
   margin: 0.25rem 0 0;
 }
