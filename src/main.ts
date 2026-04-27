@@ -9,9 +9,13 @@ import {
   isPlayerSource,
   killsByPlayerAndMob,
   lootByItem,
+  mobHpCurve,
+  type MobSkillAgg,
+  mobSkillBreakdown,
   monstersDamagedByPlayer,
   monstersWhoTookDamage,
   paramCurve,
+  playersDamagedByMonster,
   SP_HP,
   SP_MAXHP,
   SP_SP,
@@ -290,8 +294,16 @@ function clearByModeOnlyPanes() {
   $("#kills-pane").innerHTML = "";
 }
 
+function clearByMonsterOnlyPanes() {
+  $("#monster-overview-pane").innerHTML = "";
+  $("#hp-curve-pane").innerHTML = "";
+  $("#mob-victims-pane").innerHTML = "";
+  $("#mob-skills-pane").innerHTML = "";
+}
+
 function renderStatsMode(replay: Replay) {
   clearByModeOnlyPanes();
+  clearByMonsterOnlyPanes();
   $("#skill-pane").innerHTML = "";
   // Hide the breadcrumb — stats mode is always for the local player.
   $("#breadcrumb").hidden = true;
@@ -909,6 +921,7 @@ function renderBreadcrumb() {
 
 function renderByPlayerMode(replay: Replay) {
   clearStatsOnlyPanes();
+  clearByMonsterOnlyPanes();
   const primary = $("#primary-pane");
   const secondary = $("#secondary-pane");
   const barPane = $("#bar-pane");
@@ -1096,8 +1109,11 @@ function renderByMonsterMode(replay: Replay) {
   barPane.innerHTML = "";
   chartPane.innerHTML = "";
   skillPane.innerHTML = "";
+  clearByMonsterOnlyPanes();
 
   if (state.selectedMonster === null) return;
+
+  renderMonsterOverview(replay, state.selectedMonster);
 
   const monsterLabel = monsterName(replay, state.selectedMonster);
   const events = replay.damage.filter((d) => d.target === state.selectedMonster);
@@ -1164,7 +1180,305 @@ function renderByMonsterMode(replay: Replay) {
     damageTimelineMulti(replay, playerEvents, bucketMs),
   );
 
+  renderMobHpCurve(replay, state.selectedMonster);
   renderSkillByPlayerTable(skillPane, playerEvents, t.skillsAgainstMonster);
+  renderMobVictims(replay, state.selectedMonster, monsterLabel);
+  renderMobSkills(replay, state.selectedMonster, monsterLabel);
+}
+
+function renderMonsterOverview(replay: Replay, mobAid: number) {
+  const host = $("#monster-overview-pane");
+  const ent = replay.entities.get(mobAid);
+  if (!ent) {
+    host.innerHTML = "";
+    return;
+  }
+
+  // Aggregate damage in/out and the social facts in a single pass.
+  let totalReceived = 0;
+  let totalDealt = 0;
+  const attackers = new Set<number>();
+  const victims = new Set<number>();
+  const victimDamage = new Map<number, number>();
+  for (const d of replay.damage) {
+    if (d.target === mobAid) {
+      totalReceived += d.damage;
+      if (isPlayerSource(replay, d.source)) attackers.add(d.source);
+    }
+    if (d.source === mobAid && isPlayerSource(replay, d.target)) {
+      totalDealt += d.damage;
+      victims.add(d.target);
+      victimDamage.set(d.target, (victimDamage.get(d.target) ?? 0) + d.damage);
+    }
+  }
+
+  let topVictim: { aid: number; name: string; total: number } | null = null;
+  for (const [aid, total] of victimDamage) {
+    if (!topVictim || total > topVictim.total) {
+      const v = replay.entities.get(aid);
+      topVictim = { aid, name: v?.name || `#${aid}`, total };
+    }
+  }
+
+  const kill = replay.kills.find((k) => k.aid === mobAid && k.kind === 1);
+  const killTime = kill?.time ?? null;
+  const timeAliveMs =
+    killTime != null
+      ? Math.max(0, killTime - ent.firstSeenMs)
+      : Math.max(0, replay.sessionInfo.durationMs - ent.firstSeenMs);
+  const ttkMs = killTime != null ? killTime - ent.firstSeenMs : null;
+
+  let killer: { aid: number; name: string } | null = null;
+  if (killTime != null) {
+    const lastHit = lastDamageBeforeFromPlayer(replay, mobAid, killTime);
+    if (lastHit) {
+      const k = replay.entities.get(lastHit.source);
+      killer = { aid: lastHit.source, name: k?.name || `#${lastHit.source}` };
+    }
+  }
+
+  const maxHp = effectiveMaxHp(ent.maxHp, ent.view);
+  const speciesName = monsterName(replay, mobAid);
+  const speciesValue = ent.view
+    ? `<a class="cell-link" href="${escape(mobDpUrl(ent.view))}" target="_blank" rel="noopener noreferrer">${escape(speciesName)}</a>`
+    : escape(speciesName);
+
+  const cells: SummaryCell[] = [
+    { label: t.cellSpecies, value: speciesValue, valueIsHtml: true },
+    { label: t.colLevel, value: ent.level ? String(ent.level) : t.none },
+    {
+      label: t.cellMobMaxHp,
+      value: maxHp > 0 ? fmt(maxHp) : t.none,
+    },
+    {
+      label: t.cellBoss,
+      value: ent.isBoss ? t.bossMark : t.none,
+    },
+    {
+      label: t.cellTimeAlive,
+      value: timeAliveMs ? formatDuration(timeAliveMs) : t.none,
+    },
+    {
+      label: t.cellMobTtk,
+      value: ttkMs != null ? formatDuration(ttkMs) : t.none,
+    },
+    {
+      label: t.cellKilledBy,
+      value: killer ? killer.name : t.none,
+    },
+    {
+      label: t.cellMobDamageReceived,
+      value: fmt(totalReceived),
+      hint: maxHp > 0 ? `${pct(totalReceived, maxHp)}% do HP máx.` : undefined,
+    },
+    {
+      label: t.cellMobAttackers,
+      value: fmt(attackers.size),
+    },
+    {
+      label: t.cellMobDamageDealt,
+      value: fmt(totalDealt),
+    },
+    {
+      label: t.cellMobVictims,
+      value: fmt(victims.size),
+    },
+    {
+      label: t.cellMobTopVictim,
+      value: topVictim ? topVictim.name : t.none,
+      hint: topVictim ? fmt(topVictim.total) : undefined,
+    },
+  ];
+
+  renderSummaryCard(host, t.mobOverviewTitle, cells);
+}
+
+function lastDamageBeforeFromPlayer(
+  replay: Replay,
+  targetAid: number,
+  byTime: number,
+): DamageEvent | null {
+  let best: DamageEvent | null = null;
+  for (const ev of replay.damage) {
+    if (ev.target !== targetAid) continue;
+    if (ev.time > byTime) continue;
+    if (!isPlayerSource(replay, ev.source)) continue;
+    if (!best || ev.time > best.time) best = ev;
+  }
+  return best;
+}
+
+function renderMobHpCurve(replay: Replay, mobAid: number) {
+  const host = $("#hp-curve-pane");
+  const ent = replay.entities.get(mobAid);
+  const series = mobHpCurve(replay, mobAid);
+  if (!series.ts.length) {
+    host.innerHTML = `<section class="stats-card"><h2 class="section-title">${t.hpCurveTitle}</h2><p class="section-hint">${t.mobNoHpDataHint}</p></section>`;
+    return;
+  }
+
+  // Resolve maxHp fallback once for boss display purposes.
+  const fallbackMax = ent ? effectiveMaxHp(ent.maxHp, ent.view) : 0;
+  const maxValues = series.maxHp.map((m) => (m > 0 ? m : fallbackMax));
+
+  host.innerHTML = `<h2 class="section-title">${t.hpCurveTitle}</h2>
+    <div id="hp-curve-chart" class="stats-chart"></div>`;
+  renderLineChart(
+    $("#hp-curve-chart"),
+    series.ts,
+    [
+      { label: t.hpSeriesLabel, values: series.hp, paletteIndex: 6 },
+      { label: t.hpMaxSeriesLabel, values: maxValues, paletteIndex: 7 },
+    ],
+    { height: 220 },
+  );
+}
+
+function renderMobVictims(
+  replay: Replay,
+  mobAid: number,
+  monsterLabel: string,
+) {
+  const host = $("#mob-victims-pane");
+  const victims = playersDamagedByMonster(replay, mobAid);
+  if (!victims.length) {
+    host.innerHTML = `<section class="stats-card"><h2 class="section-title">${escape(t.mobVictimsTitle(monsterLabel))}</h2><p class="section-hint">${t.mobNeverAttackedHint}</p></section>`;
+    return;
+  }
+
+  const hasCrits = hasCritData(replay);
+
+  host.innerHTML = `<h2 class="section-title">${escape(t.mobVictimsTitle(monsterLabel))}</h2>
+    <div id="mob-victims-table"></div>
+    <h2 class="section-title" style="margin-top:1rem">${escape(t.mobVictimsBarTitle(monsterLabel))}</h2>
+    <div id="mob-victims-bars"></div>`;
+
+  renderTable<PlayerAgg>(
+    $("#mob-victims-table"),
+    [
+      { key: "name", label: t.colPlayer },
+      {
+        key: "class",
+        label: t.colClass,
+        format: (r) => playerClass(replay, r.aid),
+        sortValue: (r) => playerClass(replay, r.aid),
+      },
+      {
+        key: "level",
+        label: t.colLevel,
+        numeric: true,
+        format: (r) => {
+          const l = playerLevel(replay, r.aid);
+          return l ? String(l) : t.none;
+        },
+        sortValue: (r) => playerLevel(replay, r.aid),
+      },
+      {
+        key: "totalDealt",
+        label: t.colDamageTaken,
+        numeric: true,
+        format: (r) => fmt(r.totalDealt),
+      },
+      { key: "hits", label: t.colHits, numeric: true, format: (r) => fmt(r.hits) },
+      ...(hasCrits
+        ? [{ key: "crits", label: t.colCrits, numeric: true, format: (r: PlayerAgg) => fmt(r.crits) }]
+        : []),
+      { key: "misses", label: t.colMisses, numeric: true, format: (r) => fmt(r.misses) },
+      {
+        key: "kills",
+        label: t.colKillingBlow,
+        numeric: true,
+        format: (r) => fmt(r.kills),
+      },
+    ],
+    victims,
+    { initialSort: { key: "totalDealt", asc: false } },
+  );
+
+  renderBarChart(
+    $("#mob-victims-bars"),
+    victims.map((v) => ({
+      key: v.aid,
+      label: v.name,
+      value: v.totalDealt,
+      display: fmt(v.totalDealt),
+    })),
+  );
+}
+
+function renderMobSkills(
+  replay: Replay,
+  mobAid: number,
+  monsterLabel: string,
+) {
+  const host = $("#mob-skills-pane");
+  const skillResolver = (id: number) =>
+    state.db?.resolveSkill(id) ?? t.skillFallback(id);
+  const rows = mobSkillBreakdown(replay, mobAid, skillResolver);
+  if (!rows.length) {
+    host.innerHTML = `<section class="stats-card"><h2 class="section-title">${escape(t.mobSkillsTitle(monsterLabel))}</h2><p class="section-hint">${t.mobNoSkillsHint}</p></section>`;
+    return;
+  }
+
+  host.innerHTML = `<h2 class="section-title">${escape(t.mobSkillsTitle(monsterLabel))}</h2>
+    <p class="section-hint">${t.mobSkillsHint}</p>
+    <div id="mob-skills-table"></div>`;
+
+  renderTable<MobSkillAgg>(
+    $("#mob-skills-table"),
+    [
+      {
+        key: "name",
+        label: t.colSkill,
+        href: (r) =>
+          r.skillId
+            ? `https://www.divine-pride.net/database/skill/${r.skillId}`
+            : null,
+      },
+      { key: "skillId", label: t.colId, numeric: true, format: (r) => String(r.skillId) },
+      { key: "hits", label: t.colHits, numeric: true, format: (r) => fmt(r.hits) },
+      {
+        key: "totalDamage",
+        label: t.colTotalDamage,
+        numeric: true,
+        format: (r) => fmt(r.totalDamage),
+      },
+      {
+        key: "avgDamage",
+        label: t.colAvgDamage,
+        numeric: true,
+        format: (r) => fmt(r.avgDamage),
+      },
+      {
+        key: "noDamageUses",
+        label: t.colNoDamageUses,
+        numeric: true,
+        format: (r) => fmt(r.noDamageUses),
+      },
+      {
+        key: "distinctTargets",
+        label: t.colDistinctTargets,
+        numeric: true,
+        format: (r) => fmt(r.distinctTargets),
+      },
+      {
+        key: "avgCastMs",
+        label: t.colAvgCast,
+        numeric: true,
+        format: (r) => (r.avgCastMs == null ? t.none : `${r.avgCastMs} ms`),
+        sortValue: (r) => r.avgCastMs ?? -1,
+      },
+      {
+        key: "topTarget",
+        label: t.colTopTarget,
+        format: (r) =>
+          r.topTarget ? `${r.topTarget.name} (${fmt(r.topTarget.count)})` : t.none,
+        sortValue: (r) => r.topTarget?.count ?? 0,
+      },
+    ],
+    rows,
+    { initialSort: { key: "totalDamage", asc: false } },
+  );
 }
 
 function renderSkillTable(host: HTMLElement, events: DamageEvent[], title: string) {

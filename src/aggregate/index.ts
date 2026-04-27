@@ -277,6 +277,198 @@ function lastDamageTo(
   return best;
 }
 
+/** Players damaged by a specific monster (inverse of playersThatDamaged). */
+export function playersDamagedByMonster(
+  replay: Replay,
+  monsterAid: number,
+): PlayerAgg[] {
+  const map = new Map<number, PlayerAgg>();
+
+  for (const ev of replay.damage) {
+    if (ev.source !== monsterAid) continue;
+    if (!isPlayerSource(replay, ev.target)) continue;
+    let agg = map.get(ev.target);
+    if (!agg) {
+      const ent = replay.entities.get(ev.target);
+      agg = {
+        aid: ev.target,
+        name: ent?.name || `#${ev.target}`,
+        totalDealt: 0,
+        hits: 0,
+        crits: 0,
+        misses: 0,
+        monstersHit: 1,
+        kills: 0,
+      };
+      map.set(ev.target, agg);
+    }
+    agg.totalDealt += ev.damage;
+    agg.hits += 1;
+    if (ev.hitType === "critical") agg.crits += 1;
+    if (ev.hitType === "miss") agg.misses += 1;
+  }
+
+  // Award the mob a "kill" against any player whose last damage event came
+  // from this mob before the player's vanish.
+  for (const kill of replay.kills) {
+    if (!isPlayerSource(replay, kill.aid)) continue;
+    const lastHit = lastDamageTo(replay, kill.aid, kill.time);
+    if (lastHit?.source === monsterAid && map.has(kill.aid)) {
+      map.get(kill.aid)!.kills += 1;
+    }
+  }
+
+  return [...map.values()].sort((a, b) => b.totalDealt - a.totalDealt);
+}
+
+export type MobSkillAgg = {
+  skillId: number;
+  name: string;
+  /** Damage events landed by this skill. */
+  hits: number;
+  totalDamage: number;
+  avgDamage: number;
+  /** Successful uses with no damage (heals, buffs, debuff applications). */
+  noDamageUses: number;
+  /** Cast-start packets observed (lower bound on attempted casts). */
+  casts: number;
+  avgCastMs: number | null;
+  /** Distinct AIDs the skill landed on (damage events) or was used on. */
+  distinctTargets: number;
+  /** Most-targeted entity for this skill, or null when there are no hits. */
+  topTarget: { aid: number; name: string; count: number } | null;
+};
+
+/** Skill breakdown grouped by (skillId) for damage / casts / uses sourced by a single mob. */
+export function mobSkillBreakdown(
+  replay: Replay,
+  monsterAid: number,
+  resolveSkill: (id: number) => string,
+): MobSkillAgg[] {
+  type Acc = {
+    skillId: number;
+    hits: number;
+    totalDamage: number;
+    noDamageUses: number;
+    castCount: number;
+    castMsTotal: number;
+    targets: Map<number, number>;
+  };
+  const map = new Map<number, Acc>();
+  const ensure = (skillId: number): Acc => {
+    let acc = map.get(skillId);
+    if (!acc) {
+      acc = {
+        skillId,
+        hits: 0,
+        totalDamage: 0,
+        noDamageUses: 0,
+        castCount: 0,
+        castMsTotal: 0,
+        targets: new Map(),
+      };
+      map.set(skillId, acc);
+    }
+    return acc;
+  };
+
+  for (const ev of replay.damage) {
+    if (ev.source !== monsterAid || ev.skillId === 0) continue;
+    const acc = ensure(ev.skillId);
+    acc.hits += 1;
+    acc.totalDamage += ev.damage;
+    acc.targets.set(ev.target, (acc.targets.get(ev.target) ?? 0) + 1);
+  }
+
+  for (const u of replay.skillUses) {
+    if (u.source !== monsterAid) continue;
+    const acc = ensure(u.skillId);
+    acc.noDamageUses += 1;
+    acc.targets.set(u.target, (acc.targets.get(u.target) ?? 0) + 1);
+  }
+
+  for (const c of replay.skillCasts) {
+    if (c.source !== monsterAid) continue;
+    const acc = ensure(c.skillId);
+    acc.castCount += 1;
+    if (c.castMs > 0) acc.castMsTotal += c.castMs;
+  }
+
+  const result: MobSkillAgg[] = [];
+  for (const acc of map.values()) {
+    let top: { aid: number; name: string; count: number } | null = null;
+    for (const [aid, count] of acc.targets) {
+      if (!top || count > top.count) {
+        const ent = replay.entities.get(aid);
+        top = { aid, name: ent?.name || `#${aid}`, count };
+      }
+    }
+    result.push({
+      skillId: acc.skillId,
+      name: resolveSkill(acc.skillId),
+      hits: acc.hits,
+      totalDamage: acc.totalDamage,
+      avgDamage: acc.hits ? Math.round(acc.totalDamage / acc.hits) : 0,
+      noDamageUses: acc.noDamageUses,
+      casts: acc.castCount,
+      avgCastMs: acc.castCount ? Math.round(acc.castMsTotal / acc.castCount) : null,
+      distinctTargets: acc.targets.size,
+      topTarget: top,
+    });
+  }
+
+  return result.sort((a, b) => b.totalDamage - a.totalDamage || b.hits - a.hits);
+}
+
+export type MobHpSeries = {
+  ts: number[];
+  hp: number[];
+  maxHp: number[];
+};
+
+/**
+ * HP timeline for a single mob. Primary signal is the server's mobHp packets
+ * (replay.mobHp); we anchor the start at the entity's firstSeenMs with its
+ * declared maxHp, and add a final 0-HP point at vanish time when it died.
+ */
+export function mobHpCurve(replay: Replay, monsterAid: number): MobHpSeries {
+  const ent = replay.entities.get(monsterAid);
+  const samples = replay.mobHp
+    .filter((m) => m.aid === monsterAid)
+    .sort((a, b) => a.time - b.time);
+
+  const ts: number[] = [];
+  const hp: number[] = [];
+  const maxHp: number[] = [];
+
+  // Anchor at first sighting, when we usually know maxHp.
+  if (ent && ent.firstSeenMs >= 0 && ent.maxHp > 0) {
+    ts.push(ent.firstSeenMs);
+    hp.push(ent.maxHp);
+    maxHp.push(ent.maxHp);
+  }
+
+  let runningMax = ent?.maxHp && ent.maxHp > 0 ? ent.maxHp : 0;
+  for (const s of samples) {
+    if (s.maxHp > 0) runningMax = s.maxHp;
+    ts.push(s.time);
+    hp.push(s.hp);
+    maxHp.push(runningMax);
+  }
+
+  // Final point at kill time when the mob died.
+  const kill = replay.kills.find(
+    (k) => k.aid === monsterAid && k.kind === 1,
+  ) as VanishEvent | undefined;
+  if (kill) {
+    ts.push(kill.time);
+    hp.push(0);
+    maxHp.push(runningMax);
+  }
+
+  return { ts, hp, maxHp };
+}
+
 export type DamagePoint = { t: number; damage: number };
 
 /**

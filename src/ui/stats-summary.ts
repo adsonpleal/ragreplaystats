@@ -3,6 +3,11 @@ export type SummaryCell = {
   value: string;
   /** Optional small caption under the value. */
   hint?: string;
+  /**
+   * When true, `value` is treated as already-escaped HTML (e.g. for embedding
+   * a link). Caller is responsible for escaping any user-controlled text.
+   */
+  valueIsHtml?: boolean;
 };
 
 /**
@@ -28,7 +33,11 @@ export function renderSummaryCard(
     const label = document.createElement("span");
     label.textContent = cell.label;
     const value = document.createElement("span");
-    value.textContent = cell.value;
+    if (cell.valueIsHtml) {
+      value.innerHTML = cell.value;
+    } else {
+      value.textContent = cell.value;
+    }
     div.appendChild(label);
     div.appendChild(value);
     if (cell.hint) {
