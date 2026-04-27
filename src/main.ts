@@ -60,6 +60,10 @@ type State = {
   selectedTimeRange: Range;
   /** Set once a replay has been uploaded or fetched — used to render the share link. */
   shareId: string | null;
+  /** Raw .rrf bytes for the currently-loaded replay (powers the download button). */
+  replayBytes: Uint8Array | null;
+  /** Suggested filename when downloading — comes from the drop or the Firestore doc. */
+  replayFileName: string | null;
   /**
    * Per-victim filter for the "Habilidades de <mob>" card. Reset when the
    * selected monster changes.
@@ -89,6 +93,8 @@ const state: State = {
   selectedMonster: null,
   selectedTimeRange: null,
   shareId: null,
+  replayBytes: null,
+  replayFileName: null,
   selectedMobSkillTarget: null,
   recent: {
     items: [],
@@ -135,6 +141,8 @@ function setupHomeLink() {
     history.pushState(null, "", url.pathname + url.search);
     state.replay = null;
     state.shareId = null;
+    state.replayBytes = null;
+    state.replayFileName = null;
     state.selectedPlayer = null;
     state.selectedMonster = null;
     state.selectedTimeRange = null;
@@ -174,35 +182,66 @@ async function loadFromUrl() {
 function renderShareControls() {
   const host = $("#share-controls");
   host.innerHTML = "";
-  if (!state.shareId) {
+  if (!state.replay) {
     host.hidden = true;
     return;
   }
   host.hidden = false;
-  const url = new URL(location.href);
-  url.searchParams.set("r", state.shareId);
-  const link = url.toString();
 
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "share-btn";
-  btn.textContent = t.copyLink;
-  btn.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-      btn.textContent = t.linkCopied;
-      setTimeout(() => (btn.textContent = t.copyLink), 1500);
-    } catch {
-      // Fallback: select the link text so the user can copy manually.
-      window.prompt(t.copyLink, link);
-    }
+  if (state.replayBytes) {
+    const dl = document.createElement("button");
+    dl.type = "button";
+    dl.className = "share-btn";
+    dl.textContent = t.downloadReplay;
+    dl.addEventListener("click", () => downloadReplayBytes());
+    host.appendChild(dl);
+  }
+
+  if (state.shareId) {
+    const url = new URL(location.href);
+    url.searchParams.set("r", state.shareId);
+    const link = url.toString();
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "share-btn";
+    btn.textContent = t.copyLink;
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(link);
+        btn.textContent = t.linkCopied;
+        setTimeout(() => (btn.textContent = t.copyLink), 1500);
+      } catch {
+        // Fallback: select the link text so the user can copy manually.
+        window.prompt(t.copyLink, link);
+      }
+    });
+    host.appendChild(btn);
+
+    const linkEl = document.createElement("code");
+    linkEl.className = "share-link";
+    linkEl.textContent = link;
+    host.appendChild(linkEl);
+  }
+}
+
+function downloadReplayBytes() {
+  if (!state.replayBytes) return;
+  const fileName = state.replayFileName?.endsWith(".rrf")
+    ? state.replayFileName
+    : `${state.replayFileName ?? "replay"}.rrf`;
+  // Copy into a fresh ArrayBuffer so the Blob owns its memory independently.
+  const blob = new Blob([state.replayBytes.slice().buffer], {
+    type: "application/octet-stream",
   });
-  host.appendChild(btn);
-
-  const linkEl = document.createElement("code");
-  linkEl.className = "share-link";
-  linkEl.textContent = link;
-  host.appendChild(linkEl);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function parseAndRender(
@@ -220,6 +259,9 @@ function parseAndRender(
   state.selectedTimeRange = null;
   state.selectedMobSkillTarget = null;
   state.shareId = shareId;
+  // Keep a copy of the raw bytes so the user can re-download the replay.
+  state.replayBytes = new Uint8Array(buf as ArrayBuffer).slice();
+  state.replayFileName = fileName;
   status.textContent = t.decoded(
     replay.totals.handledPackets,
     replay.totals.packetCount,

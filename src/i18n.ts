@@ -27,6 +27,7 @@ export const t = {
   paginationPageOf: (n: number) => `Página ${n}`,
 
   copyLink: "Copiar link",
+  downloadReplay: "Baixar replay",
   linkCopied: "Link copiado!",
   shareReady: (url: string) => `Pronto para compartilhar: ${url}`,
 
