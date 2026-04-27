@@ -30,7 +30,14 @@ import {
 } from "./aggregate/index.js";
 import { loadReferenceDb, type ReferenceDb } from "./db/loader.js";
 import { prefetchReplay } from "./divine-pride.js";
-import { fetchReplay, uploadReplay } from "./firebase.js";
+import {
+  fetchReplay,
+  listRecentReplays,
+  type QueryDocumentSnapshot,
+  type ReplayListItem,
+  type ReplaySummary,
+  uploadReplay,
+} from "./firebase.js";
 import { t, locale } from "./i18n.js";
 import { decodeReplay } from "./rrf/decode.js";
 import type { DamageEvent, Replay } from "./rrf/types.js";
@@ -58,6 +65,20 @@ type State = {
    * selected monster changes.
    */
   selectedMobSkillTarget: number | null;
+  /** Recent-replays list state, populated when the home view is visible. */
+  recent: {
+    items: ReplayListItem[];
+    /**
+     * pageCursors[i] is the cursor we'd `startAfter` to load page i. Page 0
+     * uses `undefined`. Subsequent entries are pushed as the user advances.
+     */
+    pageCursors: (QueryDocumentSnapshot | undefined)[];
+    pageIndex: number;
+    loading: boolean;
+    error: string | null;
+    /** Last request returned exactly pageSize items — likely more pages. */
+    hasMore: boolean;
+  };
 };
 
 const state: State = {
@@ -69,7 +90,17 @@ const state: State = {
   selectedTimeRange: null,
   shareId: null,
   selectedMobSkillTarget: null,
+  recent: {
+    items: [],
+    pageCursors: [undefined],
+    pageIndex: 0,
+    loading: false,
+    error: null,
+    hasMore: false,
+  },
 };
+
+const RECENT_PAGE_SIZE = 10;
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
@@ -82,7 +113,12 @@ function init() {
     state.db = db;
     if (state.replay) rerender();
   });
-  void loadFromUrl();
+  const hasR = new URLSearchParams(location.search).get("r");
+  if (hasR) {
+    void loadFromUrl();
+  } else {
+    void loadRecentReplays();
+  }
 }
 
 async function loadFromUrl() {
@@ -206,19 +242,28 @@ function setupDropZone() {
     try {
       const buf = await file.arrayBuffer();
       parseAndRender(buf, file.name, null);
-      void uploadAndShare(buf, file.name);
+      // Summary is built from the just-decoded replay; passes through to
+      // Firestore so the recent-replays list can render its row.
+      const summary = state.replay
+        ? buildReplaySummary(state.replay)
+        : undefined;
+      void uploadAndShare(buf, file.name, summary);
     } catch (err) {
       console.error(err);
       status.textContent = t.parseError((err as Error).message);
     }
   };
 
-  async function uploadAndShare(buf: ArrayBuffer, fileName: string) {
+  async function uploadAndShare(
+    buf: ArrayBuffer,
+    fileName: string,
+    summary: ReplaySummary | undefined,
+  ) {
     const status = $("#drop-status");
     const prev = status.textContent;
     status.textContent = (prev ? prev + " · " : "") + t.uploading;
     try {
-      const id = await uploadReplay(new Uint8Array(buf), fileName);
+      const id = await uploadReplay(new Uint8Array(buf), fileName, summary);
       state.shareId = id;
       const url = new URL(location.href);
       url.searchParams.set("r", id);
@@ -270,6 +315,7 @@ function rerender() {
 
   $("#summary").hidden = false;
   $("#explorer").hidden = false;
+  $("#recent-replays").hidden = true;
   renderSummary(r);
   renderBreadcrumb();
 
@@ -1746,6 +1792,177 @@ function pickBucketMs(events: DamageEvent[]): number {
   if (span <= 600_000) return 5_000;
   if (span <= 1_800_000) return 15_000;
   return 30_000;
+}
+
+// ---------------------------------------------------------------------------
+// Recent replays list (home view)
+// ---------------------------------------------------------------------------
+
+function buildReplaySummary(replay: Replay): ReplaySummary {
+  const totalDamage = replay.damage.reduce((s, e) => s + e.damage, 0);
+  const seconds = replay.sessionInfo.durationMs / 1000;
+  const avgDps = seconds > 0 ? Math.round(totalDamage / seconds) : 0;
+  return {
+    player: replay.sessionInfo.player || "",
+    map: replay.sessionInfo.map || "",
+    recordedAt: replay.sessionInfo.recordedAt,
+    durationMs: replay.sessionInfo.durationMs,
+    totalDamage,
+    avgDps,
+    damageEvents: replay.damage.length,
+    kills: replay.kills.length,
+    entitiesSeen: replay.entities.size,
+    handledPackets: replay.totals.handledPackets,
+    packetCount: replay.totals.packetCount,
+  };
+}
+
+async function loadRecentReplays() {
+  const host = $("#recent-replays");
+  if (state.recent.loading) return;
+  state.recent.loading = true;
+  state.recent.error = null;
+  paintRecentReplays();
+  host.hidden = false;
+  try {
+    const cursor = state.recent.pageCursors[state.recent.pageIndex];
+    const { items, lastDoc } = await listRecentReplays(
+      RECENT_PAGE_SIZE,
+      cursor,
+    );
+    state.recent.items = items;
+    state.recent.hasMore = items.length === RECENT_PAGE_SIZE && !!lastDoc;
+    // Stash the cursor for the next page (one slot ahead of current).
+    if (state.recent.hasMore && lastDoc) {
+      state.recent.pageCursors[state.recent.pageIndex + 1] = lastDoc;
+    }
+  } catch (err) {
+    console.error(err);
+    state.recent.error = (err as Error).message;
+  } finally {
+    state.recent.loading = false;
+    paintRecentReplays();
+  }
+}
+
+function paintRecentReplays() {
+  const host = $("#recent-replays");
+  // If the user has loaded a replay since the fetch started, don't take the
+  // page back over.
+  if (state.replay) {
+    host.hidden = true;
+    return;
+  }
+  $("#recent-replays-title").textContent = t.recentReplaysTitle;
+  $("#recent-replays-hint").textContent = state.recent.error
+    ? t.recentReplaysError(state.recent.error)
+    : state.recent.loading
+      ? t.recentReplaysLoading
+      : state.recent.items.length
+        ? t.recentReplaysHint
+        : t.recentReplaysEmpty;
+
+  const listEl = $("#recent-replays-list");
+  listEl.innerHTML = "";
+  if (!state.recent.loading && !state.recent.error && state.recent.items.length) {
+    for (const item of state.recent.items) {
+      listEl.appendChild(buildRecentRow(item));
+    }
+  }
+
+  paintRecentPagination();
+}
+
+function buildRecentRow(item: ReplayListItem): HTMLElement {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "recent-replays-row";
+  row.addEventListener("click", () => openRecentReplay(item.id));
+
+  const cells: Array<{ label: string; value: string }> = [
+    { label: t.player, value: item.player || t.none },
+    { label: t.map, value: item.map || t.none },
+    {
+      label: t.recordedAt,
+      value: item.recordedAt ? item.recordedAt.toLocaleString(locale) : t.none,
+    },
+    {
+      label: t.duration,
+      value:
+        item.durationMs != null && item.durationMs > 0
+          ? formatDuration(item.durationMs)
+          : t.none,
+    },
+    {
+      label: t.totalDamage,
+      value: item.totalDamage != null ? fmt(item.totalDamage) : t.none,
+    },
+    {
+      label: t.kills,
+      value: item.kills != null ? fmt(item.kills) : t.none,
+    },
+    {
+      label: t.colUploadedAt,
+      value: item.uploadedAt ? item.uploadedAt.toLocaleString(locale) : t.none,
+    },
+  ];
+
+  for (const c of cells) {
+    const cell = document.createElement("div");
+    const label = document.createElement("span");
+    label.className = "recent-replays-cell-label";
+    label.textContent = c.label;
+    const value = document.createElement("span");
+    value.className = "recent-replays-cell-value";
+    value.textContent = c.value;
+    cell.appendChild(label);
+    cell.appendChild(value);
+    row.appendChild(cell);
+  }
+  return row;
+}
+
+function paintRecentPagination() {
+  const host = $("#recent-replays-pagination");
+  host.innerHTML = "";
+  if (state.recent.error || state.recent.loading) return;
+  if (!state.recent.items.length && state.recent.pageIndex === 0) return;
+
+  const prev = document.createElement("button");
+  prev.type = "button";
+  prev.textContent = t.paginationPrev;
+  prev.disabled = state.recent.pageIndex === 0;
+  prev.addEventListener("click", () => {
+    if (state.recent.pageIndex === 0) return;
+    state.recent.pageIndex -= 1;
+    void loadRecentReplays();
+  });
+
+  const indicator = document.createElement("span");
+  indicator.className = "recent-replays-page-indicator";
+  indicator.textContent = t.paginationPageOf(state.recent.pageIndex + 1);
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.textContent = t.paginationNext;
+  next.disabled = !state.recent.hasMore;
+  next.addEventListener("click", () => {
+    if (!state.recent.hasMore) return;
+    state.recent.pageIndex += 1;
+    void loadRecentReplays();
+  });
+
+  host.appendChild(prev);
+  host.appendChild(indicator);
+  host.appendChild(next);
+}
+
+function openRecentReplay(id: string) {
+  const url = new URL(location.href);
+  url.searchParams.set("r", id);
+  history.pushState(null, "", url.toString());
+  $("#recent-replays").hidden = true;
+  void loadFromUrl();
 }
 
 init();

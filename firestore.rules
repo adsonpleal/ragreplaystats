@@ -7,11 +7,15 @@ service cloud.firestore {
       allow read: if true;
 
       // Anyone can upload, but:
-      //  - the doc must contain only `bytes`, `uploadedAt`, `fileName`
+      //  - the doc may only contain the listed keys (bytes/upload meta plus
+      //    optional summary fields denormalized for the recent-replays list)
       //  - bytes must be under 1 MiB (well under Firestore's 1,048,576-byte
       //    document hard limit) so the rest of the doc fits the limit too
       allow create: if request.resource.data.keys().hasOnly([
-                       'bytes', 'uploadedAt', 'fileName'
+                       'bytes', 'uploadedAt', 'fileName',
+                       'player', 'map', 'recordedAt', 'durationMs',
+                       'totalDamage', 'avgDps', 'damageEvents', 'kills',
+                       'entitiesSeen', 'handledPackets', 'packetCount'
                      ])
                     && request.resource.data.bytes is bytes
                     && request.resource.data.bytes.size() < 1024 * 1024

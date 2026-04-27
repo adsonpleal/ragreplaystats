@@ -15,6 +15,17 @@ export const t = {
   fetching: (id: string) => `Buscando replay compartilhado ${id}…`,
   fetchError: (msg: string) => `Falha ao carregar replay: ${msg}`,
   notFound: (id: string) => `Replay ${id} não encontrado.`,
+  // Recent replays list
+  recentReplaysTitle: "Replays recentes",
+  recentReplaysHint: "Clique em um replay para abri-lo.",
+  recentReplaysEmpty: "Nenhum replay enviado ainda.",
+  recentReplaysError: (msg: string) => `Falha ao carregar a lista: ${msg}`,
+  recentReplaysLoading: "Carregando replays…",
+  colUploadedAt: "Enviado em",
+  paginationPrev: "Anterior",
+  paginationNext: "Próxima",
+  paginationPageOf: (n: number) => `Página ${n}`,
+
   copyLink: "Copiar link",
   linkCopied: "Link copiado!",
   shareReady: (url: string) => `Pronto para compartilhar: ${url}`,
