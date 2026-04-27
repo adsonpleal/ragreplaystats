@@ -491,6 +491,10 @@ function itemDpUrl(id: number): string {
   return `https://www.divine-pride.net/database/item/${id}`;
 }
 
+function mobDpUrl(view: number): string {
+  return `https://www.divine-pride.net/database/monster/${view}`;
+}
+
 function renderHpSpChart(replay: Replay) {
   const host = $("#chart-pane");
   const range = state.selectedTimeRange;
@@ -587,6 +591,7 @@ function renderKillsByTypeChart(replay: Replay) {
         label: v.name,
         value: v.count,
         display: fmt(v.count),
+        href: view ? mobDpUrl(view) : undefined,
       })),
     );
     return;
@@ -605,6 +610,7 @@ function renderKillsByTypeChart(replay: Replay) {
       label: r.monsterName,
       value: r.count,
       display: fmt(r.count),
+      href: r.monsterView ? mobDpUrl(r.monsterView) : undefined,
     })),
   );
 }
@@ -688,20 +694,25 @@ function renderKillsChart(replay: Replay) {
     $("#kills-bars"),
     truncated.map((r) => {
       let label: string;
+      let labelIsMob = false;
       if (playerLabel && monsterLabel) {
         label = `${r.playerName} · ${r.monsterName}`;
+        labelIsMob = true;
       } else if (playerLabel) {
         label = r.monsterName;
+        labelIsMob = true;
       } else if (monsterLabel) {
-        label = r.playerName;
+        label = r.playerName; // Bar represents a player when the mob is fixed.
       } else {
         label = `${r.playerName} · ${r.monsterName}`;
+        labelIsMob = true;
       }
       return {
         key: r.key,
         label,
         value: r.count,
         display: fmt(r.count),
+        href: labelIsMob && r.monsterView ? mobDpUrl(r.monsterView) : undefined,
       };
     }),
   );
@@ -940,6 +951,7 @@ function renderByPlayerMode(replay: Replay) {
         label: t.colMonster,
         format: (r) => formatMonsterRow(r),
         sortValue: (r) => formatMonsterRow(r),
+        href: (r) => (r.view ? mobDpUrl(r.view) : null),
       },
       { key: "view", label: t.colMobId, numeric: true, format: (r) => String(r.view) },
       { key: "totalReceived", label: t.colDamage, numeric: true, format: (r) => fmt(r.totalReceived) },
@@ -1013,6 +1025,7 @@ function renderByMonsterMode(replay: Replay) {
         label: t.colMonster,
         format: (r) => formatMonsterRow(r),
         sortValue: (r) => formatMonsterRow(r),
+        href: (r) => (r.view ? mobDpUrl(r.view) : null),
       },
       { key: "view", label: t.colMobId, numeric: true, format: (r) => String(r.view) },
       { key: "totalReceived", label: t.colDamageTaken, numeric: true, format: (r) => fmt(r.totalReceived) },
