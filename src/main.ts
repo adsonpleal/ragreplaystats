@@ -458,6 +458,7 @@ function renderConsumables(replay: Replay) {
       label: r.name,
       value: r.quantity,
       display: `${fmt(r.quantity)} (${r.count} usos)`,
+      href: r.itemId ? itemDpUrl(r.itemId) : undefined,
     })),
   );
 }
@@ -480,8 +481,13 @@ function renderLoot(replay: Replay) {
       label: r.name,
       value: r.quantity,
       display: fmt(r.quantity),
+      href: r.itemId ? itemDpUrl(r.itemId) : undefined,
     })),
   );
+}
+
+function itemDpUrl(id: number): string {
+  return `https://www.divine-pride.net/database/item/${id}`;
 }
 
 function renderHpSpChart(replay: Replay) {

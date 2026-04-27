@@ -17,6 +17,8 @@ export type BarRow = {
   value: number;
   /** Optional pre-formatted right-hand label (e.g. "1.2M / 23.4k DPS"). */
   display?: string;
+  /** If set, the label becomes an external link (opens in a new tab). */
+  href?: string;
 };
 
 export function renderBarChart(host: HTMLElement, rows: BarRow[]) {
@@ -39,8 +41,11 @@ export function renderBarChart(host: HTMLElement, rows: BarRow[]) {
 
     const row = document.createElement("div");
     row.className = "bar-row";
+    const labelHtml = r.href
+      ? `<a class="bar-label" href="${escape(r.href)}" target="_blank" rel="noopener noreferrer" title="${escape(r.label)}">${escape(r.label)}</a>`
+      : `<span class="bar-label" title="${escape(r.label)}">${escape(r.label)}</span>`;
     row.innerHTML = `
-      <span class="bar-label" title="${escape(r.label)}">${escape(r.label)}</span>
+      ${labelHtml}
       <span class="bar-track">
         <span class="bar-fill" style="width:${pct.toFixed(2)}%; background:${color};"></span>
       </span>
