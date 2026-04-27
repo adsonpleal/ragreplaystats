@@ -6,6 +6,12 @@ export type Column<T> = {
   sortValue?: (row: T) => number | string;
   /** If provided, renders the cell as `<a href=...>` opening in a new tab. */
   href?: (row: T) => string | null | undefined;
+  /**
+   * Escape hatch: takes ownership of the cell DOM. Useful when a single cell
+   * needs multiple links (e.g. comma-separated card chips). When set, the
+   * `format` / `href` fallbacks are ignored.
+   */
+  render?: (row: T, td: HTMLTableCellElement) => void;
 };
 
 export type TableOptions<T> = {
@@ -79,22 +85,26 @@ export function renderTable<T>(
       for (const c of cols) {
         const td = document.createElement("td");
         if (c.numeric) td.classList.add("num");
-        const text = c.format
-          ? c.format(row)
-          : String((row as unknown as Record<string, unknown>)[c.key] ?? "");
-        const href = c.href?.(row);
-        if (href) {
-          const a = document.createElement("a");
-          a.className = "cell-link";
-          a.href = href;
-          a.target = "_blank";
-          a.rel = "noopener noreferrer";
-          a.textContent = text;
-          // Don't trigger the row's drill-down when the link is clicked.
-          a.addEventListener("click", (e) => e.stopPropagation());
-          td.appendChild(a);
+        if (c.render) {
+          c.render(row, td);
         } else {
-          td.textContent = text;
+          const text = c.format
+            ? c.format(row)
+            : String((row as unknown as Record<string, unknown>)[c.key] ?? "");
+          const href = c.href?.(row);
+          if (href) {
+            const a = document.createElement("a");
+            a.className = "cell-link";
+            a.href = href;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            a.textContent = text;
+            // Don't trigger the row's drill-down when the link is clicked.
+            a.addEventListener("click", (e) => e.stopPropagation());
+            td.appendChild(a);
+          } else {
+            td.textContent = text;
+          }
         }
         tr.appendChild(td);
       }

@@ -837,13 +837,28 @@ function renderEquipment(replay: Replay) {
       {
         key: "cards",
         label: t.colCards,
-        format: (r) =>
-          r.cards.length
-            ? r.cards
-                .map((id) => `#${id} · ${itemResolver(id)}`)
-                .join(", ")
-            : t.equipmentEmptyCardSlot,
         sortValue: (r) => r.cards.length,
+        render: (r, td) => {
+          if (!r.cards.length) {
+            td.textContent = t.equipmentEmptyCardSlot;
+            return;
+          }
+          for (let i = 0; i < r.cards.length; i++) {
+            if (i > 0) td.appendChild(document.createTextNode(", "));
+            const id = r.cards[i];
+            const link = document.createElement("a");
+            link.className = "cell-link";
+            link.href = itemDpUrl(id);
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = `#${id}`;
+            link.addEventListener("click", (e) => e.stopPropagation());
+            td.appendChild(link);
+            td.appendChild(
+              document.createTextNode(` · ${itemResolver(id)}`),
+            );
+          }
+        },
       },
     ],
     rows,
