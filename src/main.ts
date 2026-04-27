@@ -819,13 +819,13 @@ function renderEquipment(replay: Replay) {
   renderTable<EquippedRow>(
     $("#equipment-table"),
     [
-      { key: "slotLabel", label: t.colSlot, sortValue: (r) => r.slotOrder },
       {
         key: "itemId",
         label: t.colId,
         format: (r) => String(r.itemId),
         href: (r) => itemDpUrl(r.itemId),
       },
+      { key: "slotLabel", label: t.colSlot, sortValue: (r) => r.slotOrder },
       { key: "itemName", label: t.colItem },
       {
         key: "refine",
