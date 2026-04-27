@@ -53,6 +53,11 @@ type State = {
   selectedTimeRange: Range;
   /** Set once a replay has been uploaded or fetched — used to render the share link. */
   shareId: string | null;
+  /**
+   * Per-victim filter for the "Habilidades de <mob>" card. Reset when the
+   * selected monster changes.
+   */
+  selectedMobSkillTarget: number | null;
 };
 
 const state: State = {
@@ -63,6 +68,7 @@ const state: State = {
   selectedMonster: null,
   selectedTimeRange: null,
   shareId: null,
+  selectedMobSkillTarget: null,
 };
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
@@ -144,6 +150,7 @@ function parseAndRender(
   state.selectedPlayer = null;
   state.selectedMonster = null;
   state.selectedTimeRange = null;
+  state.selectedMobSkillTarget = null;
   state.shareId = shareId;
   status.textContent = t.decoded(
     replay.totals.handledPackets,
@@ -822,14 +829,33 @@ function renderSkillUsesChart(replay: Replay) {
 
   renderBarChart(
     $("#skill-uses-bars"),
-    truncated.map((r) => ({
-      key: r.key,
-      label: showPlayerInLabel
-        ? `${r.playerName} · ${r.skillName}`
-        : r.skillName,
-      value: r.count,
-      display: fmt(r.count),
-    })),
+    truncated.map((r) => {
+      const idChip = r.skillId ? `#${r.skillId}` : "";
+      const skillHref = r.skillId ? skillDpUrl(r.skillId) : undefined;
+      const labelText = showPlayerInLabel
+        ? `${r.playerName} · ${idChip ? `${idChip} · ` : ""}${r.skillName}`
+        : `${idChip ? `${idChip} · ` : ""}${r.skillName}`;
+      let labelSegments: { text: string; href?: string }[] | undefined;
+      if (idChip) {
+        labelSegments = showPlayerInLabel
+          ? [
+              { text: `${r.playerName} · ` },
+              { text: idChip, href: skillHref },
+              { text: ` · ${r.skillName}` },
+            ]
+          : [
+              { text: idChip, href: skillHref },
+              { text: ` · ${r.skillName}` },
+            ];
+      }
+      return {
+        key: r.key,
+        label: labelText,
+        labelSegments,
+        value: r.count,
+        display: fmt(r.count),
+      };
+    }),
   );
 }
 
@@ -1066,6 +1092,7 @@ function renderByPlayerMode(replay: Replay) {
       initialSort: { key: "totalReceived", asc: false },
       onRowClick: (row) => {
         state.selectedMonster = row.aid;
+        state.selectedMobSkillTarget = null;
         rerender();
       },
       isSelected: (row) => row.aid === state.selectedMonster,
@@ -1145,6 +1172,7 @@ function renderByMonsterMode(replay: Replay) {
       initialSort: { key: "totalReceived", asc: false },
       onRowClick: (row) => {
         state.selectedMonster = row.aid;
+        state.selectedMobSkillTarget = null;
         rerender();
       },
       isSelected: (row) => row.aid === state.selectedMonster,
@@ -1357,14 +1385,14 @@ function lastDamageBeforeFromPlayer(
 function renderMobHpCurve(replay: Replay, mobAid: number) {
   const host = $("#hp-curve-pane");
   const ent = replay.entities.get(mobAid);
-  const series = mobHpCurve(replay, mobAid);
+  // Resolve maxHp fallback once and feed it into the aggregator so the
+  // firstSeenMs anchor exists even when the server hides HP for the boss.
+  const fallbackMax = ent ? effectiveMaxHp(ent.maxHp, ent.view) : 0;
+  const series = mobHpCurve(replay, mobAid, fallbackMax);
   if (!series.ts.length) {
     host.innerHTML = `<section class="stats-card"><h2 class="section-title">${t.hpCurveTitle}</h2><p class="section-hint">${t.mobNoHpDataHint}</p></section>`;
     return;
   }
-
-  // Resolve maxHp fallback once for boss display purposes.
-  const fallbackMax = ent ? effectiveMaxHp(ent.maxHp, ent.view) : 0;
   const maxValues = series.maxHp.map((m) => (m > 0 ? m : fallbackMax));
 
   host.innerHTML = `<h2 class="section-title">${t.hpCurveTitle}</h2>
@@ -1460,15 +1488,61 @@ function renderMobSkills(
   const host = $("#mob-skills-pane");
   const skillResolver = (id: number) =>
     state.db?.resolveSkill(id) ?? t.skillFallback(id);
-  const rows = mobSkillBreakdown(replay, mobAid, skillResolver);
-  if (!rows.length) {
+
+  // Build the per-victim filter list from the players this mob actually hit.
+  const victims = playersDamagedByMonster(replay, mobAid);
+  const validTargetAids = new Set(victims.map((v) => v.aid));
+
+  // Drop a stale filter if the user switched mobs — the previously-selected
+  // player may not be a victim of the new one.
+  if (
+    state.selectedMobSkillTarget != null &&
+    !validTargetAids.has(state.selectedMobSkillTarget)
+  ) {
+    state.selectedMobSkillTarget = null;
+  }
+
+  const rows = mobSkillBreakdown(
+    replay,
+    mobAid,
+    skillResolver,
+    state.selectedMobSkillTarget ?? undefined,
+  );
+
+  if (!rows.length && !victims.length) {
     host.innerHTML = `<section class="stats-card"><h2 class="section-title">${escape(t.mobSkillsTitle(monsterLabel))}</h2><p class="section-hint">${t.mobNoSkillsHint}</p></section>`;
     return;
   }
 
+  // Build the filter `<select>` markup. "Todos os alvos" resets to no filter.
+  const opts = [
+    `<option value="">${escape(t.mobSkillsFilterAll)}</option>`,
+    ...victims.map(
+      (v) =>
+        `<option value="${v.aid}"${
+          state.selectedMobSkillTarget === v.aid ? " selected" : ""
+        }>${escape(v.name)}</option>`,
+    ),
+  ].join("");
+
   host.innerHTML = `<h2 class="section-title">${escape(t.mobSkillsTitle(monsterLabel))}</h2>
     <p class="section-hint">${t.mobSkillsHint}</p>
+    <div class="mob-skills-filter">
+      <label for="mob-skills-target">${t.mobSkillsFilterLabel}</label>
+      <select id="mob-skills-target">${opts}</select>
+    </div>
     <div id="mob-skills-table"></div>`;
+
+  $<HTMLSelectElement>("#mob-skills-target").addEventListener("change", (e) => {
+    const v = (e.currentTarget as HTMLSelectElement).value;
+    state.selectedMobSkillTarget = v ? Number(v) : null;
+    rerender();
+  });
+
+  if (!rows.length) {
+    $("#mob-skills-table").innerHTML = `<p class="section-hint">${t.mobSkillsNoneForTarget}</p>`;
+    return;
+  }
 
   renderTable<MobSkillAgg>(
     $("#mob-skills-table"),
@@ -1511,13 +1585,6 @@ function renderMobSkills(
         numeric: true,
         format: (r) => (r.avgCastMs == null ? t.none : `${r.avgCastMs} ms`),
         sortValue: (r) => r.avgCastMs ?? -1,
-      },
-      {
-        key: "topTarget",
-        label: t.colTopTarget,
-        format: (r) =>
-          r.topTarget ? `${r.topTarget.name} (${fmt(r.topTarget.count)})` : t.none,
-        sortValue: (r) => r.topTarget?.count ?? 0,
       },
     ],
     rows,

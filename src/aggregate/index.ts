@@ -335,15 +335,18 @@ export type MobSkillAgg = {
   avgCastMs: number | null;
   /** Distinct AIDs the skill landed on (damage events) or was used on. */
   distinctTargets: number;
-  /** Most-targeted entity for this skill, or null when there are no hits. */
-  topTarget: { aid: number; name: string; count: number } | null;
 };
 
-/** Skill breakdown grouped by (skillId) for damage / casts / uses sourced by a single mob. */
+/**
+ * Skill breakdown grouped by (skillId) for damage / casts / uses sourced by
+ * a single mob. When `targetAid` is provided, only events whose target
+ * matches it are counted (used by the per-player filter in the UI).
+ */
 export function mobSkillBreakdown(
   replay: Replay,
   monsterAid: number,
   resolveSkill: (id: number) => string,
+  targetAid?: number,
 ): MobSkillAgg[] {
   type Acc = {
     skillId: number;
@@ -352,7 +355,7 @@ export function mobSkillBreakdown(
     noDamageUses: number;
     castCount: number;
     castMsTotal: number;
-    targets: Map<number, number>;
+    targets: Set<number>;
   };
   const map = new Map<number, Acc>();
   const ensure = (skillId: number): Acc => {
@@ -365,7 +368,7 @@ export function mobSkillBreakdown(
         noDamageUses: 0,
         castCount: 0,
         castMsTotal: 0,
-        targets: new Map(),
+        targets: new Set(),
       };
       map.set(skillId, acc);
     }
@@ -374,35 +377,35 @@ export function mobSkillBreakdown(
 
   for (const ev of replay.damage) {
     if (ev.source !== monsterAid || ev.skillId === 0) continue;
+    if (targetAid != null && ev.target !== targetAid) continue;
     const acc = ensure(ev.skillId);
     acc.hits += 1;
     acc.totalDamage += ev.damage;
-    acc.targets.set(ev.target, (acc.targets.get(ev.target) ?? 0) + 1);
+    acc.targets.add(ev.target);
   }
 
   for (const u of replay.skillUses) {
     if (u.source !== monsterAid) continue;
+    if (targetAid != null && u.target !== targetAid) continue;
     const acc = ensure(u.skillId);
     acc.noDamageUses += 1;
-    acc.targets.set(u.target, (acc.targets.get(u.target) ?? 0) + 1);
+    acc.targets.add(u.target);
   }
 
-  for (const c of replay.skillCasts) {
-    if (c.source !== monsterAid) continue;
-    const acc = ensure(c.skillId);
-    acc.castCount += 1;
-    if (c.castMs > 0) acc.castMsTotal += c.castMs;
+  // Cast packets carry no target filter — only include them when no per-target
+  // filter is active, otherwise they'd inflate per-player rows for skills that
+  // the player wasn't actually hit by.
+  if (targetAid == null) {
+    for (const c of replay.skillCasts) {
+      if (c.source !== monsterAid) continue;
+      const acc = ensure(c.skillId);
+      acc.castCount += 1;
+      if (c.castMs > 0) acc.castMsTotal += c.castMs;
+    }
   }
 
   const result: MobSkillAgg[] = [];
   for (const acc of map.values()) {
-    let top: { aid: number; name: string; count: number } | null = null;
-    for (const [aid, count] of acc.targets) {
-      if (!top || count > top.count) {
-        const ent = replay.entities.get(aid);
-        top = { aid, name: ent?.name || `#${aid}`, count };
-      }
-    }
     result.push({
       skillId: acc.skillId,
       name: resolveSkill(acc.skillId),
@@ -413,7 +416,6 @@ export function mobSkillBreakdown(
       casts: acc.castCount,
       avgCastMs: acc.castCount ? Math.round(acc.castMsTotal / acc.castCount) : null,
       distinctTargets: acc.targets.size,
-      topTarget: top,
     });
   }
 
@@ -430,8 +432,16 @@ export type MobHpSeries = {
  * HP timeline for a single mob. Primary signal is the server's mobHp packets
  * (replay.mobHp); we anchor the start at the entity's firstSeenMs with its
  * declared maxHp, and add a final 0-HP point at vanish time when it died.
+ *
+ * `fallbackMaxHp` lets the caller supply a Divine Pride-resolved max HP for
+ * bosses where the server reports `maxHp = -1` and never sends mobHp updates.
+ * Without it, the curve degenerates to a single point at kill time.
  */
-export function mobHpCurve(replay: Replay, monsterAid: number): MobHpSeries {
+export function mobHpCurve(
+  replay: Replay,
+  monsterAid: number,
+  fallbackMaxHp = 0,
+): MobHpSeries {
   const ent = replay.entities.get(monsterAid);
   const samples = replay.mobHp
     .filter((m) => m.aid === monsterAid)
@@ -441,19 +451,22 @@ export function mobHpCurve(replay: Replay, monsterAid: number): MobHpSeries {
   const hp: number[] = [];
   const maxHp: number[] = [];
 
-  // Anchor at first sighting, when we usually know maxHp.
-  if (ent && ent.firstSeenMs >= 0 && ent.maxHp > 0) {
+  const initialMax =
+    ent?.maxHp && ent.maxHp > 0 ? ent.maxHp : fallbackMaxHp;
+
+  // Anchor at first sighting whenever we have a max HP from any source.
+  if (ent && ent.firstSeenMs >= 0 && initialMax > 0) {
     ts.push(ent.firstSeenMs);
-    hp.push(ent.maxHp);
-    maxHp.push(ent.maxHp);
+    hp.push(initialMax);
+    maxHp.push(initialMax);
   }
 
-  let runningMax = ent?.maxHp && ent.maxHp > 0 ? ent.maxHp : 0;
+  let runningMax = initialMax;
   for (const s of samples) {
     if (s.maxHp > 0) runningMax = s.maxHp;
     ts.push(s.time);
     hp.push(s.hp);
-    maxHp.push(runningMax);
+    maxHp.push(runningMax || fallbackMaxHp);
   }
 
   // Final point at kill time when the mob died.
@@ -463,7 +476,7 @@ export function mobHpCurve(replay: Replay, monsterAid: number): MobHpSeries {
   if (kill) {
     ts.push(kill.time);
     hp.push(0);
-    maxHp.push(runningMax);
+    maxHp.push(runningMax || fallbackMaxHp);
   }
 
   return { ts, hp, maxHp };

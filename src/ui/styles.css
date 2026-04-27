@@ -366,6 +366,27 @@ a.cell-link {
   text-decoration: none;
 }
 
+.mob-skills-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.mob-skills-filter label {
+  color: var(--muted);
+}
+
+.mob-skills-filter select {
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+}
+
 a.bar-label:hover,
 a.bar-label-link:hover,
 a.cell-link:hover {
