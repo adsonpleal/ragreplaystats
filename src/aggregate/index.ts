@@ -376,7 +376,7 @@ export function mobSkillBreakdown(
   };
 
   for (const ev of replay.damage) {
-    if (ev.source !== monsterAid || ev.skillId === 0) continue;
+    if (ev.source !== monsterAid) continue;
     if (targetAid != null && ev.target !== targetAid) continue;
     const acc = ensure(ev.skillId);
     acc.hits += 1;
@@ -634,7 +634,7 @@ export function bySkillAndPlayer(
     const ent = replay.entities.get(acc.playerAid);
     result.push({
       skillId: acc.skillId,
-      name: acc.skillId === 0 ? "Auto-attack" : resolveSkill(acc.skillId),
+      name: resolveSkill(acc.skillId),
       playerAid: acc.playerAid,
       playerName: ent?.name || `#${acc.playerAid}`,
       count: acc.count,
@@ -742,8 +742,9 @@ export type SkillUsageAgg = {
 };
 
 /**
- * Count skill uses by (player, skill). Auto-attacks are excluded — only
- * non-zero skill IDs count. Combines damage events (each skill cast that
+ * Count skill uses by (player, skill). Auto-attacks are included as
+ * skillId = 0; the caller's resolver should map that to a localized
+ * "Ataque básico" label. Combines damage events (each skill cast that
  * landed) and non-damage skill uses (buffs / heals).
  *
  * `filter.sourceAid` restricts to a single player; `filter.targetAid`
@@ -775,7 +776,6 @@ export function skillUsageByPlayer(
   };
 
   for (const ev of replay.damage) {
-    if (ev.skillId === 0) continue;
     if (filter.sourceAid != null && ev.source !== filter.sourceAid) continue;
     if (filter.targetAid != null && ev.target !== filter.targetAid) continue;
     if (!isPlayerSource(replay, ev.source)) continue;
@@ -842,7 +842,7 @@ export function bySkill(
   for (const acc of map.values()) {
     result.push({
       skillId: acc.skillId,
-      name: acc.skillId === 0 ? "Auto-attack" : resolveSkill(acc.skillId),
+      name: resolveSkill(acc.skillId),
       count: acc.count,
       totalDamage: acc.totalDamage,
       avgDamage: acc.count ? Math.round(acc.totalDamage / acc.count) : 0,

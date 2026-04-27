@@ -327,7 +327,7 @@ function renderStatsMode(replay: Replay) {
 function renderResumoCard(replay: Replay) {
   const stats = computeResumo(replay, state.selectedTimeRange);
   const skillResolver = (id: number) =>
-    state.db?.resolveSkill(id) ?? t.skillFallback(id);
+    id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
   const mobResolver = (id: number) =>
     state.db?.resolveMob(id) ?? t.mobFallback(id);
 
@@ -790,7 +790,7 @@ function renderKillsChart(replay: Replay) {
 function renderSkillUsesChart(replay: Replay) {
   const host = $("#skill-uses-pane");
   const skillResolver = (id: number) =>
-    state.db?.resolveSkill(id) ?? t.skillFallback(id);
+    id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
 
   const filter: { sourceAid?: number; targetAid?: number } = {};
   if (state.selectedPlayer != null) filter.sourceAid = state.selectedPlayer;
@@ -1496,7 +1496,7 @@ function renderMobSkills(
 ) {
   const host = $("#mob-skills-pane");
   const skillResolver = (id: number) =>
-    state.db?.resolveSkill(id) ?? t.skillFallback(id);
+    id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
 
   // Build the per-victim filter list from the players this mob actually hit.
   const victims = playersDamagedByMonster(replay, mobAid);
@@ -1609,7 +1609,7 @@ function renderSkillTable(host: HTMLElement, events: DamageEvent[], title: strin
   host.innerHTML = `<h2 class="section-title">${escape(title)}</h2>
     <div id="skill-table"></div>`;
   const skillResolver = (id: number) =>
-    state.db?.resolveSkill(id) ?? t.skillFallback(id);
+    id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
   const rows = bySkill(events, state.replay!.skillCasts, skillResolver);
   renderTable(
     $("#skill-table"),
@@ -1650,7 +1650,7 @@ function renderSkillByPlayerTable(
   host.innerHTML = `<h2 class="section-title">${escape(title)}</h2>
     <div id="skill-table"></div>`;
   const skillResolver = (id: number) =>
-    state.db?.resolveSkill(id) ?? t.skillFallback(id);
+    id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
   const rows = bySkillAndPlayer(state.replay!, events, skillResolver);
   renderTable(
     $("#skill-table"),
