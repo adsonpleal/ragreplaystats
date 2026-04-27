@@ -1388,9 +1388,17 @@ function renderMobHpCurve(replay: Replay, mobAid: number) {
   // Resolve maxHp fallback once and feed it into the aggregator so the
   // firstSeenMs anchor exists even when the server hides HP for the boss.
   const fallbackMax = ent ? effectiveMaxHp(ent.maxHp, ent.view) : 0;
+  const hasServerSamples = replay.mobHp.some((m) => m.aid === mobAid);
+  // No way to plot anything meaningful — no max HP from any source AND no
+  // server-side HP snapshots. Drop the card entirely instead of showing a
+  // chart with a lone "hp = 0" dot at vanish time.
+  if (fallbackMax <= 0 && !hasServerSamples) {
+    host.innerHTML = "";
+    return;
+  }
   const series = mobHpCurve(replay, mobAid, fallbackMax);
   if (!series.ts.length) {
-    host.innerHTML = `<section class="stats-card"><h2 class="section-title">${t.hpCurveTitle}</h2><p class="section-hint">${t.mobNoHpDataHint}</p></section>`;
+    host.innerHTML = "";
     return;
   }
   const maxValues = series.maxHp.map((m) => (m > 0 ? m : fallbackMax));
