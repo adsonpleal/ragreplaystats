@@ -472,10 +472,15 @@ function renderConsumables(replay: Replay) {
     $("#consumables-bars"),
     rows.slice(0, ITEM_BAR_LIMIT).map((r) => ({
       key: r.itemId,
-      label: r.name,
+      label: r.itemId ? `#${r.itemId} · ${r.name}` : r.name,
+      labelSegments: r.itemId
+        ? [
+            { text: `#${r.itemId}`, href: itemDpUrl(r.itemId) },
+            { text: ` · ${r.name}` },
+          ]
+        : undefined,
       value: r.quantity,
       display: `${fmt(r.quantity)} (${r.count} usos)`,
-      href: r.itemId ? itemDpUrl(r.itemId) : undefined,
     })),
   );
 }
@@ -495,10 +500,15 @@ function renderLoot(replay: Replay) {
     $("#loot-bars"),
     rows.slice(0, ITEM_BAR_LIMIT).map((r) => ({
       key: r.itemId,
-      label: r.name,
+      label: r.itemId ? `#${r.itemId} · ${r.name}` : r.name,
+      labelSegments: r.itemId
+        ? [
+            { text: `#${r.itemId}`, href: itemDpUrl(r.itemId) },
+            { text: ` · ${r.name}` },
+          ]
+        : undefined,
       value: r.quantity,
       display: fmt(r.quantity),
-      href: r.itemId ? itemDpUrl(r.itemId) : undefined,
     })),
   );
 }
@@ -509,6 +519,10 @@ function itemDpUrl(id: number): string {
 
 function mobDpUrl(view: number): string {
   return `https://www.divine-pride.net/database/monster/${view}`;
+}
+
+function skillDpUrl(id: number): string {
+  return `https://www.divine-pride.net/database/skill/${id}`;
 }
 
 function renderHpSpChart(replay: Replay) {
@@ -604,10 +618,15 @@ function renderKillsByTypeChart(replay: Replay) {
       $("#kills-bars"),
       sorted.map(([view, v]) => ({
         key: view,
-        label: v.name,
+        label: view ? `#${view} · ${v.name}` : v.name,
+        labelSegments: view
+          ? [
+              { text: `#${view}`, href: mobDpUrl(view) },
+              { text: ` · ${v.name}` },
+            ]
+          : undefined,
         value: v.count,
         display: fmt(v.count),
-        href: view ? mobDpUrl(view) : undefined,
       })),
     );
     return;
@@ -623,10 +642,15 @@ function renderKillsByTypeChart(replay: Replay) {
     $("#kills-bars"),
     rows.map((r) => ({
       key: r.monsterView,
-      label: r.monsterName,
+      label: r.monsterView ? `#${r.monsterView} · ${r.monsterName}` : r.monsterName,
+      labelSegments: r.monsterView
+        ? [
+            { text: `#${r.monsterView}`, href: mobDpUrl(r.monsterView) },
+            { text: ` · ${r.monsterName}` },
+          ]
+        : undefined,
       value: r.count,
       display: fmt(r.count),
-      href: r.monsterView ? mobDpUrl(r.monsterView) : undefined,
     })),
   );
 }
@@ -710,26 +734,40 @@ function renderKillsChart(replay: Replay) {
     $("#kills-bars"),
     truncated.map((r) => {
       const mobHref = r.monsterView ? mobDpUrl(r.monsterView) : undefined;
+      const idChip = r.monsterView ? `#${r.monsterView}` : "";
       let label: string;
       let labelSegments: { text: string; href?: string }[] | undefined;
       if (playerLabel && monsterLabel) {
-        label = `${r.playerName} · ${r.monsterName}`;
-        labelSegments = [
-          { text: `${r.playerName} · ` },
-          { text: r.monsterName, href: mobHref },
-        ];
+        label = `${r.playerName} · ${idChip}${idChip ? " " : ""}${r.monsterName}`;
+        labelSegments = idChip
+          ? [
+              { text: `${r.playerName} · ` },
+              { text: idChip, href: mobHref },
+              { text: ` · ${r.monsterName}` },
+            ]
+          : [{ text: `${r.playerName} · ${r.monsterName}` }];
       } else if (playerLabel) {
-        label = r.monsterName;
-        labelSegments = [{ text: r.monsterName, href: mobHref }];
+        label = idChip ? `${idChip} · ${r.monsterName}` : r.monsterName;
+        labelSegments = idChip
+          ? [
+              { text: idChip, href: mobHref },
+              { text: ` · ${r.monsterName}` },
+            ]
+          : [{ text: r.monsterName }];
       } else if (monsterLabel) {
         // Bar represents a player when the mob is fixed — no DP link.
         label = r.playerName;
       } else {
-        label = `${r.playerName} · ${r.monsterName}`;
-        labelSegments = [
-          { text: `${r.playerName} · ` },
-          { text: r.monsterName, href: mobHref },
-        ];
+        label = idChip
+          ? `${r.playerName} · ${idChip} · ${r.monsterName}`
+          : `${r.playerName} · ${r.monsterName}`;
+        labelSegments = idChip
+          ? [
+              { text: `${r.playerName} · ` },
+              { text: idChip, href: mobHref },
+              { text: ` · ${r.monsterName}` },
+            ]
+          : [{ text: `${r.playerName} · ${r.monsterName}` }];
       }
       return {
         key: r.key,
@@ -992,13 +1030,18 @@ function renderByPlayerMode(replay: Replay) {
     $("#secondary-table"),
     [
       {
+        key: "view",
+        label: t.colMobId,
+        numeric: true,
+        format: (r) => String(r.view),
+        href: (r) => (r.view ? mobDpUrl(r.view) : null),
+      },
+      {
         key: "name",
         label: t.colMonster,
         format: (r) => formatMonsterRow(r),
         sortValue: (r) => formatMonsterRow(r),
-        href: (r) => (r.view ? mobDpUrl(r.view) : null),
       },
-      { key: "view", label: t.colMobId, numeric: true, format: (r) => String(r.view) },
       { key: "totalReceived", label: t.colDamage, numeric: true, format: (r) => fmt(r.totalReceived) },
       { key: "hits", label: t.colHits, numeric: true, format: (r) => fmt(r.hits) },
       {
@@ -1066,13 +1109,18 @@ function renderByMonsterMode(replay: Replay) {
     $("#primary-table"),
     [
       {
+        key: "view",
+        label: t.colMobId,
+        numeric: true,
+        format: (r) => String(r.view),
+        href: (r) => (r.view ? mobDpUrl(r.view) : null),
+      },
+      {
         key: "name",
         label: t.colMonster,
         format: (r) => formatMonsterRow(r),
         sortValue: (r) => formatMonsterRow(r),
-        href: (r) => (r.view ? mobDpUrl(r.view) : null),
       },
-      { key: "view", label: t.colMobId, numeric: true, format: (r) => String(r.view) },
       { key: "totalReceived", label: t.colDamageTaken, numeric: true, format: (r) => fmt(r.totalReceived) },
       { key: "hits", label: t.colHits, numeric: true, format: (r) => fmt(r.hits) },
       { key: "attackers", label: t.colAttackers, numeric: true, format: (r) => fmt(r.attackers) },
@@ -1240,7 +1288,7 @@ function renderMonsterOverview(replay: Replay, mobAid: number) {
   const maxHp = effectiveMaxHp(ent.maxHp, ent.view);
   const speciesName = monsterName(replay, mobAid);
   const speciesValue = ent.view
-    ? `<a class="cell-link" href="${escape(mobDpUrl(ent.view))}" target="_blank" rel="noopener noreferrer">${escape(speciesName)}</a>`
+    ? `<a class="cell-link" href="${escape(mobDpUrl(ent.view))}" target="_blank" rel="noopener noreferrer">#${ent.view}</a> · ${escape(speciesName)}`
     : escape(speciesName);
 
   const cells: SummaryCell[] = [
@@ -1428,14 +1476,13 @@ function renderMobSkills(
     $("#mob-skills-table"),
     [
       {
-        key: "name",
-        label: t.colSkill,
-        href: (r) =>
-          r.skillId
-            ? `https://www.divine-pride.net/database/skill/${r.skillId}`
-            : null,
+        key: "skillId",
+        label: t.colId,
+        numeric: true,
+        format: (r) => String(r.skillId),
+        href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
       },
-      { key: "skillId", label: t.colId, numeric: true, format: (r) => String(r.skillId) },
+      { key: "name", label: t.colSkill },
       { key: "hits", label: t.colHits, numeric: true, format: (r) => fmt(r.hits) },
       {
         key: "totalDamage",
