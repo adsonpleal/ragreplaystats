@@ -360,12 +360,14 @@ button {
 }
 
 a.bar-label,
+a.bar-label-link,
 a.cell-link {
   color: inherit;
   text-decoration: none;
 }
 
 a.bar-label:hover,
+a.bar-label-link:hover,
 a.cell-link:hover {
   color: var(--accent);
   text-decoration: underline;

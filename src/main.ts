@@ -693,26 +693,34 @@ function renderKillsChart(replay: Replay) {
   renderBarChart(
     $("#kills-bars"),
     truncated.map((r) => {
+      const mobHref = r.monsterView ? mobDpUrl(r.monsterView) : undefined;
       let label: string;
-      let labelIsMob = false;
+      let labelSegments: { text: string; href?: string }[] | undefined;
       if (playerLabel && monsterLabel) {
         label = `${r.playerName} · ${r.monsterName}`;
-        labelIsMob = true;
+        labelSegments = [
+          { text: `${r.playerName} · ` },
+          { text: r.monsterName, href: mobHref },
+        ];
       } else if (playerLabel) {
         label = r.monsterName;
-        labelIsMob = true;
+        labelSegments = [{ text: r.monsterName, href: mobHref }];
       } else if (monsterLabel) {
-        label = r.playerName; // Bar represents a player when the mob is fixed.
+        // Bar represents a player when the mob is fixed — no DP link.
+        label = r.playerName;
       } else {
         label = `${r.playerName} · ${r.monsterName}`;
-        labelIsMob = true;
+        labelSegments = [
+          { text: `${r.playerName} · ` },
+          { text: r.monsterName, href: mobHref },
+        ];
       }
       return {
         key: r.key,
         label,
+        labelSegments,
         value: r.count,
         display: fmt(r.count),
-        href: labelIsMob && r.monsterView ? mobDpUrl(r.monsterView) : undefined,
       };
     }),
   );
