@@ -1538,8 +1538,13 @@ function renderSkillTable(host: HTMLElement, events: DamageEvent[], title: strin
   renderTable(
     $("#skill-table"),
     [
+      {
+        key: "skillId",
+        label: t.colId,
+        format: (r) => String(r.skillId),
+        href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
+      },
       { key: "name", label: t.colSkill },
-      { key: "skillId", label: t.colId, numeric: true, format: (r) => String(r.skillId) },
       { key: "count", label: t.colHits, numeric: true, format: (r) => fmt(r.count) },
       { key: "totalDamage", label: t.colTotalDamage, numeric: true, format: (r) => fmt(r.totalDamage) },
       { key: "avgDamage", label: t.colAvgDamage, numeric: true, format: (r) => fmt(r.avgDamage) },
@@ -1574,6 +1579,13 @@ function renderSkillByPlayerTable(
   renderTable(
     $("#skill-table"),
     [
+      {
+        key: "skillId",
+        label: t.colId,
+        format: (r) => String(r.skillId),
+        href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
+      },
+      { key: "name", label: t.colSkill },
       { key: "playerName", label: t.colPlayer },
       {
         key: "class",
@@ -1581,8 +1593,6 @@ function renderSkillByPlayerTable(
         format: (r) => playerClass(state.replay!, r.playerAid),
         sortValue: (r) => playerClass(state.replay!, r.playerAid),
       },
-      { key: "name", label: t.colSkill },
-      { key: "skillId", label: t.colId, numeric: true, format: (r) => String(r.skillId) },
       { key: "count", label: t.colHits, numeric: true, format: (r) => fmt(r.count) },
       { key: "totalDamage", label: t.colTotalDamage, numeric: true, format: (r) => fmt(r.totalDamage) },
       { key: "avgDamage", label: t.colAvgDamage, numeric: true, format: (r) => fmt(r.avgDamage) },
