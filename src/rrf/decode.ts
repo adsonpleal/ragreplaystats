@@ -449,21 +449,26 @@ function readItemsContainer(
   if (!itemsContainer) return out;
 
   const RECORD = 172;
-  // The Items container has multiple chunks. Order matters because the same
-  // `pos` shows up in two of them per equipped item:
-  //   chunks 4601..4606  — per-equip-slot lists; carry the real
-  //                        equipped / cards / refine data
-  //   chunk 4510         — main bag; same items appear but with
-  //                        equipped=0, cards=zeros (the bag view doesn't
-  //                        carry slot-specific metadata)
-  // We process the equipped chunks first so the rich per-item record wins,
-  // then fall back to the main bag (`if !has`) for consumables / loot that
-  // aren't equipped anywhere.
-  const sortedChunks = [...itemsContainer.chunks].sort((a, b) => {
-    const aEquip = a.id >= 4601 && a.id <= 4606 ? 0 : 1;
-    const bEquip = b.id >= 4601 && b.id <= 4606 ? 0 : 1;
-    return aEquip - bEquip;
-  });
+  // The Items container has multiple chunks:
+  //   4601 — currently-equipped main gear (head/weapon/armor/etc.)
+  //   4603 — currently-equipped costume + shadow gear
+  //   4602, 4604 — the "equip-switch" alternate presets the player bound
+  //                via the equipment-swap feature. Same shape, but the
+  //                items aren't actively worn — skip them entirely.
+  //   4605, 4606 — ghost / removed slots (records with qty=0).
+  //   4510       — main bag; equipped slots appear here too but with
+  //                equipped=0 / zero cards (bag view).
+  // Process 4601 + 4603 first so the rich per-item record wins, then fall
+  // back to the bag for consumables / loot that aren't equipped anywhere.
+  const ACTIVE_EQUIP_CHUNKS = new Set([4601, 4603]);
+  const SKIP_EQUIP_CHUNKS = new Set([4602, 4604, 4605, 4606]);
+  const sortedChunks = [...itemsContainer.chunks]
+    .filter((c) => !SKIP_EQUIP_CHUNKS.has(c.id))
+    .sort((a, b) => {
+      const aEquip = ACTIVE_EQUIP_CHUNKS.has(a.id) ? 0 : 1;
+      const bEquip = ACTIVE_EQUIP_CHUNKS.has(b.id) ? 0 : 1;
+      return aEquip - bEquip;
+    });
   for (const chunk of sortedChunks) {
     const view = new DataView(
       chunk.data.buffer,
