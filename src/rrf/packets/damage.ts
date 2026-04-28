@@ -71,6 +71,46 @@ export function decodeAutoAttack(reader: ByteReader, time: number): DamageEvent 
 }
 
 /**
+ * 0x08c8 — ZC_NOTIFY_ACT3 (newer 34-byte variant). Adds an `isSPDamage` u8
+ * after `damage`, which shifts every subsequent field by one byte. The
+ * Latam server uses this packet on newer clients (PACKETVER >= 20131223).
+ *
+ * Layout (after pkt id):
+ *   srcID u32, dstID u32, startTime u32,
+ *   attackMT i32, attackedMT i32, damage i32,
+ *   isSPDamage u8, count i16, action u8, leftDamage i32
+ */
+export function decodeAutoAttack08c8(
+  reader: ByteReader,
+  time: number,
+): DamageEvent {
+  const source = reader.u32();
+  const target = reader.u32();
+  reader.skip(4); // startTime
+  reader.skip(4); // attackMT
+  reader.skip(4); // attackedMT
+  const damage = reader.i32();
+  reader.skip(1); // isSPDamage — irrelevant for the dashboards
+  const hits = reader.i16();
+  const action = reader.u8();
+  // leftDamage follows — ignored.
+
+  const hitType = classifyHit(action, damage);
+  return {
+    time,
+    source,
+    target,
+    skillId: 0,
+    skillLevel: 0,
+    damage: hitType === "miss" ? 0 : Math.max(0, damage),
+    hits: Math.max(1, hits),
+    hitType,
+    source_packet: "auto",
+    rawAction: action,
+  };
+}
+
+/**
  * 0x008a — ZC_NOTIFY_ACT (legacy auto-attack damage), 29 bytes.
  * Layout (after pkt id):
  *   srcID u32, dstID u32, tick u32,

@@ -7,6 +7,7 @@ import {
 } from "./entity.js";
 import {
   decodeAutoAttack,
+  decodeAutoAttack08c8,
   decodeAutoAttackLegacy,
   decodeSkillDamage,
 } from "./damage.js";
@@ -53,6 +54,7 @@ export const PacketIds = {
   VANISH: 0x0080,
   MOB_HP: 0x0977,
   AUTO_ATTACK: 0x02e1,
+  AUTO_ATTACK_NEW: 0x08c8,
   AUTO_ATTACK_LEGACY: 0x008a,
   SKILL_DAMAGE: 0x01de,
   SKILL_NODMG_OLD: 0x011a,
@@ -112,6 +114,8 @@ export function decodePacket(
         return { type: "mobHp", data: decodeMobHp(reader, time) };
       case PacketIds.AUTO_ATTACK:
         return { type: "damage", data: decodeAutoAttack(reader, time) };
+      case PacketIds.AUTO_ATTACK_NEW:
+        return { type: "damage", data: decodeAutoAttack08c8(reader, time) };
       case PacketIds.SKILL_DAMAGE:
         return { type: "damage", data: decodeSkillDamage(reader, time) };
       case PacketIds.SKILL_NODMG_OLD:
