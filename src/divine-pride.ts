@@ -10,7 +10,12 @@ const SERVER = "latamRO";
 const LANG = "pt-BR";
 const BASE = "https://www.divine-pride.net/api/database";
 const CONCURRENCY = 6;
-const CACHE_VERSION = 1;
+// Bump this whenever the cache shape OR the gate logic changes; existing
+// localStorage entries under the old key are simply ignored.
+//   v1 → v2: retry null-name entries once per session (Divine Pride
+//            adds new IDs over time, e.g. Dummy - Anjo / Morto-Vivo
+//            arrived after the v1 cache snapshotted nulls).
+const CACHE_VERSION = 2;
 const STORAGE_KEY = `dp:v${CACHE_VERSION}:${SERVER}`;
 
 type ItemEntry = { name: string | null };
@@ -31,6 +36,15 @@ const pending = {
   monsters: new Map<number, Promise<void>>(),
   skills: new Map<number, Promise<void>>(),
   buffs: new Map<number, Promise<void>>(),
+};
+// Tracks which previously-null entries we've already tried to refresh in
+// this session. Prevents an unbounded refetch loop while still letting
+// genuinely-new IDs (e.g. dummies that DP added recently) self-heal.
+const retriedThisSession = {
+  items: new Set<number>(),
+  monsters: new Set<number>(),
+  skills: new Set<number>(),
+  buffs: new Set<number>(),
 };
 
 function loadCache(): CacheShape {
@@ -80,7 +94,12 @@ async function fetchJson(kind: string, id: number): Promise<unknown> {
 }
 
 async function fetchItem(id: number): Promise<void> {
-  if (cache.items[id]) return;
+  const cached = cache.items[id];
+  if (cached) {
+    if (cached.name != null) return;
+    if (retriedThisSession.items.has(id)) return;
+    retriedThisSession.items.add(id);
+  }
   const existing = pending.items.get(id);
   if (existing) return existing;
   const p = (async () => {
@@ -99,7 +118,12 @@ async function fetchItem(id: number): Promise<void> {
 }
 
 async function fetchMonster(id: number): Promise<void> {
-  if (cache.monsters[id]) return;
+  const cached = cache.monsters[id];
+  if (cached) {
+    if (cached.name != null) return;
+    if (retriedThisSession.monsters.has(id)) return;
+    retriedThisSession.monsters.add(id);
+  }
   const existing = pending.monsters.get(id);
   if (existing) return existing;
   const p = (async () => {
@@ -125,7 +149,12 @@ async function fetchMonster(id: number): Promise<void> {
 }
 
 async function fetchSkill(id: number): Promise<void> {
-  if (cache.skills[id]) return;
+  const cached = cache.skills[id];
+  if (cached) {
+    if (cached.name != null) return;
+    if (retriedThisSession.skills.has(id)) return;
+    retriedThisSession.skills.add(id);
+  }
   const existing = pending.skills.get(id);
   if (existing) return existing;
   const p = (async () => {
@@ -144,7 +173,12 @@ async function fetchSkill(id: number): Promise<void> {
 }
 
 async function fetchBuff(id: number): Promise<void> {
-  if (cache.buffs[id]) return;
+  const cached = cache.buffs[id];
+  if (cached) {
+    if (cached.name != null) return;
+    if (retriedThisSession.buffs.has(id)) return;
+    retriedThisSession.buffs.add(id);
+  }
   const existing = pending.buffs.get(id);
   if (existing) return existing;
   const p = (async () => {
