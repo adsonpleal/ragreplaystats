@@ -1170,7 +1170,10 @@ function renderSkillUsesChart(replay: Replay) {
 
 function monsterName(replay: Replay, aid: number): string {
   const ent = replay.entities.get(aid);
-  if (!ent) return t.mobFallback(aid);
+  // Spawn packet for this AID was never seen — common on practice maps
+  // (training dummies on tra_fild). Show a friendly placeholder instead
+  // of "mob#<aid>".
+  if (!ent) return t.unknownTargetName;
   // For mobs, prefer the DB species name over the per-instance spawn-packet
   // label (the server often sends 2-byte codes that look like garbage).
   if (state.db && ent.view) {

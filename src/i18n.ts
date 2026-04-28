@@ -160,6 +160,9 @@ export const t = {
   mobFallback: (id: number) => `mob#${id}`,
   itemFallback: (id: number) => `item#${id}`,
   statusFallback: (id: number) => `efst#${id}`,
+  /** Used for damage targets without a spawn packet (training dummies on
+   *  practice maps, server-pushed entities the recording missed, etc.). */
+  unknownTargetName: "Alvo desconhecido",
 
   // Stats tab
   statsResumoTitle: "Resumo",
