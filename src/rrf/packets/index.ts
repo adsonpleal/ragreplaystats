@@ -30,7 +30,9 @@ import {
   decodeStatus043f,
   decodeStatus0983,
 } from "./status.js";
+import { decodeSelfChat } from "./chat.js";
 import type {
+  ChatEvent,
   DamageEvent,
   ItemAddEvent,
   ItemDeleteEvent,
@@ -66,6 +68,7 @@ export const PacketIds = {
   STATUS_043F: 0x043f,
   STATUS_0983: 0x0983,
   GROUND_SKILL_ENTRY: 0x09ca,
+  SELF_CHAT: 0x008e,
 } as const;
 
 export type DecodedPacket =
@@ -81,7 +84,8 @@ export type DecodedPacket =
   | { type: "itemUseAck"; data: ItemUseAckPacket }
   | { type: "paramChange"; data: ParamChangeEvent }
   | { type: "status"; data: StatusEvent }
-  | { type: "groundSkillEntry"; data: GroundSkillEntry };
+  | { type: "groundSkillEntry"; data: GroundSkillEntry }
+  | { type: "chat"; data: ChatEvent };
 
 export function decodePacket(
   raw: Uint8Array,
@@ -136,6 +140,8 @@ export function decodePacket(
         return { type: "status", data: decodeStatus0983(reader, time) };
       case PacketIds.GROUND_SKILL_ENTRY:
         return { type: "groundSkillEntry", data: decodeSkillEntry09ca(reader, time) };
+      case PacketIds.SELF_CHAT:
+        return { type: "chat", data: decodeSelfChat(raw, time) };
       default:
         return null;
     }

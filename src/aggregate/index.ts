@@ -33,9 +33,21 @@ export function isPlayerSource(replay: Replay, aid: number): boolean {
   return !!ent && PLAYER_KINDS.has(ent.kind);
 }
 
+/**
+ * "Targetable" = anything a player can deal damage to and have it count as
+ * a monster row. We include:
+ *   - kind="mob" (regular monsters, MVPs, mini-bosses)
+ *   - kind="npc" (training dummies and NPCs the server marks damageable)
+ *   - missing entities (target AID that was never spawned in this recording
+ *     — common on practice maps like tra_fild where dummies are placed on
+ *     map and the spawn packet was missed).
+ * We exclude pc / homun / merc / elem / pet — those are allies, not targets.
+ */
+const NON_TARGETABLE_KINDS = new Set(["pc", "homun", "merc", "elem", "pet"]);
 function isMobTarget(replay: Replay, aid: number): boolean {
   const ent = replay.entities.get(aid);
-  return !!ent && ent.kind === "mob";
+  if (!ent) return true;
+  return !NON_TARGETABLE_KINDS.has(ent.kind);
 }
 
 export type PlayerAgg = {
@@ -137,15 +149,15 @@ export function monstersDamagedByPlayer(
   for (const ev of replay.damage) {
     if (ev.source !== playerAid) continue;
     if (!isMobTarget(replay, ev.target)) continue;
-    const ent = replay.entities.get(ev.target)!;
+    const ent = replay.entities.get(ev.target);
     let agg = map.get(ev.target);
     if (!agg) {
       agg = {
         aid: ev.target,
-        view: ent.view,
-        name: ent.name || `mob#${ent.view || ev.target}`,
-        isBoss: ent.isBoss,
-        maxHp: ent.maxHp,
+        view: ent?.view ?? 0,
+        name: ent?.name || `mob#${ent?.view || ev.target}`,
+        isBoss: ent?.isBoss ?? false,
+        maxHp: ent?.maxHp ?? 0,
         totalReceived: 0,
         hits: 0,
         attackers: 1,
@@ -180,15 +192,15 @@ export function monstersWhoTookDamage(replay: Replay): MonsterAgg[] {
 
   for (const ev of replay.damage) {
     if (!isMobTarget(replay, ev.target)) continue;
-    const ent = replay.entities.get(ev.target)!;
+    const ent = replay.entities.get(ev.target);
     let agg = map.get(ev.target);
     if (!agg) {
       agg = {
         aid: ev.target,
-        view: ent.view,
-        name: ent.name || `mob#${ent.view || ev.target}`,
-        isBoss: ent.isBoss,
-        maxHp: ent.maxHp,
+        view: ent?.view ?? 0,
+        name: ent?.name || `mob#${ent?.view || ev.target}`,
+        isBoss: ent?.isBoss ?? false,
+        maxHp: ent?.maxHp ?? 0,
         totalReceived: 0,
         hits: 0,
         attackers: 0,
@@ -1287,4 +1299,124 @@ export function brushSeries(replay: Replay, bucketMs: number): BrushSeries {
   }
 
   return { ts, damage, killTs, killViews, spanStart: start, spanEnd: end };
+}
+
+export type DpsAnalysisStats = {
+  /** Width of the user's drag-selection rectangle (or full session). */
+  selectionDurationMs: number;
+  /** Damage events from the session player whose time falls in [startMs, endMs]. */
+  events: number;
+  totalDamage: number;
+  firstDamageMs: number | null;
+  lastDamageMs: number | null;
+  /** lastDamageMs - firstDamageMs. 0 with 0 or 1 events. */
+  combatSpanMs: number;
+  /** totalDamage / (combatSpanMs / 1000). 0 when combatSpanMs is 0. */
+  dps: number;
+  /** combatSpanMs / (events - 1). null with <2 events. */
+  meanIntervalMs: number | null;
+  /** Largest gap between two consecutive damage events inside the window. */
+  longestGapMs: number;
+  highestHit: number;
+  averageHit: number;
+  distinctSkills: number;
+  topSkillId: number | null;
+  topSkillName: string | null;
+  topSkillDamage: number;
+};
+
+/**
+ * Per-window aggregation for the "Análise de DPS" tab. Filters
+ * `replay.damage` to events sourced by the session player and falling inside
+ * `range` (or the whole session when null). DPS is computed using the first
+ * and last damage events INSIDE the window — not the selection rectangle's
+ * edges — to keep the metric meaningful when the user drags loosely.
+ */
+export function dpsAnalysisStats(
+  replay: Replay,
+  range: Range,
+  resolveSkill: (id: number) => string,
+): DpsAnalysisStats {
+  const aid = replay.sessionInfo.aid;
+  const events: DamageEvent[] = [];
+  for (const d of replay.damage) {
+    if (d.source !== aid) continue;
+    if (!inRange(d.time, range)) continue;
+    events.push(d);
+  }
+  events.sort((a, b) => a.time - b.time);
+
+  const selectionDurationMs = range
+    ? Math.max(0, range.endMs - range.startMs)
+    : replay.sessionInfo.durationMs;
+
+  if (!events.length) {
+    return {
+      selectionDurationMs,
+      events: 0,
+      totalDamage: 0,
+      firstDamageMs: null,
+      lastDamageMs: null,
+      combatSpanMs: 0,
+      dps: 0,
+      meanIntervalMs: null,
+      longestGapMs: 0,
+      highestHit: 0,
+      averageHit: 0,
+      distinctSkills: 0,
+      topSkillId: null,
+      topSkillName: null,
+      topSkillDamage: 0,
+    };
+  }
+
+  let totalDamage = 0;
+  let highestHit = 0;
+  let longestGapMs = 0;
+  const skillTotals = new Map<number, number>();
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    totalDamage += ev.damage;
+    if (ev.damage > highestHit) highestHit = ev.damage;
+    skillTotals.set(ev.skillId, (skillTotals.get(ev.skillId) ?? 0) + ev.damage);
+    if (i > 0) {
+      const gap = ev.time - events[i - 1].time;
+      if (gap > longestGapMs) longestGapMs = gap;
+    }
+  }
+
+  const firstDamageMs = events[0].time;
+  const lastDamageMs = events[events.length - 1].time;
+  const combatSpanMs = Math.max(0, lastDamageMs - firstDamageMs);
+  const dps = combatSpanMs > 0 ? totalDamage / (combatSpanMs / 1000) : 0;
+  const meanIntervalMs =
+    events.length >= 2 ? combatSpanMs / (events.length - 1) : null;
+
+  let topSkillId: number | null = null;
+  let topSkillDamage = 0;
+  for (const [id, dmg] of skillTotals) {
+    if (dmg > topSkillDamage) {
+      topSkillDamage = dmg;
+      topSkillId = id;
+    }
+  }
+  const topSkillName = topSkillId === null ? null : resolveSkill(topSkillId);
+
+  return {
+    selectionDurationMs,
+    events: events.length,
+    totalDamage,
+    firstDamageMs,
+    lastDamageMs,
+    combatSpanMs,
+    dps: Math.round(dps),
+    meanIntervalMs,
+    longestGapMs,
+    highestHit,
+    averageHit: Math.round(totalDamage / events.length),
+    distinctSkills: skillTotals.size,
+    topSkillId,
+    topSkillName,
+    topSkillDamage,
+  };
 }

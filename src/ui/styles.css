@@ -375,6 +375,39 @@ button {
   position: relative;
 }
 
+.dps-analysis-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.dps-analysis-legend-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 0.75rem;
+  margin-right: 0.25rem;
+}
+
+.dps-analysis-legend-dot--damage {
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.dps-analysis-legend-dot--chat {
+  background: #1f77b4;
+  transform: rotate(45deg);
+}
+
+@media (prefers-color-scheme: dark) {
+  .dps-analysis-legend-dot--chat {
+    background: #62a4d9;
+  }
+}
+
 /* uPlot's drag-selection rect — paint it with the accent color so the
    user actually sees the window they brushed. */
 .uplot .u-select {

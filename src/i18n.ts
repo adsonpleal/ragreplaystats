@@ -35,6 +35,7 @@ export const t = {
   modeByPlayer: "Por jogador",
   modeByMonster: "Por monstro",
   modeStats: "Estatísticas",
+  modeDpsAnalysis: "Análise de DPS",
 
   // Breadcrumb
   crumbPlayer: "Jogador",
@@ -167,6 +168,36 @@ export const t = {
   statsBrushClear: "Limpar seleção",
   statsRangeLabel: (start: string, end: string) =>
     `Janela: ${start} – ${end}`,
+  // DPS Analysis tab
+  dpsAnalysisHelpTitle: "Como usar",
+  dpsAnalysisHelpHowToUse: "Como usar.",
+  dpsAnalysisHelpHowToUseBody:
+    "Arraste sobre o gráfico para selecionar uma janela. As estatísticas abaixo recalculam para os eventos dentro dessa janela. Pontos coloridos = golpes do seu jogador; pontos quadrados = mensagens que você digitou no chat — passe o mouse para ver o dano (com a habilidade) ou o texto. Clique em \"Limpar seleção\" para voltar à sessão completa.",
+  dpsAnalysisHelpDpsCalc: "Como o DPS é calculado.",
+  dpsAnalysisHelpDpsCalcBody:
+    "O DPS médio usa o primeiro e o último golpe dentro da janela selecionada como base de tempo, não as bordas da seleção. Em fórmula: DPS = dano total na janela ÷ (tempo do último golpe − tempo do primeiro golpe). Isso evita que tempo morto antes do primeiro hit ou depois do último diluam o DPS.",
+  dpsAnalysisHelpTimeMetrics: "Diferença entre as métricas de tempo.",
+  dpsAnalysisHelpTimeMetricsBody:
+    "\"Janela selecionada\" mostra o tamanho do retângulo que você arrastou. \"Janela de combate\" mostra último golpe − primeiro golpe — sempre menor ou igual à janela selecionada. \"Maior intervalo\" é o maior salto entre dois golpes consecutivos dentro da janela (útil para identificar pausas).",
+  dpsAnalysisChartTitle: "Linha do tempo de dano e mensagens",
+  dpsAnalysisDamageSeries: "Dano",
+  dpsAnalysisChatSeries: "Mensagens",
+  dpsAnalysisClearSelection: "Limpar seleção",
+  dpsAnalysisRangeLabel: (s: string, e: string) => `Janela: ${s} – ${e}`,
+  dpsAnalysisStatsTitle: "Estatísticas da janela",
+  dpsAnalysisEmpty: "Nenhum evento de dano do jogador neste recorte.",
+  cellSelectionDuration: "Janela selecionada",
+  cellEventsInWindow: "Eventos de dano",
+  cellCombatSpan: "Janela de combate",
+  cellCombatSpanHint: "Do 1º ao último golpe",
+  cellWindowDps: "DPS médio",
+  cellMeanInterval: "Tempo médio entre golpes",
+  cellHighestSingleHit: "Maior golpe",
+  cellAverageHit: "Dano médio por golpe",
+  cellLongestGap: "Maior intervalo",
+  cellDistinctSkills: "Habilidades distintas",
+  cellTopSkillWindow: "Habilidade mais usada",
+
   // Equipment card (Estatísticas tab)
   equipmentTitle: "Equipamento",
   equipmentNone: "Sem equipamentos no momento da gravação.",

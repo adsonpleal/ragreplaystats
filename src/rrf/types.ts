@@ -118,6 +118,15 @@ export type SessionInfo = {
   aid: number;
 };
 
+/**
+ * The recording's local player chat (0x008e ZC_NOTIFY_PLAYERCHAT). Source is
+ * always the session player; we don't carry the AID on the event itself.
+ */
+export type ChatEvent = {
+  time: number;
+  message: string;
+};
+
 export type InventoryRecord = {
   itemId: number;
   qty: number;
@@ -146,6 +155,7 @@ export type Replay = {
   itemAdds: ItemAddEvent[];
   paramChanges: ParamChangeEvent[];
   statusEvents: StatusEvent[];
+  chats: ChatEvent[];
   totals: {
     packetCount: number;
     handledPackets: number;

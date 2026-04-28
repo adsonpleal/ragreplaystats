@@ -10,6 +10,7 @@ import { readHeader } from "./header.js";
 import { decodePacket } from "./packets/index.js";
 import { readKoreanZ } from "./reader.js";
 import type {
+  ChatEvent,
   DamageEvent,
   Entity,
   EntityKind,
@@ -136,6 +137,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   const itemAdds: ItemAddEvent[] = [];
   const paramChanges: ParamChangeEvent[] = [];
   const statusEvents: StatusEvent[] = [];
+  const chats: ChatEvent[] = [];
   const knownPacketIdSet = new Set<number>();
   // Map from ground-skill-unit AID → caster AID. Skills like Onda Psíquica
   // (Psychic Wave), Storm Gust, Comet, etc. spawn a "skill unit" entity that
@@ -263,6 +265,9 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         }
         break;
       }
+      case "chat":
+        chats.push(decoded.data);
+        break;
       case "mapChange":
         mapChanges.push(decoded.data);
         break;
@@ -380,6 +385,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     itemAdds,
     paramChanges: dedupedParams,
     statusEvents: dedupedStatus,
+    chats,
     totals: {
       packetCount,
       handledPackets,

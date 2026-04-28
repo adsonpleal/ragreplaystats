@@ -6,6 +6,7 @@ import {
   consumablesByItem,
   damageTimelineMulti,
   damageTimelineSingle,
+  dpsAnalysisStats,
   isPlayerSource,
   killsByPlayerAndMob,
   lootByItem,
@@ -47,8 +48,9 @@ import { renderLineChart } from "./ui/line-chart.js";
 import { renderSummaryCard, type SummaryCell } from "./ui/stats-summary.js";
 import { renderTable } from "./ui/table.js";
 import { renderTimelineBrush } from "./ui/timeline-brush.js";
+import { renderDpsScatter } from "./ui/dps-scatter.js";
 
-type Mode = "byPlayer" | "byMonster" | "stats";
+type Mode = "byPlayer" | "byMonster" | "stats" | "dpsAnalysis";
 
 type State = {
   replay: Replay | null;
@@ -69,6 +71,8 @@ type State = {
    * selected monster changes.
    */
   selectedMobSkillTarget: number | null;
+  /** Drag-selected window for the DPS Analysis tab. null = full session. */
+  dpsAnalysisRange: { startMs: number; endMs: number } | null;
   /** Recent-replays list state, populated when the home view is visible. */
   recent: {
     items: ReplayListItem[];
@@ -96,6 +100,7 @@ const state: State = {
   replayBytes: null,
   replayFileName: null,
   selectedMobSkillTarget: null,
+  dpsAnalysisRange: null,
   recent: {
     items: [],
     pageCursors: [undefined],
@@ -138,6 +143,7 @@ function setupHomeLink() {
     if (!state.replay && !new URLSearchParams(location.search).get("r")) return;
     const url = new URL(location.href);
     url.searchParams.delete("r");
+    url.searchParams.delete("tab");
     history.pushState(null, "", url.pathname + url.search);
     state.replay = null;
     state.shareId = null;
@@ -147,6 +153,7 @@ function setupHomeLink() {
     state.selectedMonster = null;
     state.selectedTimeRange = null;
     state.selectedMobSkillTarget = null;
+    state.dpsAnalysisRange = null;
     $("#summary").hidden = true;
     $("#explorer").hidden = true;
     $("#share-controls").innerHTML = "";
@@ -258,10 +265,14 @@ function parseAndRender(
   state.selectedMonster = null;
   state.selectedTimeRange = null;
   state.selectedMobSkillTarget = null;
+  state.dpsAnalysisRange = null;
   state.shareId = shareId;
   // Keep a copy of the raw bytes so the user can re-download the replay.
   state.replayBytes = new Uint8Array(buf as ArrayBuffer).slice();
   state.replayFileName = fileName;
+  // Honour ?tab=... if it was on the URL when the replay loaded.
+  const urlTab = readTabFromUrl();
+  if (urlTab) setMode(urlTab);
   status.textContent = t.decoded(
     replay.totals.handledPackets,
     replay.totals.packetCount,
@@ -294,6 +305,9 @@ function paintStaticStrings() {
           break;
         case "stats":
           btn.textContent = t.modeStats;
+          break;
+        case "dpsAnalysis":
+          btn.textContent = t.modeDpsAnalysis;
           break;
       }
     });
@@ -373,14 +387,52 @@ function setupModeToggle() {
     btn.addEventListener("click", () => {
       const mode = btn.dataset.mode as Mode;
       if (state.mode === mode) return;
-      state.mode = mode;
-      state.selectedPlayer = null;
-      state.selectedMonster = null;
-      document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
+      setMode(mode);
       rerender();
     });
   });
+}
+
+const VALID_MODES: ReadonlySet<Mode> = new Set([
+  "byPlayer",
+  "byMonster",
+  "stats",
+  "dpsAnalysis",
+]);
+
+/**
+ * Apply a new mode + reflect it in the URL via `?tab=`. Selection state
+ * is reset like the original toggle behaviour. The active-button class is
+ * re-applied here so the URL-driven path uses the same code.
+ */
+function setMode(mode: Mode) {
+  state.mode = mode;
+  state.selectedPlayer = null;
+  state.selectedMonster = null;
+  document
+    .querySelectorAll<HTMLButtonElement>(".mode-btn")
+    .forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  syncTabToUrl(mode);
+}
+
+function syncTabToUrl(mode: Mode) {
+  const url = new URL(location.href);
+  if (mode === "byPlayer") {
+    // Default tab — keep URL clean.
+    url.searchParams.delete("tab");
+  } else {
+    url.searchParams.set("tab", mode);
+  }
+  const next = url.pathname + (url.search || "");
+  if (next !== location.pathname + location.search) {
+    history.replaceState(null, "", next);
+  }
+}
+
+function readTabFromUrl(): Mode | null {
+  const raw = new URLSearchParams(location.search).get("tab");
+  if (!raw) return null;
+  return VALID_MODES.has(raw as Mode) ? (raw as Mode) : null;
 }
 
 function rerender() {
@@ -401,8 +453,10 @@ function rerender() {
     renderByMonsterMode(r);
     renderSkillUsesChart(r);
     renderKillsChart(r);
-  } else {
+  } else if (state.mode === "stats") {
     renderStatsMode(r);
+  } else {
+    renderDpsAnalysisMode(r);
   }
 }
 
@@ -429,9 +483,16 @@ function clearByMonsterOnlyPanes() {
   $("#mob-skills-pane").innerHTML = "";
 }
 
+function clearDpsAnalysisOnlyPanes() {
+  $("#dps-analysis-help-pane").innerHTML = "";
+  $("#dps-analysis-chart-pane").innerHTML = "";
+  $("#dps-analysis-stats-pane").innerHTML = "";
+}
+
 function renderStatsMode(replay: Replay) {
   clearByModeOnlyPanes();
   clearByMonsterOnlyPanes();
+  clearDpsAnalysisOnlyPanes();
   $("#skill-pane").innerHTML = "";
   // Hide the breadcrumb — stats mode is always for the local player.
   $("#breadcrumb").hidden = true;
@@ -1234,6 +1295,7 @@ function renderBreadcrumb() {
 function renderByPlayerMode(replay: Replay) {
   clearStatsOnlyPanes();
   clearByMonsterOnlyPanes();
+  clearDpsAnalysisOnlyPanes();
   const primary = $("#primary-pane");
   const secondary = $("#secondary-pane");
   const barPane = $("#bar-pane");
@@ -1368,6 +1430,7 @@ function renderByPlayerMode(replay: Replay) {
 
 function renderByMonsterMode(replay: Replay) {
   clearStatsOnlyPanes();
+  clearDpsAnalysisOnlyPanes();
   const primary = $("#primary-pane");
   const secondary = $("#secondary-pane");
   const barPane = $("#bar-pane");
@@ -2165,6 +2228,159 @@ function openRecentReplay(id: string) {
   history.pushState(null, "", url.toString());
   $("#recent-replays").hidden = true;
   void loadFromUrl();
+}
+
+// ---------------------------------------------------------------------------
+// Análise de DPS — drag-selectable scatter of player damage + own-chat events
+// ---------------------------------------------------------------------------
+
+function renderDpsAnalysisMode(replay: Replay) {
+  clearByModeOnlyPanes();
+  clearByMonsterOnlyPanes();
+  clearStatsOnlyPanes();
+  $("#skill-pane").innerHTML = "";
+  $("#breadcrumb").hidden = true;
+
+  renderDpsAnalysisHelp();
+  renderDpsAnalysisChart(replay);
+  renderDpsAnalysisStats(replay);
+}
+
+function renderDpsAnalysisHelp() {
+  const host = $("#dps-analysis-help-pane");
+  const range = state.dpsAnalysisRange;
+  const rangeChip = range
+    ? `<span class="muted small" style="margin-left:0.75rem">${escape(t.dpsAnalysisRangeLabel(formatDuration(range.startMs), formatDuration(range.endMs)))}</span>`
+    : "";
+  host.innerHTML = `
+    <section class="stats-card">
+      <h2>${t.dpsAnalysisHelpTitle}${rangeChip}</h2>
+      <p><strong>${escape(t.dpsAnalysisHelpHowToUse)}</strong> ${escape(t.dpsAnalysisHelpHowToUseBody)}</p>
+      <p><strong>${escape(t.dpsAnalysisHelpDpsCalc)}</strong> ${escape(t.dpsAnalysisHelpDpsCalcBody)}</p>
+      <p><strong>${escape(t.dpsAnalysisHelpTimeMetrics)}</strong> ${escape(t.dpsAnalysisHelpTimeMetricsBody)}</p>
+      <button type="button" id="dps-analysis-clear" class="share-btn"${range ? "" : " disabled"}>${t.dpsAnalysisClearSelection}</button>
+    </section>
+  `;
+  const btn = document.querySelector<HTMLButtonElement>("#dps-analysis-clear");
+  btn?.addEventListener("click", () => {
+    if (!state.dpsAnalysisRange) return;
+    state.dpsAnalysisRange = null;
+    rerender();
+  });
+}
+
+function renderDpsAnalysisChart(replay: Replay) {
+  const host = $("#dps-analysis-chart-pane");
+  const aid = replay.sessionInfo.aid;
+  const skillResolver = (id: number) =>
+    id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
+
+  const damage = replay.damage
+    .filter((d) => d.source === aid)
+    .map((d) => ({
+      time: d.time,
+      damage: d.damage,
+      skillId: d.skillId,
+      skillName: skillResolver(d.skillId),
+    }));
+  // Server prepends "<playerName> : " to every echoed self-chat. Drop that
+  // prefix so the tooltip just shows the message text.
+  const playerPrefix = `${replay.sessionInfo.player} : `;
+  const stripPrefix = (msg: string) =>
+    msg.startsWith(playerPrefix) ? msg.slice(playerPrefix.length) : msg;
+  const chat = replay.chats.map((c) => ({
+    time: c.time,
+    message: stripPrefix(c.message),
+  }));
+
+  if (!damage.length) {
+    host.innerHTML = `<section class="stats-card"><h2>${t.dpsAnalysisChartTitle}</h2><p class="section-hint">${t.dpsAnalysisEmpty}</p></section>`;
+    return;
+  }
+
+  host.innerHTML = `
+    <section class="stats-card">
+      <h2 class="section-title">${t.dpsAnalysisChartTitle}</h2>
+      <div id="dps-analysis-chart" class="stats-chart"></div>
+      <div class="dps-analysis-legend">
+        <span class="dps-analysis-legend-dot dps-analysis-legend-dot--damage"></span>${t.dpsAnalysisDamageSeries}
+        <span class="dps-analysis-legend-dot dps-analysis-legend-dot--chat"></span>${t.dpsAnalysisChatSeries}
+      </div>
+    </section>
+  `;
+  renderDpsScatter(
+    $("#dps-analysis-chart"),
+    { damage, chat },
+    {
+      initialRange: state.dpsAnalysisRange,
+      onSelect: (range) => {
+        const cur = state.dpsAnalysisRange;
+        if (
+          (cur === null && range === null) ||
+          (cur && range && cur.startMs === range.startMs && cur.endMs === range.endMs)
+        ) {
+          return;
+        }
+        state.dpsAnalysisRange = range;
+        rerender();
+      },
+    },
+  );
+}
+
+function renderDpsAnalysisStats(replay: Replay) {
+  const host = $("#dps-analysis-stats-pane");
+  const aid = replay.sessionInfo.aid;
+  const hasPlayerDamage = replay.damage.some((d) => d.source === aid);
+  if (!hasPlayerDamage) {
+    host.innerHTML = "";
+    return;
+  }
+  const skillResolver = (id: number) =>
+    id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
+  const stats = dpsAnalysisStats(replay, state.dpsAnalysisRange, skillResolver);
+
+  const cells: SummaryCell[] = [
+    { label: t.cellSelectionDuration, value: formatDuration(stats.selectionDurationMs) },
+    { label: t.cellEventsInWindow, value: fmt(stats.events) },
+    { label: t.totalDamage, value: fmt(stats.totalDamage) },
+    {
+      label: t.cellCombatSpan,
+      value: stats.combatSpanMs > 0 ? formatDuration(stats.combatSpanMs) : t.none,
+      hint: t.cellCombatSpanHint,
+    },
+    {
+      label: t.cellWindowDps,
+      value: stats.dps > 0 ? fmt(stats.dps) : t.none,
+    },
+    {
+      label: t.cellMeanInterval,
+      value:
+        stats.meanIntervalMs == null
+          ? t.none
+          : `${Math.round(stats.meanIntervalMs)} ms`,
+    },
+    {
+      label: t.cellHighestSingleHit,
+      value: stats.highestHit > 0 ? fmt(stats.highestHit) : t.none,
+    },
+    {
+      label: t.cellAverageHit,
+      value: stats.averageHit > 0 ? fmt(stats.averageHit) : t.none,
+    },
+    {
+      label: t.cellLongestGap,
+      value: stats.longestGapMs > 0 ? `${Math.round(stats.longestGapMs)} ms` : t.none,
+    },
+    { label: t.cellDistinctSkills, value: fmt(stats.distinctSkills) },
+    {
+      label: t.cellTopSkillWindow,
+      value: stats.topSkillName ?? t.none,
+      hint: stats.topSkillId == null ? undefined : fmt(stats.topSkillDamage),
+    },
+  ];
+
+  renderSummaryCard(host, t.dpsAnalysisStatsTitle, cells);
 }
 
 init();
