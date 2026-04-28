@@ -137,6 +137,11 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   const paramChanges: ParamChangeEvent[] = [];
   const statusEvents: StatusEvent[] = [];
   const knownPacketIdSet = new Set<number>();
+  // Map from ground-skill-unit AID → caster AID. Skills like Onda Psíquica
+  // (Psychic Wave), Storm Gust, Comet, etc. spawn a "skill unit" entity that
+  // deals the damage in subsequent ticks; the damage packets list the unit's
+  // AID as the source. We rewrite source back to the caster when we see one.
+  const groundUnitOwner = new Map<number, number>();
 
   // Initial inventory snapshot from the Items container — used to resolve
   // `itemId` for slots when 0x07fa fires later. Mutated as 0x0a37 / 0x07fa
@@ -231,15 +236,33 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         // event (action=5) for the same target. The marker is animation
         // metadata, not a miss.
         if (d.skillId !== 0 && d.damage === 0 && d.rawAction === 6) break;
+        // Reattribute ground-skill-unit damage back to the caster.
+        const owner = groundUnitOwner.get(d.source);
+        if (owner) d.source = owner;
         damage.push(d);
         break;
       }
-      case "skillUse":
-        skillUses.push(decoded.data);
+      case "skillUse": {
+        const u = decoded.data;
+        const owner = groundUnitOwner.get(u.source);
+        if (owner) u.source = owner;
+        skillUses.push(u);
         break;
-      case "skillCast":
-        skillCasts.push(decoded.data);
+      }
+      case "skillCast": {
+        const c = decoded.data;
+        const owner = groundUnitOwner.get(c.source);
+        if (owner) c.source = owner;
+        skillCasts.push(c);
         break;
+      }
+      case "groundSkillEntry": {
+        const ev = decoded.data;
+        if (ev.unitAid && ev.casterAid) {
+          groundUnitOwner.set(ev.unitAid, ev.casterAid);
+        }
+        break;
+      }
       case "mapChange":
         mapChanges.push(decoded.data);
         break;

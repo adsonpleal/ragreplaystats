@@ -31,3 +31,29 @@ export function decodeSkillCast(reader: ByteReader, time: number): SkillCast {
   const castMs = reader.u32();
   return { time, source, target, skillId, castMs };
 }
+
+/**
+ * 0x09ca — ZC_SKILL_ENTRY5 (ground-skill unit placed). Used by skills like
+ * Onda Psíquica, Storm Gust, Comet, etc. that drop a "skill unit" entity on
+ * the map; subsequent damage events list that unit's AID as the source
+ * instead of the caster's. We track unit→caster so the orchestrator can
+ * reattribute the damage back to the player.
+ *
+ * Layout after pkt id:
+ *   pktLen u16, AID u32 (unit), creatorAID u32, x i16, y i16, ... (rest ignored)
+ */
+export type GroundSkillEntry = {
+  time: number;
+  unitAid: number;
+  casterAid: number;
+};
+
+export function decodeSkillEntry09ca(
+  reader: ByteReader,
+  time: number,
+): GroundSkillEntry {
+  reader.u16(); // pktLen
+  const unitAid = reader.u32();
+  const casterAid = reader.u32();
+  return { time, unitAid, casterAid };
+}

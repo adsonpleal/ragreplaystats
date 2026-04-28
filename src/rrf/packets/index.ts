@@ -12,8 +12,10 @@ import {
 } from "./damage.js";
 import {
   decodeSkillCast,
+  decodeSkillEntry09ca,
   decodeSkillNoDamage011a,
   decodeSkillNoDamage09cb,
+  type GroundSkillEntry,
 } from "./skill.js";
 import { decodeMapChange, decodeMobHp, decodeVanish } from "./misc.js";
 import {
@@ -63,6 +65,7 @@ export const PacketIds = {
   STATUS_0196: 0x0196,
   STATUS_043F: 0x043f,
   STATUS_0983: 0x0983,
+  GROUND_SKILL_ENTRY: 0x09ca,
 } as const;
 
 export type DecodedPacket =
@@ -77,7 +80,8 @@ export type DecodedPacket =
   | { type: "itemAdd"; data: ItemAddEvent }
   | { type: "itemUseAck"; data: ItemUseAckPacket }
   | { type: "paramChange"; data: ParamChangeEvent }
-  | { type: "status"; data: StatusEvent };
+  | { type: "status"; data: StatusEvent }
+  | { type: "groundSkillEntry"; data: GroundSkillEntry };
 
 export function decodePacket(
   raw: Uint8Array,
@@ -130,6 +134,8 @@ export function decodePacket(
         return { type: "status", data: decodeStatus043f(reader, time) };
       case PacketIds.STATUS_0983:
         return { type: "status", data: decodeStatus0983(reader, time) };
+      case PacketIds.GROUND_SKILL_ENTRY:
+        return { type: "groundSkillEntry", data: decodeSkillEntry09ca(reader, time) };
       default:
         return null;
     }
