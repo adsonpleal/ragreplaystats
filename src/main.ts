@@ -7,6 +7,7 @@ import {
   damageTimelineMulti,
   damageTimelineSingle,
   dpsAnalysisStats,
+  inferredDummyNames,
   isPlayerSource,
   killsByPlayerAndMob,
   lootByItem,
@@ -1170,16 +1171,18 @@ function renderSkillUsesChart(replay: Replay) {
 
 function monsterName(replay: Replay, aid: number): string {
   const ent = replay.entities.get(aid);
-  // Spawn packet for this AID was never seen — common on practice maps
-  // (training dummies on tra_fild). Show a friendly placeholder instead
-  // of "mob#<aid>".
-  if (!ent) return t.unknownTargetName;
-  // For mobs, prefer the DB species name over the per-instance spawn-packet
-  // label (the server often sends 2-byte codes that look like garbage).
-  if (state.db && ent.view) {
+  // Divine Pride wins when it has a real name — that's the canonical case
+  // for any monster outside of practice maps / custom instances.
+  if (ent && state.db && ent.view) {
     const fromDb = state.db.resolveMob(ent.view);
     if (!fromDb.startsWith("mob#")) return fromDb;
   }
+  // Chat-derived label: when the recording's player typed a name right
+  // before attacking the target, that wins over the server's garbage mob
+  // code or the "Alvo desconhecido" placeholder.
+  const inferred = inferredDummyNames(replay).get(aid);
+  if (inferred) return inferred;
+  if (!ent) return t.unknownTargetName;
   if (ent.name) return ent.name;
   return t.mobFallback(ent.view || aid);
 }
