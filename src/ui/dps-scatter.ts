@@ -77,9 +77,6 @@ export function renderDpsScatter(
   const damageY: (number | null)[] = new Array(xs.length).fill(null);
   for (const d of damage) damageY[xIndex.get(d.time)!] = d.damage;
   const peakDamage = damage.reduce((m, d) => Math.max(m, d.damage), 1);
-  const chatMarkerY = peakDamage * 1.08;
-  const chatY: (number | null)[] = new Array(xs.length).fill(null);
-  for (const c of chat) chatY[xIndex.get(c.time)!] = chatMarkerY;
 
   // Build per-x lookup tables for the tooltip.
   const damageByTime = new Map<number, DpsScatterDamage>();
@@ -106,35 +103,34 @@ export function renderDpsScatter(
 
   let lastSelectAt = 0;
 
-  const drawScatter = (
-    u: uPlot,
-    seriesIdx: number,
-    color: string,
-    marker: "circle" | "diamond",
-  ) => {
+  const drawDamageDots = (u: uPlot) => {
     const ctx = u.ctx;
-    const ys = u.data[seriesIdx] as (number | null)[];
+    const ys = u.data[1] as (number | null)[];
     ctx.save();
-    ctx.fillStyle = color;
-    ctx.strokeStyle = color;
+    ctx.fillStyle = accent;
     for (let i = 0; i < xs.length; i++) {
       const y = ys[i];
       if (y == null) continue;
       const px = u.valToPos(xsSec[i], "x", true);
       const py = u.valToPos(y, "y", true);
       ctx.beginPath();
-      if (marker === "circle") {
-        ctx.arc(px, py, 6, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        const r = 7;
-        ctx.moveTo(px, py - r);
-        ctx.lineTo(px + r, py);
-        ctx.lineTo(px, py + r);
-        ctx.lineTo(px - r, py);
-        ctx.closePath();
-        ctx.fill();
-      }
+      ctx.arc(px, py, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  };
+
+  const drawChatBars = (u: uPlot) => {
+    if (!chat.length) return;
+    const ctx = u.ctx;
+    const top = u.bbox.top;
+    const height = u.bbox.height;
+    ctx.save();
+    ctx.fillStyle = chatColor;
+    ctx.globalAlpha = 0.55;
+    for (const c of chat) {
+      const px = u.valToPos(c.time / 1000, "x", true);
+      ctx.fillRect(px - 1.5, top, 3, height);
     }
     ctx.restore();
   };
@@ -149,17 +145,11 @@ export function renderDpsScatter(
     },
     series: [
       { label: "Tempo (s)" },
-      // We draw both series ourselves in the `draw` hook below — turn off
-      // uPlot's path AND its default points layer so it doesn't paint
-      // circles on top of our diamond markers.
+      // Damage values feed the y-scale; we draw both the dots and the chat
+      // bars manually in the `draw` hook so uPlot's default path / points
+      // never appear.
       {
         label: "Dano",
-        stroke: "rgba(0,0,0,0)",
-        paths: () => null,
-        points: { show: false },
-      },
-      {
-        label: "Mensagens",
         stroke: "rgba(0,0,0,0)",
         paths: () => null,
         points: { show: false },
@@ -167,7 +157,10 @@ export function renderDpsScatter(
     ],
     scales: {
       x: { time: false },
-      y: { range: () => [0, chatMarkerY * 1.04] },
+      // Cap the y axis at the highest damage observed (with a small head
+      // room) — chat bars span the full plot height regardless of y, so
+      // there's no need to reserve space above the damage cloud.
+      y: { range: () => [0, peakDamage * 1.06] },
     },
     axes: [
       { stroke: axisStroke },
@@ -179,13 +172,11 @@ export function renderDpsScatter(
     ],
     legend: { show: false },
     hooks: {
-      // Single `draw` hook so uPlot doesn't have a chance to render its
-      // default points layer in between damage and chat — that's what was
-      // making chat dots look like circles.
+      // Chat bars first (so damage circles overlay them), then damage.
       draw: [
         (u) => {
-          drawScatter(u, 1, accent, "circle");
-          drawScatter(u, 2, chatColor, "diamond");
+          drawChatBars(u);
+          drawDamageDots(u);
         },
       ],
       ready: [
@@ -300,7 +291,7 @@ export function renderDpsScatter(
     },
   };
 
-  const aligned: uPlot.AlignedData = [xsSec, damageY, chatY];
+  const aligned: uPlot.AlignedData = [xsSec, damageY];
   const chart = new uPlot(options, aligned, host);
 
   // Hide tooltip when the cursor leaves the chart.

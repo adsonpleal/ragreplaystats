@@ -398,13 +398,14 @@ button {
 }
 
 .dps-analysis-legend-dot--chat {
-  background: #1f77b4;
-  transform: rotate(45deg);
+  width: 4px;
+  height: 16px;
+  background: rgba(31, 119, 180, 0.55);
 }
 
 @media (prefers-color-scheme: dark) {
   .dps-analysis-legend-dot--chat {
-    background: #62a4d9;
+    background: rgba(98, 164, 217, 0.55);
   }
 }
 

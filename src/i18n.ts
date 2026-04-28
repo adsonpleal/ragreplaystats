@@ -172,7 +172,7 @@ export const t = {
   dpsAnalysisHelpTitle: "Como usar",
   dpsAnalysisHelpHowToUse: "Como usar.",
   dpsAnalysisHelpHowToUseBody:
-    "Arraste sobre o gráfico para selecionar uma janela. As estatísticas abaixo recalculam para os eventos dentro dessa janela. Círculos = golpes do seu jogador; losangos = mensagens que você digitou no chat — passe o mouse para ver o dano (com a habilidade) ou o texto. Clique em \"Limpar seleção\" para voltar à sessão completa.",
+    "Arraste sobre o gráfico para selecionar uma janela. As estatísticas abaixo recalculam para os eventos dentro dessa janela. Círculos = golpes do seu jogador; barras verticais = mensagens que você digitou no chat — passe o mouse para ver o dano (com a habilidade) ou o texto. Clique em \"Limpar seleção\" para voltar à sessão completa.",
   dpsAnalysisHelpDpsCalc: "Como o DPS é calculado.",
   dpsAnalysisHelpDpsCalcBody:
     "O DPS médio usa o primeiro e o último golpe dentro da janela selecionada como base de tempo, não as bordas da seleção. Em fórmula: DPS = dano total na janela ÷ (tempo do último golpe − tempo do primeiro golpe). Isso evita que tempo morto antes do primeiro hit ou depois do último diluam o DPS.",
