@@ -227,8 +227,15 @@ export async function prefetchReplay(replay: Replay): Promise<void> {
 
   const monsters = new Set<number>();
   for (const ent of replay.entities.values()) {
-    if (ent.kind === "mob" && ent.view) monsters.add(ent.view);
-    if (ent.kind === "pc" && ent.view) monsters.add(ent.view);
+    // Latam training dummies arrive as kind="npc" (objType 0x6) but their
+    // `view` is a real monster id in the DP database (21064–21066, 21075,
+    // 21076). Without this, "Por monstro" falls back to "mob#21075".
+    if (
+      (ent.kind === "mob" || ent.kind === "pc" || ent.kind === "npc") &&
+      ent.view
+    ) {
+      monsters.add(ent.view);
+    }
   }
 
   const skills = new Set<number>();
@@ -245,6 +252,49 @@ export async function prefetchReplay(replay: Replay): Promise<void> {
     pool([...skills], fetchSkill),
     pool([...buffs], fetchBuff),
   ]);
+
+  await fillDummyGaps();
+}
+
+/**
+ * Some training dummies' spawn packets are missed when the player starts the
+ * recording already in their view, leaving us with `view=0` for those AIDs.
+ * The chat-label heuristic (see `inferredDummyNames`) gives us a name like
+ * "Dummy - Anjo" that exactly matches a DP monster name, so we recover the
+ * id by reverse name lookup. For that to work, the missing id has to be in
+ * the cache — fill any gaps in the observed range of "Dummy - " ids.
+ */
+async function fillDummyGaps(): Promise<void> {
+  const dummyIds: number[] = [];
+  for (const [id, entry] of Object.entries(cache.monsters)) {
+    if (entry.name && /^Dummy[\s-]/i.test(entry.name)) {
+      dummyIds.push(Number(id));
+    }
+  }
+  if (dummyIds.length < 2) return;
+  dummyIds.sort((a, b) => a - b);
+  const min = dummyIds[0];
+  const max = dummyIds[dummyIds.length - 1];
+  // Cap the speculative span — refuse to fill if the cluster is loose.
+  if (max - min > 50) return;
+  const toFetch: number[] = [];
+  for (let i = min; i <= max; i++) {
+    if (!cache.monsters[i]) toFetch.push(i);
+  }
+  if (toFetch.length) await pool(toFetch, fetchMonster);
+}
+
+/**
+ * Reverse name → DP monster id lookup. Used to recover the view id of a
+ * dummy that the player chat-labeled but whose spawn packet was missed.
+ * Case-sensitive, exact match — DP names are server-localized and the chat
+ * label is the player typing the same string they read off the dummy.
+ */
+export function findMonsterIdByName(name: string): number | null {
+  for (const [id, entry] of Object.entries(cache.monsters)) {
+    if (entry.name === name) return Number(id);
+  }
+  return null;
 }
 
 export function getItemName(id: number): string | null {

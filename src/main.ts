@@ -31,7 +31,7 @@ import {
   skillUsageByPlayer,
 } from "./aggregate/index.js";
 import { loadReferenceDb, type ReferenceDb } from "./db/loader.js";
-import { prefetchReplay } from "./divine-pride.js";
+import { findMonsterIdByName, prefetchReplay } from "./divine-pride.js";
 import {
   fetchReplay,
   listRecentReplays,
@@ -286,8 +286,49 @@ function parseAndRender(
   // Pull names from Divine Pride in the background; re-render when finished
   // so any `mob#1234` / `skill#999` fallbacks become real names.
   void prefetchReplay(replay).then(() => {
-    if (state.replay === replay) rerender();
+    if (state.replay !== replay) return;
+    backfillEntityViewsFromChatLabels(replay);
+    rerender();
   });
+}
+
+/**
+ * Some training dummies' spawn packets are missed when the recording starts
+ * already in their view (player on tra_fild facing the dummy line). Those
+ * AIDs end up with view=0 — and DP can't be queried because we have no id.
+ *
+ * The chat-label heuristic gives us the dummy's exact DP name (the player
+ * typed it before swinging). After prefetch + fillDummyGaps populate the
+ * cache for the surrounding range, look up each chat label by name and
+ * write the recovered id into the entity's view so the rest of the UI
+ * (table id column, DP link, star) lights up.
+ */
+function backfillEntityViewsFromChatLabels(replay: Replay): boolean {
+  const labels = inferredDummyNames(replay);
+  let changed = false;
+  for (const [aid, label] of labels) {
+    const ent = replay.entities.get(aid);
+    if (ent && ent.view) continue;
+    const id = findMonsterIdByName(label);
+    if (!id) continue;
+    if (!ent) {
+      replay.entities.set(aid, {
+        aid,
+        kind: "mob",
+        view: id,
+        name: "",
+        isBoss: false,
+        level: 0,
+        maxHp: 0,
+        firstSeenMs: 0,
+        lastHp: 0,
+      });
+    } else {
+      ent.view = id;
+    }
+    changed = true;
+  }
+  return changed;
 }
 
 function paintStaticStrings() {
@@ -1374,7 +1415,7 @@ function renderByPlayerMode(replay: Replay) {
       {
         key: "view",
         label: t.colMobId,
-        format: (r) => String(r.view),
+        format: (r) => (r.view ? String(r.view) : t.none),
         href: (r) => (r.view ? mobDpUrl(r.view) : null),
       },
       {
@@ -1454,7 +1495,7 @@ function renderByMonsterMode(replay: Replay) {
       {
         key: "view",
         label: t.colMobId,
-        format: (r) => String(r.view),
+        format: (r) => (r.view ? String(r.view) : t.none),
         href: (r) => (r.view ? mobDpUrl(r.view) : null),
       },
       {
