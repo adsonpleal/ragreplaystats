@@ -1,22 +1,36 @@
-// Divine Pride API client — fetches item/skill/monster/status names on demand
-// for the Latam server. Read-only, public-safe key (any rotation just requires
-// regenerating it on divine-pride.net). Names are cached to localStorage so
+// Divine Pride scraper — fetches item/skill/monster/status names from the
+// public web pages on divine-pride.net. We used to hit the JSON API but the
+// shared API key got 403'd; the HTML pages don't need a key, ship permissive
+// CORS (Access-Control-Allow-Origin: *), and carry the localized name in a
+// stable <meta property="og:title"> tag. Names are cached to localStorage so
 // repeat visits are instant.
 
 import type { Replay } from "./rrf/types.js";
 
-const API_KEY = "c14759f86890170a6fe7fa11182170ca";
 const SERVER = "latamRO";
 const LANG = "pt-BR";
-const BASE = "https://www.divine-pride.net/api/database";
+const BASE = "https://www.divine-pride.net/database";
 const CONCURRENCY = 6;
 // Bump this whenever the cache shape OR the gate logic changes; existing
 // localStorage entries under the old key are simply ignored.
 //   v1 → v2: retry null-name entries once per session (Divine Pride
 //            adds new IDs over time, e.g. Dummy - Anjo / Morto-Vivo
 //            arrived after the v1 cache snapshotted nulls).
-const CACHE_VERSION = 2;
+//   v2 → v3: switched from JSON API to HTML scraping; old cache may
+//            contain sprite-fallback names like "o44B" that the new
+//            path resolves to canonical "Dummy - Pequeno" instead.
+const CACHE_VERSION = 3;
 const STORAGE_KEY = `dp:v${CACHE_VERSION}:${SERVER}`;
+
+// `kind` is capitalised at the call site (Item / Monster / Skill / Buff)
+// for legacy reasons — map to the lowercase URL segment. Buffs live under
+// /database/efst on DP.
+const KIND_PATH: Record<string, string> = {
+  Item: "item",
+  Monster: "monster",
+  Skill: "skill",
+  Buff: "efst",
+};
 
 type ItemEntry = { name: string | null };
 type MonsterEntry = { name: string | null; hp: number };
@@ -86,11 +100,57 @@ function persist() {
   }, 500);
 }
 
+/**
+ * Fetch the DP page for `<kind, id>` and return a JSON-shaped object that
+ * matches what the legacy JSON API used to return. Each call site only
+ * looks at `name`, `sprite`, and (for monsters) `stats.health` so we
+ * project just those fields.
+ */
 async function fetchJson(kind: string, id: number): Promise<unknown> {
-  const url = `${BASE}/${kind}/${id}?apiKey=${API_KEY}&server=${SERVER}`;
+  const path = KIND_PATH[kind];
+  if (!path) throw new Error(`unknown kind: ${kind}`);
+  const url = `${BASE}/${path}/${id}?server=${SERVER}`;
   const res = await fetch(url, { headers: { "Accept-Language": LANG } });
   if (!res.ok) throw new Error(`${kind} ${id}: HTTP ${res.status}`);
-  return res.json();
+  const html = await res.text();
+  return parseDpPage(kind, html);
+}
+
+/**
+ * Pull the localized name (from `<meta property="og:title">`) and — for
+ * monsters — the first HP value off a DP database page. The og:title is
+ * formatted "<localized prefix>: <name>" e.g. "Monstro: Dummy - Anjo";
+ * we strip the prefix. HP for monsters is in the secondary-stats table
+ * as `<span style="font-weight: bold;">N</span> HP`.
+ */
+function parseDpPage(
+  kind: string,
+  html: string,
+): { name?: string; stats?: { health?: number } } {
+  const og = html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/i);
+  if (!og) return {};
+  const decoded = decodeHtmlEntities(og[1]);
+  // Drop the localized "Monstro: " / "Item: " / "Habilidade: " / "Buff: "
+  // prefix. We look for the first ": " to be tolerant of locales we
+  // haven't seen.
+  const sep = decoded.indexOf(": ");
+  const name = (sep >= 0 ? decoded.slice(sep + 2) : decoded).trim();
+  if (kind !== "Monster") return { name };
+  const hp = html.match(
+    /<span\s+style="font-weight:\s*bold;\s*">\s*(\d+)\s*<\/span>\s*HP\b/i,
+  );
+  return { name, stats: { health: hp ? Number(hp[1]) : 0 } };
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
 async function fetchItem(id: number): Promise<void> {
@@ -130,11 +190,10 @@ async function fetchMonster(id: number): Promise<void> {
     try {
       const data = (await fetchJson("Monster", id)) as {
         name?: string;
-        sprite?: string;
         stats?: { health?: number };
       };
       cache.monsters[id] = {
-        name: (data.name?.trim() || data.sprite?.trim()) || null,
+        name: data.name?.trim() || null,
         hp: data.stats?.health ?? 0,
       };
       persist();
