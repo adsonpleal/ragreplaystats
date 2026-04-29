@@ -435,40 +435,6 @@ button {
   border-radius: 4px;
 }
 
-.status-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.status-row {
-  display: grid;
-  grid-template-columns: minmax(10em, 18em) 1fr minmax(6em, max-content);
-  gap: 0.6rem;
-  font-size: 0.9rem;
-}
-
-.status-row .uptime-bar {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border-radius: 4px;
-  position: relative;
-  height: 1.2em;
-  overflow: hidden;
-}
-
-.status-row .uptime-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: var(--accent);
-  border-radius: 4px;
-}
-
-.status-row .uptime-value {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
 .bar-chart {
   display: flex;
   flex-direction: column;

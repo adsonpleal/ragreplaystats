@@ -159,7 +159,6 @@ export const t = {
   skillFallback: (id: number) => `skill#${id}`,
   mobFallback: (id: number) => `mob#${id}`,
   itemFallback: (id: number) => `item#${id}`,
-  statusFallback: (id: number) => `efst#${id}`,
   /** Used for damage targets without a spawn packet (training dummies on
    *  practice maps, server-pushed entities the recording missed, etc.). */
   unknownTargetName: "Alvo desconhecido",
@@ -238,7 +237,6 @@ export const t = {
   statsLootEmpty: "Nenhum item recebido nesta janela.",
   statsHpSpChartTitle: "HP / SP ao longo do tempo",
   statsKillsChartTitle: "Abates por tipo de monstro",
-  statsBuffsTitle: "Tempo com buffs / debuffs",
   statsDeleteReason: (reason: number) => {
     switch (reason) {
       case 0: return "Uso normal";

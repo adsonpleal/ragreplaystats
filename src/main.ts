@@ -22,7 +22,6 @@ import {
   SP_MAXHP,
   SP_SP,
   SP_MAXSP,
-  statusUptime,
   type MonsterAgg,
   type PlayerAgg,
   playersThatDamaged,
@@ -508,7 +507,6 @@ const BRUSH_BUCKET_MS = 1_000;
 
 function clearStatsOnlyPanes() {
   $("#brush-pane").innerHTML = "";
-  $("#status-pane").innerHTML = "";
   $("#equipment-pane").innerHTML = "";
 }
 
@@ -545,7 +543,6 @@ function renderStatsMode(replay: Replay) {
   renderLoot(replay);
   renderHpSpChart(replay);
   renderKillsByTypeChart(replay);
-  renderStatusList(replay);
 }
 
 function renderResumoCard(replay: Replay) {
@@ -884,31 +881,6 @@ function renderKillsByTypeChart(replay: Replay) {
       display: fmt(r.count),
     })),
   );
-}
-
-function renderStatusList(replay: Replay) {
-  const host = $("#status-pane");
-  const statusResolver = (id: number) =>
-    state.db?.resolveStatus(id) ?? t.statusFallback(id);
-  const rows = statusUptime(replay, state.selectedTimeRange, statusResolver);
-  if (!rows.length) {
-    host.innerHTML = "";
-    return;
-  }
-
-  const max = rows[0].uptimeMs || 1;
-  let html = `<h2 class="section-title">${t.statsBuffsTitle}</h2>
-    <div class="status-list">`;
-  for (const r of rows.slice(0, 30)) {
-    const pctW = Math.max(2, (r.uptimeMs / max) * 100);
-    html += `<div class="status-row">
-      <span class="bar-label" title="${escape(r.name)}">${escape(r.name)}</span>
-      <span class="uptime-bar"><span class="uptime-fill" style="width:${pctW.toFixed(2)}%"></span></span>
-      <span class="uptime-value">${formatDuration(r.uptimeMs)} · ${fmt(r.appliedCount)}×</span>
-    </div>`;
-  }
-  html += "</div>";
-  host.innerHTML = html;
 }
 
 function pct(n: number, total: number): number {

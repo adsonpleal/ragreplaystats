@@ -9,7 +9,6 @@ import type { Replay } from "./rrf/types.js";
 type ItemEntry = { name: string };
 type MonsterEntry = { name: string; hp: number; level: number };
 type SkillEntry = { name: string };
-type BuffEntry = { name: string };
 
 // vite is configured with `base: "./"`, so relative URLs resolve against
 // the current page (works the same on dev http://localhost:5173/ and on
@@ -20,12 +19,10 @@ const DB_BASE = "./db";
 let items: Map<number, ItemEntry> | null = null;
 let monsters: Map<number, MonsterEntry> | null = null;
 let skills: Map<number, SkillEntry> | null = null;
-let buffs: Map<number, BuffEntry> | null = null;
 
 let itemsP: Promise<void> | null = null;
 let monstersP: Promise<void> | null = null;
 let skillsP: Promise<void> | null = null;
-let buffsP: Promise<void> | null = null;
 
 async function loadKind<T>(
   fileName: string,
@@ -59,19 +56,14 @@ function loadSkills(): Promise<void> {
   if (!skillsP) skillsP = loadKind<SkillEntry>("dp-skill.json").then((m) => { skills = m; });
   return skillsP;
 }
-function loadBuffs(): Promise<void> {
-  if (buffs) return Promise.resolve();
-  if (!buffsP) buffsP = loadKind<BuffEntry>("dp-efst.json").then((m) => { buffs = m; });
-  return buffsP;
-}
 
 /**
- * Loads every kind's static JSON in parallel. Resolves once all four are
+ * Loads every kind's static JSON in parallel. Resolves once all three are
  * in memory (or have failed and been recorded as empty maps). Cheap on
  * repeat — already-loaded kinds short-circuit immediately.
  */
 export async function prefetchReplay(_replay: Replay): Promise<void> {
-  await Promise.all([loadItems(), loadMonsters(), loadSkills(), loadBuffs()]);
+  await Promise.all([loadItems(), loadMonsters(), loadSkills()]);
 }
 
 /**
@@ -102,8 +94,4 @@ export function getMonsterHp(id: number): number {
 
 export function getSkillName(id: number): string | null {
   return skills?.get(id)?.name ?? null;
-}
-
-export function getBuffName(id: number): string | null {
-  return buffs?.get(id)?.name ?? null;
 }

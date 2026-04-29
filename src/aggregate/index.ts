@@ -1,7 +1,6 @@
 import type {
   DamageEvent,
   Replay,
-  StatusEvent,
   VanishEvent,
 } from "../rrf/types.js";
 
@@ -1249,55 +1248,6 @@ export function killsPerMinuteByView(
   });
 
   return { ts, series };
-}
-
-export type StatusUptimeRow = {
-  statusId: number;
-  name: string;
-  uptimeMs: number;
-  appliedCount: number;
-};
-
-export function statusUptime(
-  replay: Replay,
-  range: Range,
-  resolveStatus: (id: number) => string,
-): StatusUptimeRow[] {
-  const playerAid = replay.sessionInfo.aid;
-  const sessionEnd = range?.endMs ?? replay.sessionInfo.durationMs;
-
-  const byStatus = new Map<number, StatusEvent[]>();
-  for (const e of replay.statusEvents) {
-    if (e.aid !== playerAid) continue;
-    if (!inRange(e.time, range)) continue;
-    let arr = byStatus.get(e.statusId);
-    if (!arr) {
-      arr = [];
-      byStatus.set(e.statusId, arr);
-    }
-    arr.push(e);
-  }
-
-  const out: StatusUptimeRow[] = [];
-  for (const [statusId, events] of byStatus) {
-    events.sort((a, b) => a.time - b.time);
-    let uptimeMs = 0;
-    let appliedCount = 0;
-    let onSince: number | null = null;
-    for (const e of events) {
-      if (e.isOn) {
-        if (onSince === null) onSince = e.time;
-        appliedCount += 1;
-      } else if (onSince !== null) {
-        uptimeMs += e.time - onSince;
-        onSince = null;
-      }
-    }
-    if (onSince !== null) uptimeMs += sessionEnd - onSince;
-    if (uptimeMs <= 0 && appliedCount === 0) continue;
-    out.push({ statusId, name: resolveStatus(statusId), uptimeMs, appliedCount });
-  }
-  return out.sort((a, b) => b.uptimeMs - a.uptimeMs);
 }
 
 export type BrushSeries = {

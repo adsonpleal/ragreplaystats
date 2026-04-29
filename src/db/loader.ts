@@ -1,5 +1,4 @@
 import {
-  getBuffName,
   getItemName,
   getMonsterHp,
   getMonsterName,
@@ -15,7 +14,6 @@ export type ReferenceDb = {
   resolveSkill(id: number): string;
   resolveJob(id: number): string;
   resolveItem(id: number): string;
-  resolveStatus(id: number): string;
 };
 
 async function fetchJson<T>(path: string, fallback: T): Promise<T> {
@@ -41,6 +39,5 @@ export async function loadReferenceDb(base = "./db"): Promise<ReferenceDb> {
     resolveSkill: (id: number) => getSkillName(id) ?? `skill#${id}`,
     resolveJob: (id: number) => job[String(id)] ?? `job#${id}`,
     resolveItem: (id: number) => getItemName(id) ?? `item#${id}`,
-    resolveStatus: (id: number) => getBuffName(id) ?? `efst#${id}`,
   };
 }
