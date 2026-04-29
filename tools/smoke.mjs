@@ -229,6 +229,18 @@ if (process.argv.includes("--containers")) {
   console.log(JSON.stringify(mod.inspectContainers(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)), null, 2));
   process.exit(0);
 }
+if (process.argv.includes("--all-damage")) {
+  for (const ev of replay.damage) {
+    const s = replay.entities.get(ev.source);
+    const t = replay.entities.get(ev.target);
+    const sLbl = s ? `${s.kind} ${s.name} view=${s.view}` : "?";
+    const tLbl = t ? `${t.kind} ${t.name} view=${t.view}` : "?";
+    console.log(
+      `  t=${ev.time.toString().padStart(6)}ms src=${ev.source} (${sLbl}) → dst=${ev.target} (${tLbl}) skill=${ev.skillId} dmg=${ev.damage} type=${ev.hitType} via=${ev.source_packet}`,
+    );
+  }
+  process.exit(0);
+}
 if (process.argv.includes("--entities")) {
   console.log(JSON.stringify(mod.inspectEntityPackets(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)), null, 2));
   process.exit(0);
