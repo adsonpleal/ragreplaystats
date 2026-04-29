@@ -2244,6 +2244,13 @@ function renderDpsAnalysisMode(replay: Replay) {
   clearByModeOnlyPanes();
   clearByMonsterOnlyPanes();
   clearStatsOnlyPanes();
+  // The #primary/#secondary/#bar/#chart panes are owned by the other three
+  // modes (Estatísticas / Por jogador / Por monstro). Clear them too so the
+  // previous tab's cards don't bleed into Análise de DPS.
+  $("#primary-pane").innerHTML = "";
+  $("#secondary-pane").innerHTML = "";
+  $("#bar-pane").innerHTML = "";
+  $("#chart-pane").innerHTML = "";
   $("#skill-pane").innerHTML = "";
   $("#breadcrumb").hidden = true;
 
