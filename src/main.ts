@@ -283,8 +283,8 @@ function parseAndRender(
   rerender();
   renderShareControls();
 
-  // Pull names from Divine Pride in the background; re-render when finished
-  // so any `mob#1234` / `skill#999` fallbacks become real names.
+  // Load DP name databases in the background; re-render when ready so
+  // any `mob#1234` / `skill#999` fallbacks become real names.
   void prefetchReplay(replay).then(() => {
     if (state.replay !== replay) return;
     backfillEntityViewsFromChatLabels(replay);
@@ -295,13 +295,12 @@ function parseAndRender(
 /**
  * Some training dummies' spawn packets are missed when the recording starts
  * already in their view (player on tra_fild facing the dummy line). Those
- * AIDs end up with view=0 — and DP can't be queried because we have no id.
+ * AIDs end up with view=0 — and the table can't render an id / DP link.
  *
  * The chat-label heuristic gives us the dummy's exact DP name (the player
- * typed it before swinging). After prefetch + fillDummyGaps populate the
- * cache for the surrounding range, look up each chat label by name and
- * write the recovered id into the entity's view so the rest of the UI
- * (table id column, DP link, star) lights up.
+ * typed it before swinging). Look up each chat label by name in the
+ * monster DB and write the recovered id into the entity's view so the
+ * rest of the UI (table id column, DP link, ★ marker) lights up.
  */
 function backfillEntityViewsFromChatLabels(replay: Replay): boolean {
   const labels = inferredDummyNames(replay);
