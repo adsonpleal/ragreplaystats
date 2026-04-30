@@ -2,6 +2,7 @@ import { ByteReader } from "../reader.js";
 import {
   decodeIdle,
   decodeIdleSpawn,
+  decodeInitialSpawn0857,
   decodeWalking,
   type EntityPacket,
 } from "./entity.js";
@@ -51,6 +52,7 @@ export const PacketIds = {
   IDLE_SPAWN: 0x09fe,
   IDLE: 0x09ff,
   WALKING: 0x0915,
+  INITIAL_SPAWN_0857: 0x0857,
   VANISH: 0x0080,
   MOB_HP: 0x0977,
   AUTO_ATTACK: 0x02e1,
@@ -106,6 +108,8 @@ export function decodePacket(
       case PacketIds.WALKING:
       case PacketIds.NEW_ENTRY:
         return { type: "entity", data: decodeWalking(reader) };
+      case PacketIds.INITIAL_SPAWN_0857:
+        return { type: "entity", data: decodeInitialSpawn0857(reader) };
       case PacketIds.AUTO_ATTACK_LEGACY:
         return { type: "damage", data: decodeAutoAttackLegacy(reader, time) };
       case PacketIds.VANISH:

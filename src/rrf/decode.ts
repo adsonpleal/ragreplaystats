@@ -167,6 +167,20 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     }
   }
 
+  // Container 15 holds 0x0857 spawn snapshots for entities that were
+  // already in view when the recording started — without these, dummies
+  // attacked from the recording's first frame have no entity row and
+  // render as "Alvo desconhecido".
+  const initialEntitiesContainer = containers.find(
+    (c): c is GenericContainer =>
+      c.kind === "generic" && c.type === ContainerType.InitialEntities,
+  );
+  if (initialEntitiesContainer) {
+    for (const chunk of initialEntitiesContainer.chunks) {
+      handlePacket(chunk.data, 0);
+    }
+  }
+
   const packetStream = containers.find(
     (c): c is PacketStreamContainer => c.kind === "packetStream",
   );

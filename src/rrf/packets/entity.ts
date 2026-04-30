@@ -66,6 +66,42 @@ export function decodeWalking(reader: ByteReader): EntityPacket {
   return readEntity(reader, pktLen, /* hasState */ false, /* hasMoveStart */ true);
 }
 
+/**
+ * 0x0857 — initial-state spawn snapshot stored in container 15. A
+ * stripped-down 0x09ff variant: no GID, no HP/maxHP/isBoss block. The
+ * fields we care about sit at fixed offsets that don't depend on
+ * objType, so we just hop to them directly.
+ *
+ *   pktLen u16   @ 2
+ *   objType u8   @ 4
+ *   AID u32      @ 5
+ *   view i16     @ 19
+ *   level u32    @ 65   (not surfaced — we trust the bundled DP DB)
+ *   name var     @ 69   (UTF-8 / cp949, fills the remaining bytes)
+ */
+export function decodeInitialSpawn0857(reader: ByteReader): EntityPacket {
+  const pktLen = reader.u16();
+  const objectType = reader.u8();
+  const aid = reader.u32();
+  reader.skip(19 - 9); // jump to view
+  const view = reader.i16();
+  reader.skip(69 - 21); // jump to name
+  const remaining = pktLen - 69;
+  const name = remaining > 0 ? readEntityName(reader.bytes(Math.max(0, remaining))) : "";
+
+  return {
+    aid,
+    gid: 0,
+    view,
+    kind: classifyObjectType(objectType),
+    name,
+    isBoss: false,
+    level: 0,
+    maxHp: 0,
+    hp: 0,
+  };
+}
+
 function readEntity(
   reader: ByteReader,
   pktLen: number,

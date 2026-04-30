@@ -11,6 +11,12 @@ export const ContainerType = {
   Items: 8,
   UnknownContainingPet: 9,
   InitialPackets: 14,
+  /**
+   * Snapshot of entities visible at recording start, stored as 0x0857 spawn
+   * packets (one per chunk, chunk id=210). Bracketed by chunks with ids
+   * 10000 / 10001 of length 0 as begin/end markers.
+   */
+  InitialEntities: 15,
   Efst: 17,
 } as const;
 
