@@ -13,6 +13,13 @@
 // .ASPXAUTH from a logged-in browser session) to populate them. Without
 // it, buffs are skipped with a warning.
 //
+// After the monster kind is scraped, a Firestore harvest pass walks
+// every recording in `replays/` (Spark-tier, public read), collects the
+// view ids referenced by mob/npc entities, and fills in any ids the
+// listing scrape missed by hitting `/database/monster/<id>` directly.
+// This is the offline replacement for the old runtime fallback —
+// everything DP-related stays out of the browser.
+//
 // Politeness: concurrency 3, ~200 ms delay between page fetches.
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -24,6 +31,8 @@ const USER_AGENT = "ragreplaystats-scraper/1.0";
 const CONCURRENCY = 3;
 const INTER_PAGE_DELAY_MS = 200;
 const OUT_DIR = resolve("public/db");
+const FIRESTORE_BASE =
+  "https://firestore.googleapis.com/v1/projects/ragreplaystats/databases/(default)/documents/replays";
 
 // `kind` here matches the output filename (`public/db/dp-{kind}.json`).
 // `extraParams` are appended before `Page=N`. `needsAuth` flags collections
@@ -62,6 +71,150 @@ for (const kind of onlyKinds) {
   // Compact JSON (no pretty-print) keeps the bundled file small.
   writeFileSync(outPath, JSON.stringify(data));
   console.log(`[done]  ${kind}: ${Object.keys(data).length} entries → ${outPath}`);
+}
+
+if (onlyKinds.includes("monster") && !args["skip-harvest"]) {
+  await harvestFromReplays();
+}
+
+// ---------------------------------------------------------------------------
+// Firestore harvest — walk every shared replay, collect mob/npc view ids
+// referenced in `replay.entities`, and fill in any that the listing scrape
+// missed by hitting DP's per-id pages.
+
+async function harvestFromReplays() {
+  const dbPath = resolve(OUT_DIR, "dp-monster.json");
+  if (!existsSync(dbPath)) {
+    console.warn("[harvest] dp-monster.json missing — run --kinds=monster first");
+    return;
+  }
+  const existing = JSON.parse(readFileSync(dbPath, "utf8"));
+
+  console.log("[harvest] building decoder bundle");
+  const decoder = await loadDecoder();
+  console.log("[harvest] walking Firestore replays/ collection");
+  const referenced = await collectMobViewsFromFirestore(decoder);
+  console.log(`[harvest] ${referenced.size} distinct mob/npc view ids referenced across all replays`);
+
+  const missing = [...referenced].filter((id) => !(String(id) in existing) && id > 0);
+  if (missing.length === 0) {
+    console.log("[harvest] no new ids to fetch");
+    return;
+  }
+  console.log(`[harvest] ${missing.length} ids missing from listing — fetching per-id from DP`);
+
+  const added = {};
+  let done = 0;
+  await pool(missing, async (id) => {
+    const entry = await fetchMonsterById(id);
+    done++;
+    if (entry) {
+      added[id] = entry;
+      console.log(`  ${id} → "${entry.name}" hp=${entry.hp}`);
+    } else {
+      console.log(`  ${id} → (no name)`);
+    }
+    if (done % 10 === 0) console.log(`  progress: ${done}/${missing.length}`);
+    await sleep(INTER_PAGE_DELAY_MS);
+  }, CONCURRENCY);
+
+  if (Object.keys(added).length === 0) {
+    console.log("[harvest] no ids resolved");
+    return;
+  }
+  const merged = { ...existing, ...added };
+  writeFileSync(dbPath, JSON.stringify(merged));
+  console.log(`[harvest] +${Object.keys(added).length} entries → ${dbPath} (now ${Object.keys(merged).length} total)`);
+}
+
+async function collectMobViewsFromFirestore(decoder) {
+  const referenced = new Set();
+  let pageToken = null;
+  let docCount = 0;
+  let decodeFailures = 0;
+  do {
+    const url = new URL(FIRESTORE_BASE);
+    url.searchParams.set("pageSize", "50");
+    url.searchParams.append("mask.fieldPaths", "bytes");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+    if (!res.ok) throw new Error(`Firestore list: HTTP ${res.status}`);
+    const data = await res.json();
+    for (const doc of data.documents ?? []) {
+      docCount++;
+      const b64 = doc.fields?.bytes?.bytesValue;
+      if (!b64) continue;
+      const buf = Buffer.from(b64, "base64");
+      try {
+        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+        const replay = decoder.decodeReplay(ab);
+        for (const ent of replay.entities.values()) {
+          // kind="npc" entities mostly have NPC sprite ids that DP's monster
+          // database doesn't track (instructors, shopkeepers, etc.) — fetching
+          // them just wastes per-id requests. Real damageable dummies arrive
+          // as kind="mob".
+          if (ent.kind !== "mob") continue;
+          if (!ent.view || ent.view <= 0) continue;
+          referenced.add(ent.view);
+        }
+      } catch {
+        decodeFailures++;
+      }
+    }
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  console.log(`[harvest] walked ${docCount} replays (${decodeFailures} decode failures)`);
+  return referenced;
+}
+
+async function loadDecoder() {
+  const { build } = await import("vite");
+  const result = await build({
+    configFile: false,
+    logLevel: "error",
+    build: {
+      write: false,
+      target: "node18",
+      lib: {
+        entry: resolve("src/rrf/decode.ts"),
+        formats: ["es"],
+        fileName: () => "decode.mjs",
+      },
+      rollupOptions: { external: [] },
+    },
+  });
+  const out = Array.isArray(result) ? result[0] : result;
+  const code = out.output[0].code;
+  const dataUrl = "data:text/javascript;base64," + Buffer.from(code).toString("base64");
+  return await import(dataUrl);
+}
+
+async function fetchMonsterById(id) {
+  try {
+    const res = await fetch(`${BASE}/monster/${id}`, {
+      headers: { "Accept-Language": LANG_HEADER, "User-Agent": USER_AGENT },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const og = html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/i);
+    if (!og) return null;
+    const decoded = decodeEntities(og[1]);
+    // Strip the localized "Monstro: " / "Monster: " prefix.
+    const sep = decoded.indexOf(": ");
+    const name = (sep >= 0 ? decoded.slice(sep + 2) : decoded).trim();
+    if (!name) return null;
+    // First HP value on the page wins. The bold span wraps a pt-BR
+    // formatted number ("23.986" → 23986).
+    const hpMatch = html.match(
+      /<span\s+style="font-weight:\s*bold;\s*">\s*([\d.]+)\s*<\/span>\s*HP\b/i,
+    );
+    const hp = hpMatch ? parseLocaleInt(hpMatch[1]) : 0;
+    // Per-id pages don't surface level reliably on pt-BR; default to 0
+    // (the UI doesn't read level off the bundled DB anyway).
+    return { name, hp, level: 0 };
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

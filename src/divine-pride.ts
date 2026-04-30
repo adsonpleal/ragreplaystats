@@ -4,10 +4,9 @@
 // every subsequent lookup from memory. The browser's HTTP cache makes
 // repeat visits free.
 //
-// DP keeps duplicate / unlisted monster entries (e.g. id 1438 = "Khalitzburg"
-// that doesn't appear on /database/monster?Page=N alongside the canonical
-// 1132). For those, we lazy-fetch the per-id HTML page once per session
-// when a replay references the unlisted view id.
+// No runtime DP queries: the offline scraper is responsible for filling
+// in any unlisted view ids (via its Firestore harvest pass), so the
+// browser never talks to divine-pride.net.
 
 import type { Replay } from "./rrf/types.js";
 
@@ -63,86 +62,12 @@ function loadSkills(): Promise<void> {
 }
 
 /**
- * Loads every kind's static JSON in parallel, then fills in any monster
- * view ids referenced by the replay that aren't in the bundled listing
- * via per-id DP fetches. Cheap on repeat — already-loaded kinds and
- * already-fetched ids short-circuit immediately.
+ * Loads every kind's static JSON in parallel. Resolves once all three are
+ * in memory (or have failed and been recorded as empty maps). Cheap on
+ * repeat — already-loaded kinds short-circuit immediately.
  */
-export async function prefetchReplay(replay: Replay): Promise<void> {
+export async function prefetchReplay(_replay: Replay): Promise<void> {
   await Promise.all([loadItems(), loadMonsters(), loadSkills()]);
-  await fillMonsterMisses(replay);
-}
-
-const FALLBACK_CONCURRENCY = 4;
-const monsterFallback = new Map<number, Promise<void>>();
-
-async function fillMonsterMisses(replay: Replay): Promise<void> {
-  if (!monsters) return;
-  const missing = new Set<number>();
-  for (const ent of replay.entities.values()) {
-    if (ent.kind !== "mob" && ent.kind !== "npc") continue;
-    if (!ent.view || ent.view <= 0) continue;
-    if (monsters.has(ent.view)) continue;
-    missing.add(ent.view);
-  }
-  if (missing.size === 0) return;
-  const queue = [...missing];
-  const workers = Array.from({ length: FALLBACK_CONCURRENCY }, async () => {
-    while (queue.length) {
-      const id = queue.shift()!;
-      await fetchMonsterFallback(id);
-    }
-  });
-  await Promise.all(workers);
-}
-
-async function fetchMonsterFallback(id: number): Promise<void> {
-  if (!monsters || monsters.has(id)) return;
-  let p = monsterFallback.get(id);
-  if (p) return p;
-  p = (async () => {
-    try {
-      const res = await fetch(`https://www.divine-pride.net/database/monster/${id}`, {
-        headers: { "Accept-Language": "pt-BR,pt;q=0.9" },
-      });
-      if (!res.ok) return;
-      const html = await res.text();
-      const og = html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/i);
-      if (!og) return;
-      const decoded = decodeHtmlEntities(og[1]);
-      // Strip the localized "Monstro: " / "Monster: " prefix.
-      const sep = decoded.indexOf(": ");
-      const name = (sep >= 0 ? decoded.slice(sep + 2) : decoded).trim();
-      if (!name) return;
-      // First HP value on the page wins. Layout is
-      //   <span style="font-weight: bold;"> 23.986 </span> HP
-      // with pt-BR thousand separators (`.` → strip).
-      const hpMatch = html.match(
-        /<span\s+style="font-weight:\s*bold;\s*">\s*([\d.]+)\s*<\/span>\s*HP\b/i,
-      );
-      const hp = hpMatch ? parseLocaleInt(hpMatch[1]) : 0;
-      monsters?.set(id, { name, hp, level: 0 });
-    } catch {
-      // Network or parse error → leave id unresolved; the UI keeps `mob#X`.
-    }
-  })();
-  monsterFallback.set(id, p);
-  return p;
-}
-
-function parseLocaleInt(s: string): number {
-  return parseInt(s.replace(/\./g, ""), 10) || 0;
-}
-
-function decodeHtmlEntities(s: string): string {
-  return s
-    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
 }
 
 export function getItemName(id: number): string | null {
