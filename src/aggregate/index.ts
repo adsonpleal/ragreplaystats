@@ -49,61 +49,6 @@ function isMobTarget(replay: Replay, aid: number): boolean {
   return !NON_TARGETABLE_KINDS.has(ent.kind);
 }
 
-/**
- * Walk chat + damage in time order and assign each chat message as a name
- * to the first unknown-entity AID that the player hits afterwards. The
- * label sticks for that AID for the rest of the recording. Used when the
- * player labels training dummies by typing their names just before each
- * attack — turns "Alvo desconhecido" into "Dummy - Terra" etc.
- *
- * Cached per Replay (via WeakMap) since callers may invoke it on every
- * render.
- */
-const inferredDummyNamesCache = new WeakMap<Replay, Map<number, string>>();
-export function inferredDummyNames(replay: Replay): Map<number, string> {
-  const cached = inferredDummyNamesCache.get(replay);
-  if (cached) return cached;
-  const out = new Map<number, string>();
-  const playerPrefix = `${replay.sessionInfo.player} : `;
-  const chats = [...replay.chats]
-    .map((c) => ({
-      time: c.time,
-      label: c.message.startsWith(playerPrefix)
-        ? c.message.slice(playerPrefix.length)
-        : c.message,
-    }))
-    .filter((c) => c.label.trim().length > 0)
-    .sort((a, b) => a.time - b.time);
-  if (!chats.length) {
-    inferredDummyNamesCache.set(replay, out);
-    return out;
-  }
-  const aid = replay.sessionInfo.aid;
-  // Apply to any non-PC target the session player damages — dummies on
-  // tra_fild are registered as `kind=mob` but with garbage server-side
-  // names like "o44B", so filtering only by "missing entity" misses them.
-  const dmg = replay.damage
-    .filter((d) => d.source === aid)
-    .filter((d) => {
-      const ent = replay.entities.get(d.target);
-      return !ent || !NON_TARGETABLE_KINDS.has(ent.kind);
-    })
-    .sort((a, b) => a.time - b.time);
-  let chatIdx = 0;
-  let activeLabel: string | null = null;
-  for (const ev of dmg) {
-    while (chatIdx < chats.length && chats[chatIdx].time <= ev.time) {
-      activeLabel = chats[chatIdx].label;
-      chatIdx++;
-    }
-    if (activeLabel === null) continue;
-    if (out.has(ev.target)) continue;
-    out.set(ev.target, activeLabel);
-  }
-  inferredDummyNamesCache.set(replay, out);
-  return out;
-}
-
 export type PlayerAgg = {
   aid: number;
   name: string;

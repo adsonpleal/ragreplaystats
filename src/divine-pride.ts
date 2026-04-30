@@ -145,20 +145,6 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&gt;/g, ">");
 }
 
-/**
- * Reverse name → DP monster id lookup. Used to recover the view id of a
- * dummy that the player chat-labeled but whose spawn packet was missed.
- * Sync — assumes prefetchReplay has already resolved (which is the case
- * at every call site).
- */
-export function findMonsterIdByName(name: string): number | null {
-  if (!monsters) return null;
-  for (const [id, entry] of monsters) {
-    if (entry.name === name) return id;
-  }
-  return null;
-}
-
 export function getItemName(id: number): string | null {
   return items?.get(id)?.name ?? null;
 }

@@ -7,7 +7,6 @@ import {
   damageTimelineMulti,
   damageTimelineSingle,
   dpsAnalysisStats,
-  inferredDummyNames,
   isPlayerSource,
   killsByPlayerAndMob,
   lootByItem,
@@ -30,7 +29,7 @@ import {
   skillUsageByPlayer,
 } from "./aggregate/index.js";
 import { loadReferenceDb, type ReferenceDb } from "./db/loader.js";
-import { findMonsterIdByName, prefetchReplay } from "./divine-pride.js";
+import { prefetchReplay } from "./divine-pride.js";
 import {
   fetchReplay,
   listRecentReplays,
@@ -286,47 +285,8 @@ function parseAndRender(
   // any `mob#1234` / `skill#999` fallbacks become real names.
   void prefetchReplay(replay).then(() => {
     if (state.replay !== replay) return;
-    backfillEntityViewsFromChatLabels(replay);
     rerender();
   });
-}
-
-/**
- * Some training dummies' spawn packets are missed when the recording starts
- * already in their view (player on tra_fild facing the dummy line). Those
- * AIDs end up with view=0 — and the table can't render an id / DP link.
- *
- * The chat-label heuristic gives us the dummy's exact DP name (the player
- * typed it before swinging). Look up each chat label by name in the
- * monster DB and write the recovered id into the entity's view so the
- * rest of the UI (table id column, DP link, ★ marker) lights up.
- */
-function backfillEntityViewsFromChatLabels(replay: Replay): boolean {
-  const labels = inferredDummyNames(replay);
-  let changed = false;
-  for (const [aid, label] of labels) {
-    const ent = replay.entities.get(aid);
-    if (ent && ent.view) continue;
-    const id = findMonsterIdByName(label);
-    if (!id) continue;
-    if (!ent) {
-      replay.entities.set(aid, {
-        aid,
-        kind: "mob",
-        view: id,
-        name: "",
-        isBoss: false,
-        level: 0,
-        maxHp: 0,
-        firstSeenMs: 0,
-        lastHp: 0,
-      });
-    } else {
-      ent.view = id;
-    }
-    changed = true;
-  }
-  return changed;
 }
 
 function paintStaticStrings() {
@@ -1183,17 +1143,10 @@ function renderSkillUsesChart(replay: Replay) {
 
 function monsterName(replay: Replay, aid: number): string {
   const ent = replay.entities.get(aid);
-  // Divine Pride wins when it has a real name — that's the canonical case
-  // for any monster outside of practice maps / custom instances.
   if (ent && state.db && ent.view) {
     const fromDb = state.db.resolveMob(ent.view);
     if (!fromDb.startsWith("mob#")) return fromDb;
   }
-  // Chat-derived label: when the recording's player typed a name right
-  // before attacking the target, that wins over the server's garbage mob
-  // code or the "Alvo desconhecido" placeholder.
-  const inferred = inferredDummyNames(replay).get(aid);
-  if (inferred) return inferred;
   if (!ent) return t.unknownTargetName;
   if (ent.name) return ent.name;
   return t.mobFallback(ent.view || aid);
