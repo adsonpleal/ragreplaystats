@@ -41,9 +41,13 @@ export function isPlayerSource(replay: Replay, aid: number): boolean {
  *     — common on practice maps like tra_fild where dummies are placed on
  *     map and the spawn packet was missed).
  * We exclude pc / homun / merc / elem / pet — those are allies, not targets.
+ * We also exclude ground-skill-unit AIDs — those are AoE skill placeholders
+ * (Storm Gust, Arrow Shower, etc.) that show up as damage targets but
+ * aren't real monsters.
  */
 const NON_TARGETABLE_KINDS = new Set(["pc", "homun", "merc", "elem", "pet"]);
 function isMobTarget(replay: Replay, aid: number): boolean {
+  if (replay.groundUnits.has(aid)) return false;
   const ent = replay.entities.get(aid);
   if (!ent) return true;
   return !NON_TARGETABLE_KINDS.has(ent.kind);

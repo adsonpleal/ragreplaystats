@@ -144,6 +144,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   // deals the damage in subsequent ticks; the damage packets list the unit's
   // AID as the source. We rewrite source back to the caster when we see one.
   const groundUnitOwner = new Map<number, number>();
+  const groundUnits = new Set<number>();
 
   // Initial inventory snapshot from the Items container — used to resolve
   // `itemId` for slots when 0x07fa fires later. Mutated as 0x0a37 / 0x07fa
@@ -277,6 +278,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         if (ev.unitAid && ev.casterAid) {
           groundUnitOwner.set(ev.unitAid, ev.casterAid);
         }
+        if (ev.unitAid) groundUnits.add(ev.unitAid);
         break;
       }
       case "chat":
@@ -400,6 +402,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     paramChanges: dedupedParams,
     statusEvents: dedupedStatus,
     chats,
+    groundUnits,
     totals: {
       packetCount,
       handledPackets,

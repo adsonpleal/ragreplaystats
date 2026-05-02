@@ -156,6 +156,14 @@ export type Replay = {
   paramChanges: ParamChangeEvent[];
   statusEvents: StatusEvent[];
   chats: ChatEvent[];
+  /**
+   * AIDs that arrived via 0x09ca (ground-skill-unit placements). These are
+   * the AoE skill's own ground markers — Storm Gust, Arrow Shower, etc. —
+   * which the server uses as a placeholder target/source for per-tick
+   * damage. Excluded from monster aggregations even when missing from
+   * `entities`.
+   */
+  groundUnits: Set<number>;
   totals: {
     packetCount: number;
     handledPackets: number;
