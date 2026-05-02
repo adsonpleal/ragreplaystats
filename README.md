@@ -1,6 +1,6 @@
-# RagReplayStats
+# RagnaRecap
 
-**Live: <https://adsonpleal.github.io/ragreplaystats/>**
+**Live: <https://ragnarecap.web.app/>**
 
 Static website that parses Ragnarok Online `.rrf` replay files and shows damage / skill / kill statistics. All decoding and aggregation happen **in the browser** — the file is also stored in Firebase Firestore so a shareable link with a 10-char id is produced. Files >1 MiB stay local and aren't uploaded.
 

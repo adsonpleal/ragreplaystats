@@ -3,17 +3,80 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RagReplayStats</title>
+    <title>RagnaRecap — Análise de Replays Ragnarok Online</title>
+    <meta
+      name="description"
+      content="Carregue, visualize e compartilhe replays .rrf do Ragnarok Online. Estatísticas de DPS, abates, equipamentos e timeline — tudo no navegador."
+    />
+    <meta name="keywords" content="ragnarok online, replay, .rrf, dps, análise, latam, brAthena, estatísticas" />
+    <link rel="canonical" href="https://ragnarecap.web.app/" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="RagnaRecap — Análise de Replays Ragnarok Online" />
+    <meta
+      property="og:description"
+      content="Carregue, visualize e compartilhe replays .rrf do Ragnarok Online. Estatísticas de DPS, abates, equipamentos e timeline — tudo no navegador."
+    />
+    <meta property="og:url" content="https://ragnarecap.web.app/" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="RagnaRecap" />
+
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="RagnaRecap — Análise de Replays Ragnarok Online" />
+    <meta
+      name="twitter:description"
+      content="Carregue, visualize e compartilhe replays .rrf do Ragnarok Online. Estatísticas de DPS, abates, equipamentos e timeline — tudo no navegador."
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "RagnaRecap",
+        "url": "https://ragnarecap.web.app/",
+        "description": "Carregue, visualize e compartilhe replays .rrf do Ragnarok Online. Estatísticas de DPS, abates, equipamentos e timeline — tudo no navegador.",
+        "inLanguage": "pt-BR",
+        "applicationCategory": "GameApplication",
+        "browserRequirements": "Requires JavaScript",
+        "operatingSystem": "Any",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BRL" }
+      }
+    </script>
+
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css" />
     <link rel="stylesheet" href="/src/ui/styles.css" />
   </head>
   <body>
     <header class="topbar">
-      <h1><a id="home-link" href="./">RagReplayStats</a></h1>
+      <h1><a id="home-link" href="./">RagnaRecap</a></h1>
       <p class="muted" id="tagline"></p>
     </header>
 
     <main id="app">
+      <section id="seo-intro" class="seo-intro">
+        <h2>Análise de Replays do Ragnarok Online</h2>
+        <p>
+          O <strong>RagnaRecap</strong> lê arquivos <code>.rrf</code> gerados pelo cliente do
+          Ragnarok Online e mostra estatísticas detalhadas da sessão: dano por jogador, abates,
+          tempo até o kill, equipamentos, gráfico de HP, análise de DPS por janela e muito mais.
+          Tudo é processado direto no seu navegador — nenhum arquivo precisa sair da sua máquina.
+        </p>
+        <h3>Como funciona</h3>
+        <p>
+          Arraste um <code>.rrf</code> na área abaixo ou clique para selecionar. O replay é
+          decodificado localmente. Se quiser compartilhar com seu time, salve no Firestore e
+          receba um link curto (<code>?r=&lt;id&gt;</code>) que abre a mesma análise em qualquer
+          navegador.
+        </p>
+        <noscript>
+          <p>
+            <strong>Este site requer JavaScript</strong> — toda a decodificação dos arquivos
+            <code>.rrf</code> e a renderização dos gráficos acontece no navegador.
+          </p>
+        </noscript>
+      </section>
+
       <section id="drop-zone" class="drop-zone">
         <p id="drop-prompt"></p>
         <input id="file-input" type="file" accept=".rrf" hidden />

@@ -15,9 +15,9 @@ type MonsterEntry = { name: string; hp: number; level: number };
 type SkillEntry = { name: string };
 
 // vite is configured with `base: "./"`, so relative URLs resolve against
-// the current page (works the same on dev http://localhost:5173/ and on
-// GitHub Pages https://…/ragreplaystats/). Files live in public/db/ and
-// ship as-is to the deploy root.
+// the current page (works on dev http://localhost:5173/ and on Firebase
+// Hosting https://ragnarecap.web.app/ alike). Files live in public/db/
+// and ship as-is to the deploy root.
 const DB_BASE = "./db";
 
 let items: Map<number, ItemEntry> | null = null;
