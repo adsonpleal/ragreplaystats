@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy GH Pages redirect to ragnarecap.web.app
 
 on:
   push:
@@ -18,17 +18,35 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+      - name: Generate redirect site
+        run: |
+          mkdir -p out
+          cat > out/index.html <<'HTML'
+          <!doctype html>
+          <html lang="pt-BR">
+          <head>
+            <meta charset="UTF-8">
+            <title>Mudamos para RagnaRecap — ragnarecap.web.app</title>
+            <meta name="robots" content="noindex">
+            <link rel="canonical" href="https://ragnarecap.web.app/">
+            <meta http-equiv="refresh" content="0;url=https://ragnarecap.web.app/">
+            <style>body{font-family:system-ui;max-width:40em;margin:4em auto;padding:0 1em;line-height:1.5;color:#222}a{color:#ff6f8d}</style>
+          </head>
+          <body>
+            <h1>RagReplayStats agora é RagnaRecap</h1>
+            <p>O site foi movido para <a href="https://ragnarecap.web.app/">ragnarecap.web.app</a>.
+               Você será redirecionado automaticamente. Atualize seus favoritos!</p>
+            <script>
+              location.replace("https://ragnarecap.web.app/" + location.search + location.hash);
+            </script>
+          </body>
+          </html>
+          HTML
+          cp out/index.html out/404.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist
+          path: ./out
 
   deploy:
     needs: build
