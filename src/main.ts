@@ -5,7 +5,6 @@ import {
   computeResumo,
   consumablesByItem,
   damageTimelineMulti,
-  damageTimelineSingle,
   dpsAnalysisStats,
   isPlayerSource,
   killsByPlayerAndMob,
@@ -42,7 +41,7 @@ import { t, locale } from "./i18n.js";
 import { decodeReplay } from "./rrf/decode.js";
 import type { DamageEvent, Replay } from "./rrf/types.js";
 import { renderBarChart } from "./ui/bar-chart.js";
-import { renderDamageMulti, renderDamageSingle } from "./ui/dps-chart.js";
+import { renderDamageMulti } from "./ui/dps-chart.js";
 import { renderLineChart } from "./ui/line-chart.js";
 import { renderSummaryCard, type SummaryCell } from "./ui/stats-summary.js";
 import { renderTable } from "./ui/table.js";
@@ -55,7 +54,14 @@ type State = {
   replay: Replay | null;
   db: ReferenceDb | null;
   mode: Mode;
-  selectedPlayer: number | null;
+  /**
+   * Multi-select capable. Plain click on a player table row replaces the
+   * set with that single AID; ⌘/Ctrl-click toggles. The "primary" selected
+   * player (used to scope the secondary monster table + breadcrumb) is the
+   * first inserted member — `Set` preserves insertion order, so don't
+   * recreate the set on toggle-add.
+   */
+  selectedPlayers: Set<number>;
   selectedMonster: number | null;
   /** Brush selection. null = full session. */
   selectedTimeRange: Range;
@@ -72,6 +78,13 @@ type State = {
   selectedMobSkillTarget: number | null;
   /** Drag-selected window for the DPS Analysis tab. null = full session. */
   dpsAnalysisRange: { startMs: number; endMs: number } | null;
+  /**
+   * Shared drag-select range for the per-player matchup timelines on the
+   * "Por jogador" tab — drag on one card and the same window highlights
+   * on every other selected player's card so you can eyeball the same
+   * fight slice across players. Reset when monster or tab changes.
+   */
+  byPlayerCompareRange: { startMs: number; endMs: number } | null;
   /** Recent-replays list state, populated when the home view is visible. */
   recent: {
     items: ReplayListItem[];
@@ -92,7 +105,7 @@ const state: State = {
   replay: null,
   db: null,
   mode: "byPlayer",
-  selectedPlayer: null,
+  selectedPlayers: new Set(),
   selectedMonster: null,
   selectedTimeRange: null,
   shareId: null,
@@ -100,6 +113,7 @@ const state: State = {
   replayFileName: null,
   selectedMobSkillTarget: null,
   dpsAnalysisRange: null,
+  byPlayerCompareRange: null,
   recent: {
     items: [],
     pageCursors: [undefined],
@@ -111,6 +125,16 @@ const state: State = {
 };
 
 const RECENT_PAGE_SIZE = 10;
+
+/**
+ * "Primary" selected player = the first one inserted into the set, by
+ * `Set` iteration order. Drives the secondary monster table, breadcrumb,
+ * and any per-player pane that hasn't been multiplied yet.
+ */
+function primarySelectedPlayer(): number | null {
+  const it = state.selectedPlayers.values().next();
+  return it.done ? null : it.value;
+}
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
@@ -148,11 +172,12 @@ function setupHomeLink() {
     state.shareId = null;
     state.replayBytes = null;
     state.replayFileName = null;
-    state.selectedPlayer = null;
+    state.selectedPlayers.clear();
     state.selectedMonster = null;
     state.selectedTimeRange = null;
     state.selectedMobSkillTarget = null;
     state.dpsAnalysisRange = null;
+    state.byPlayerCompareRange = null;
     $("#summary").hidden = true;
     $("#explorer").hidden = true;
     $("#share-controls").innerHTML = "";
@@ -260,11 +285,12 @@ function parseAndRender(
   const replay = decodeReplay(buf as ArrayBuffer);
   const ms = (performance.now() - t0).toFixed(0);
   state.replay = replay;
-  state.selectedPlayer = null;
+  state.selectedPlayers.clear();
   state.selectedMonster = null;
   state.selectedTimeRange = null;
   state.selectedMobSkillTarget = null;
   state.dpsAnalysisRange = null;
+  state.byPlayerCompareRange = null;
   state.shareId = shareId;
   // Keep a copy of the raw bytes so the user can re-download the replay.
   state.replayBytes = new Uint8Array(buf as ArrayBuffer).slice();
@@ -407,8 +433,9 @@ const VALID_MODES: ReadonlySet<Mode> = new Set([
  */
 function setMode(mode: Mode) {
   state.mode = mode;
-  state.selectedPlayer = null;
+  state.selectedPlayers.clear();
   state.selectedMonster = null;
+  state.byPlayerCompareRange = null;
   document
     .querySelectorAll<HTMLButtonElement>(".mode-btn")
     .forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
@@ -981,7 +1008,8 @@ function renderKillsChart(replay: Replay) {
     state.db?.resolveMob(id) ?? t.mobFallback(id);
 
   const filter: { sourceAid?: number; targetView?: number } = {};
-  if (state.selectedPlayer != null) filter.sourceAid = state.selectedPlayer;
+  const primary = primarySelectedPlayer();
+  if (primary != null) filter.sourceAid = primary;
   if (state.selectedMonster != null) {
     // Filter on the species (view), not the specific instance — picking
     // "Deep Sea Sropho #1234" means "all Deep Sea Spropho kills".
@@ -995,8 +1023,7 @@ function renderKillsChart(replay: Replay) {
     return;
   }
 
-  const playerLabel =
-    state.selectedPlayer != null ? playerName(replay, state.selectedPlayer) : null;
+  const playerLabel = primary != null ? playerName(replay, primary) : null;
   const monsterLabel =
     state.selectedMonster != null ? monsterName(replay, state.selectedMonster) : null;
 
@@ -1075,7 +1102,8 @@ function renderSkillUsesChart(replay: Replay) {
     id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
 
   const filter: { sourceAid?: number; targetAid?: number } = {};
-  if (state.selectedPlayer != null) filter.sourceAid = state.selectedPlayer;
+  const primary = primarySelectedPlayer();
+  if (primary != null) filter.sourceAid = primary;
   if (state.selectedMonster != null) filter.targetAid = state.selectedMonster;
 
   const rows = skillUsageByPlayer(replay, filter, skillResolver);
@@ -1084,8 +1112,7 @@ function renderSkillUsesChart(replay: Replay) {
     return;
   }
 
-  const playerLabel =
-    state.selectedPlayer != null ? playerName(replay, state.selectedPlayer) : null;
+  const playerLabel = primary != null ? playerName(replay, primary) : null;
   const monsterLabel =
     state.selectedMonster != null ? monsterName(replay, state.selectedMonster) : null;
 
@@ -1202,13 +1229,16 @@ function renderBreadcrumb() {
   const crumbs: Array<{ label: string; value: string; clear: () => void }> = [];
 
   if (state.mode === "byPlayer") {
-    if (state.selectedPlayer !== null) {
+    // One chip per selected player. × removes that single player; if it
+    // was the last one, also drop the selected monster (drill-down has
+    // nothing to render).
+    for (const playerAid of state.selectedPlayers) {
       crumbs.push({
         label: t.crumbPlayer,
-        value: playerName(r, state.selectedPlayer),
+        value: playerName(r, playerAid),
         clear: () => {
-          state.selectedPlayer = null;
-          state.selectedMonster = null;
+          state.selectedPlayers.delete(playerAid);
+          if (state.selectedPlayers.size === 0) state.selectedMonster = null;
           rerender();
         },
       });
@@ -1312,11 +1342,19 @@ function renderByPlayerMode(replay: Replay) {
     {
       initialSort: { key: "totalDealt", asc: false },
       onRowClick: (row) => {
-        state.selectedPlayer = row.aid;
-        state.selectedMonster = null;
+        // Plain click toggles the player in/out of the multi-select set.
+        // Removing the last selected player also clears the monster
+        // (we'd have nothing left to drill into). Use the breadcrumb ×
+        // chips to deselect specific players when many are selected.
+        if (state.selectedPlayers.has(row.aid)) {
+          state.selectedPlayers.delete(row.aid);
+          if (state.selectedPlayers.size === 0) state.selectedMonster = null;
+        } else {
+          state.selectedPlayers.add(row.aid);
+        }
         rerender();
       },
-      isSelected: (row) => row.aid === state.selectedPlayer,
+      isSelected: (row) => state.selectedPlayers.has(row.aid),
     },
   );
 
@@ -1324,10 +1362,11 @@ function renderByPlayerMode(replay: Replay) {
   chartPane.innerHTML = "";
   skillPane.innerHTML = "";
 
-  if (state.selectedPlayer === null) return;
+  const primaryPlayer = primarySelectedPlayer();
+  if (primaryPlayer === null) return;
 
-  const playerLabel = playerName(replay, state.selectedPlayer);
-  const monsters = monstersDamagedByPlayer(replay, state.selectedPlayer);
+  const playerLabel = playerName(replay, primaryPlayer);
+  const monsters = monstersDamagedByPlayer(replay, primaryPlayer);
 
   secondary.innerHTML = `<h2 class="section-title">${escape(t.monstersDamagedBy(playerLabel))}</h2>
     <p class="section-hint">${t.monstersDamagedByHint}</p>
@@ -1372,6 +1411,7 @@ function renderByPlayerMode(replay: Replay) {
     {
       initialSort: { key: "totalReceived", asc: false },
       onRowClick: (row) => {
+        if (state.selectedMonster !== row.aid) state.byPlayerCompareRange = null;
         state.selectedMonster = row.aid;
         state.selectedMobSkillTarget = null;
         rerender();
@@ -1382,21 +1422,101 @@ function renderByPlayerMode(replay: Replay) {
 
   if (state.selectedMonster === null) return;
 
-  const monsterLabel = monsterName(replay, state.selectedMonster);
-  const events = replay.damage.filter(
-    (d) => d.source === state.selectedPlayer && d.target === state.selectedMonster,
-  );
-  const bucketMs = pickBucketMs(events);
+  // Render N timeline cards (one per selected player) into chartPane,
+  // then N skill tables into skillPane. Pane order in index.html stacks
+  // all timelines first, then all skill tables — so when the user
+  // multi-selects players for comparison, like-cards group together.
+  const monsterAid = state.selectedMonster;
+  const skillResolver = (id: number) =>
+    id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
 
-  chartPane.innerHTML = `<h2 class="section-title">${escape(t.matchupTitle(playerLabel, monsterLabel))}</h2>
-    <div id="dps-chart"></div>`;
-  renderDamageSingle(
-    $("#dps-chart"),
-    damageTimelineSingle(events, bucketMs),
-    `${playerLabel} → ${monsterLabel}`,
-  );
+  // Lock all timeline cards to the same x + y scales so visual comparison
+  // is honest. Walk every selected player's damage + skill-use events
+  // once to find the union x range and the max damage value.
+  let sharedXMin = Number.POSITIVE_INFINITY;
+  let sharedXMax = Number.NEGATIVE_INFINITY;
+  let sharedYMax = 0;
+  for (const playerAid of state.selectedPlayers) {
+    for (const d of replay.damage) {
+      if (d.source !== playerAid || d.target !== monsterAid) continue;
+      if (d.time < sharedXMin) sharedXMin = d.time;
+      if (d.time > sharedXMax) sharedXMax = d.time;
+      if (d.damage > sharedYMax) sharedYMax = d.damage;
+    }
+    for (const u of replay.skillUses) {
+      if (u.source !== playerAid || u.target !== monsterAid) continue;
+      if (u.time < sharedXMin) sharedXMin = u.time;
+      if (u.time > sharedXMax) sharedXMax = u.time;
+    }
+  }
+  const sharedXRange =
+    sharedXMin <= sharedXMax
+      ? { startMs: sharedXMin, endMs: sharedXMax }
+      : null;
+  const sharedYMaxOrNull = sharedYMax > 0 ? sharedYMax : null;
 
-  renderSkillTable(skillPane, events, t.skillsInMatchup);
+  for (const playerAid of state.selectedPlayers) {
+    const events = replay.damage.filter(
+      (d) => d.source === playerAid && d.target === monsterAid,
+    );
+    if (!events.length) continue;
+    const card = document.createElement("section");
+    card.className = "matchup-card";
+    card.innerHTML = `<h2 class="section-title">${escape(
+      t.matchupTimelineCardTitle(playerName(replay, playerAid)),
+    )}</h2>`;
+    const chartHost = document.createElement("div");
+    chartHost.className = "stats-chart";
+    card.appendChild(chartHost);
+    chartPane.appendChild(card);
+    const damage = events.map((d) => ({
+      time: d.time,
+      damage: d.damage,
+      skillId: d.skillId,
+      skillName: skillResolver(d.skillId),
+    }));
+    // Non-damage skill uses against the same monster (debuffs, heals on
+    // undead, etc.) overlay as vertical markers — reuses the scatter's
+    // chat-series slot, since semantically it's the same "event-at-time"
+    // shape and we'd never show real chat alongside the matchup.
+    const skillUseMarkers = replay.skillUses
+      .filter((u) => u.source === playerAid && u.target === monsterAid)
+      .map((u) => ({ time: u.time, message: skillResolver(u.skillId) }));
+    renderDpsScatter(
+      chartHost,
+      { damage, chat: skillUseMarkers },
+      {
+        initialRange: state.byPlayerCompareRange,
+        xRangeMs: sharedXRange,
+        yMax: sharedYMaxOrNull,
+        onSelect: (range) => {
+          // Drag-select on any card mirrors to every other selected
+          // player's card — share-the-window comparison. Dedupe equal
+          // selections so we don't trigger a no-op rerender storm.
+          const cur = state.byPlayerCompareRange;
+          if (
+            (cur === null && range === null) ||
+            (cur && range && cur.startMs === range.startMs && cur.endMs === range.endMs)
+          ) {
+            return;
+          }
+          state.byPlayerCompareRange = range;
+          rerender();
+        },
+      },
+    );
+  }
+
+  for (const playerAid of state.selectedPlayers) {
+    const events = replay.damage.filter(
+      (d) => d.source === playerAid && d.target === monsterAid,
+    );
+    if (!events.length) continue;
+    const card = document.createElement("section");
+    card.className = "matchup-card";
+    skillPane.appendChild(card);
+    renderSkillTable(card, events, t.matchupSkillsCardTitle(playerName(replay, playerAid)));
+  }
 }
 
 function renderByMonsterMode(replay: Replay) {
@@ -1888,13 +2008,14 @@ function renderSkillTable(host: HTMLElement, events: DamageEvent[], title: strin
     host.innerHTML = "";
     return;
   }
-  host.innerHTML = `<h2 class="section-title">${escape(title)}</h2>
-    <div id="skill-table"></div>`;
+  host.innerHTML = `<h2 class="section-title">${escape(title)}</h2>`;
+  const tableHost = document.createElement("div");
+  host.appendChild(tableHost);
   const skillResolver = (id: number) =>
     id === 0 ? t.autoAttack : state.db?.resolveSkill(id) ?? t.skillFallback(id);
   const rows = bySkill(events, state.replay!.skillCasts, skillResolver);
   renderTable(
-    $("#skill-table"),
+    tableHost,
     [
       {
         key: "skillId",

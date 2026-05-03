@@ -26,6 +26,16 @@ export type DpsScatterOptions = {
   onSelect: (range: { startMs: number; endMs: number } | null) => void;
   /** Re-paint a previously-saved selection rect after rerender. */
   initialRange?: { startMs: number; endMs: number } | null;
+  /**
+   * Force a fixed x-axis range (in ms) instead of auto-fitting to the data.
+   * Used to lock multiple comparison charts to the same time window.
+   */
+  xRangeMs?: { startMs: number; endMs: number } | null;
+  /**
+   * Force a fixed y-axis max (damage units) instead of auto-fitting to the
+   * data peak. Used to lock multiple comparison charts to the same scale.
+   */
+  yMax?: number | null;
 };
 
 /**
@@ -156,11 +166,19 @@ export function renderDpsScatter(
       },
     ],
     scales: {
-      x: { time: false },
+      x: opts.xRangeMs
+        ? {
+            time: false,
+            range: () => [
+              opts.xRangeMs!.startMs / 1000,
+              opts.xRangeMs!.endMs / 1000,
+            ],
+          }
+        : { time: false },
       // Cap the y axis at the highest damage observed (with a small head
       // room) — chat bars span the full plot height regardless of y, so
       // there's no need to reserve space above the damage cloud.
-      y: { range: () => [0, peakDamage * 1.06] },
+      y: { range: () => [0, (opts.yMax ?? peakDamage) * 1.06] },
     },
     axes: [
       { stroke: axisStroke },

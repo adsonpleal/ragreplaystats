@@ -63,6 +63,8 @@ export const t = {
     "Clique em um monstro para ver o gráfico de dano deste confronto.",
   matchupTitle: (player: string, monster: string) => `${player} vs ${monster}`,
   skillsInMatchup: "Habilidades usadas neste confronto",
+  matchupTimelineCardTitle: (player: string) => `Linha do tempo de dano — ${player}`,
+  matchupSkillsCardTitle: (player: string) => `Habilidades — ${player}`,
 
   // By-monster section
   monstersHeading: "Monstros",

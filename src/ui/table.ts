@@ -16,7 +16,7 @@ export type Column<T> = {
 
 export type TableOptions<T> = {
   initialSort?: { key: string; asc: boolean };
-  onRowClick?: (row: T) => void;
+  onRowClick?: (row: T, event: MouseEvent) => void;
   isSelected?: (row: T) => boolean;
 };
 
@@ -79,7 +79,7 @@ export function renderTable<T>(
       const tr = document.createElement("tr");
       if (options.onRowClick) {
         tr.classList.add("clickable");
-        tr.addEventListener("click", () => options.onRowClick!(row));
+        tr.addEventListener("click", (ev) => options.onRowClick!(row, ev));
       }
       if (options.isSelected?.(row)) tr.classList.add("selected");
       for (const c of cols) {

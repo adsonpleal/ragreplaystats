@@ -351,6 +351,20 @@ button {
   margin-top: 1.25rem;
 }
 
+/* One per selected player when stacking timeline / skill cards in the
+   "Por jogador" tab. Same visual as .stats-card so multiple cards in the
+   same pane don't visually merge. */
+.matchup-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+
+.matchup-card + .matchup-card {
+  margin-top: 1.25rem;
+}
+
 #explorer > div:not(:empty) {
   margin-top: 1.25rem;
 }
