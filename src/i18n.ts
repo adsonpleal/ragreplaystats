@@ -4,6 +4,9 @@ export const t = {
     "Solte um replay .rrf do Ragnarok Online abaixo. A análise roda no seu navegador; o arquivo é guardado em nuvem para você compartilhar o link.",
   dropPrompt: "Solte um arquivo <code>.rrf</code> aqui, ou",
   browse: "escolha um",
+  dropShareLabel: "Enviar este replay para o servidor",
+  dropShareHint:
+    "Por padrão a análise roda apenas no seu navegador. Ao marcar, o arquivo .rrf, seu nick e o mapa são enviados para a nuvem e ficam visíveis publicamente para qualquer pessoa com o link.",
 
   // Status
   parsing: (file: string, kb: string) => `Lendo ${file} (${kb} KB)…`,
@@ -19,12 +22,36 @@ export const t = {
   recentReplaysTitle: "Replays recentes",
   recentReplaysHint: "Clique em um replay para abri-lo.",
   recentReplaysEmpty: "Nenhum replay enviado ainda.",
+  recentReplaysNoMatch: "Nenhum replay corresponde aos filtros.",
   recentReplaysError: (msg: string) => `Falha ao carregar a lista: ${msg}`,
   recentReplaysLoading: "Carregando replays…",
+  recentReplaysFilterPlayer: "Jogador",
+  recentReplaysFilterMap: "Mapa",
+  recentReplaysFilterClear: "Limpar filtros",
   colUploadedAt: "Enviado em",
   paginationPrev: "Anterior",
   paginationNext: "Próxima",
   paginationPageOf: (n: number) => `Página ${n}`,
+
+  // Suggestions section
+  suggestionsNav: "Sugestões",
+  suggestionsTitle: "Sugestões e comentários",
+  suggestionsHint:
+    "Compartilhe ideias, bugs ou pedidos. Vote nas sugestões existentes.",
+  suggestionsPlaceholder: "Escreva uma sugestão…",
+  suggestionsSubmit: "Enviar",
+  suggestionsSending: "Enviando…",
+  suggestionsSent: "Obrigado! Sua sugestão foi registrada.",
+  suggestionsEmpty: "Nenhuma sugestão ainda. Seja o primeiro a enviar uma!",
+  suggestionsLoading: "Carregando sugestões…",
+  suggestionsError: (msg: string) => `Falha ao carregar sugestões: ${msg}`,
+  suggestionsSubmitError: (msg: string) => `Falha ao enviar: ${msg}`,
+  suggestionsVoteError: (msg: string) => `Falha ao votar: ${msg}`,
+  suggestionsTooLong: "Sugestão muito longa (máx. 500 caracteres).",
+  suggestionsAlreadyVoted: "Você já votou nesta sugestão.",
+  suggestionUpvote: "Curtir",
+  suggestionDownvote: "Não curtir",
+  suggestionPostedAt: (when: string) => `Enviado em ${when}`,
 
   copyLink: "Copiar link",
   downloadReplay: "Baixar replay",

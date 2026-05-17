@@ -49,7 +49,12 @@
   </head>
   <body>
     <header class="topbar">
-      <h1><a id="home-link" href="./">RagnaRecap</a></h1>
+      <div class="topbar-row">
+        <h1><a id="home-link" href="/">RagnaRecap</a></h1>
+        <nav class="topnav">
+          <a id="suggestions-nav" class="topnav-link" href="/suggestions"></a>
+        </nav>
+      </div>
       <p class="muted" id="tagline"></p>
     </header>
 
@@ -79,15 +84,69 @@
       <section id="drop-zone" class="drop-zone">
         <p id="drop-prompt"></p>
         <input id="file-input" type="file" accept=".rrf" hidden />
+        <label class="drop-share-toggle">
+          <input id="drop-share-checkbox" type="checkbox" />
+          <span id="drop-share-label"></span>
+        </label>
+        <p class="muted small drop-share-hint" id="drop-share-hint"></p>
         <p class="muted small" id="drop-status"></p>
         <div id="share-controls" class="share-controls" hidden></div>
       </section>
 
       <section id="recent-replays" class="recent-replays" hidden>
-        <h2 id="recent-replays-title"></h2>
+        <div class="recent-replays-header">
+          <h2 id="recent-replays-title"></h2>
+          <span
+            id="recent-replays-loading-indicator"
+            class="recent-replays-loading-indicator"
+            hidden
+            aria-hidden="true"
+          ></span>
+        </div>
         <p class="muted small" id="recent-replays-hint"></p>
+        <div id="recent-replays-filters" class="recent-replays-filters">
+          <label class="recent-replays-filter">
+            <span id="recent-replays-filter-player-label" class="recent-replays-filter-label"></span>
+            <input
+              id="recent-replays-filter-player"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <label class="recent-replays-filter">
+            <span id="recent-replays-filter-map-label" class="recent-replays-filter-label"></span>
+            <input
+              id="recent-replays-filter-map"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <button
+            type="button"
+            id="recent-replays-filter-clear"
+            class="recent-replays-filter-clear"
+          ></button>
+        </div>
         <div id="recent-replays-list"></div>
         <div id="recent-replays-pagination" class="recent-replays-pagination"></div>
+      </section>
+
+      <section id="suggestions" class="suggestions" hidden>
+        <h2 id="suggestions-title"></h2>
+        <p class="muted small" id="suggestions-hint"></p>
+        <form id="suggestions-form" class="suggestions-form">
+          <input
+            id="suggestions-input"
+            type="text"
+            maxlength="500"
+            autocomplete="off"
+          />
+          <button type="submit" id="suggestions-submit" class="share-btn"></button>
+        </form>
+        <p class="muted small" id="suggestions-status"></p>
+        <div id="suggestions-list"></div>
       </section>
 
       <section id="summary" hidden></section>
@@ -120,6 +179,20 @@
         <div id="dps-analysis-stats-pane"></div>
       </section>
     </main>
+
+    <footer class="site-footer">
+      <p class="muted small">
+        Veja também:
+        <a href="https://ragcalc.web.app/" target="_blank" rel="noopener">RagCalc</a>
+        — calculadora de status ·
+        <a href="https://github.com/adsonpleal/ragmarket" target="_blank" rel="noopener">RagMarket</a>
+        — filtros para catálogo de vendas.
+      </p>
+      <p class="muted small">
+        Projeto open source. Sugestões e bugs no
+        <a href="https://github.com/adsonpleal/ragreplaystats" target="_blank" rel="noopener">GitHub</a>.
+      </p>
+    </footer>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

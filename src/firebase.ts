@@ -3,19 +3,20 @@
 
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import {
+  addDoc,
   Bytes,
   collection,
   doc,
   getDoc,
   getDocs,
   getFirestore,
-  limit as fbLimit,
+  increment,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
-  startAfter,
   Timestamp,
+  updateDoc,
   type Firestore,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
@@ -136,53 +137,171 @@ export async function fetchReplay(id: string): Promise<FetchedReplay | null> {
 }
 
 /**
- * Page through recent replays, newest first. The Firestore JS SDK doesn't
- * support per-field projection, so the server still ships the bytes blob —
- * we just don't read it. Acceptable cost at v1; if list bandwidth becomes a
- * problem move summaries to their own collection.
+ * Bulk fetch of recent replay summaries via Firestore REST's `runQuery`
+ * with a `select` projection — drops the `bytes` blob (by far the largest
+ * field) so a few hundred docs is a small payload. The client holds the
+ * whole list and does case-insensitive substring filtering locally without
+ * per-keystroke round trips. The regular Firebase JS SDK has no field
+ * projection, hence the REST detour. Reads are public per firestore.rules,
+ * so the API key alone is enough; no auth token needed.
  */
 export async function listRecentReplays(
-  pageSize: number,
-  cursor?: QueryDocumentSnapshot,
-): Promise<{ items: ReplayListItem[]; lastDoc: QueryDocumentSnapshot | null }> {
-  const col = collection(getDb(), COLLECTION);
-  const constraints = cursor
-    ? [orderBy("uploadedAt", "desc"), startAfter(cursor), fbLimit(pageSize)]
-    : [orderBy("uploadedAt", "desc"), fbLimit(pageSize)];
-  const snap = await getDocs(query(col, ...constraints));
-  const items: ReplayListItem[] = snap.docs.map((d) => {
+  maxItems = 300,
+): Promise<ReplayListItem[]> {
+  const url =
+    `https://firestore.googleapis.com/v1/projects/` +
+    `${firebaseConfig.projectId}/databases/(default)/documents:runQuery` +
+    `?key=${firebaseConfig.apiKey}`;
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId: COLLECTION }],
+      select: {
+        fields: [
+          { fieldPath: "fileName" },
+          { fieldPath: "uploadedAt" },
+          { fieldPath: "player" },
+          { fieldPath: "map" },
+          { fieldPath: "recordedAt" },
+          { fieldPath: "durationMs" },
+          { fieldPath: "totalDamage" },
+          { fieldPath: "avgDps" },
+          { fieldPath: "damageEvents" },
+          { fieldPath: "kills" },
+          { fieldPath: "entitiesSeen" },
+          { fieldPath: "handledPackets" },
+          { fieldPath: "packetCount" },
+        ],
+      },
+      orderBy: [
+        { field: { fieldPath: "uploadedAt" }, direction: "DESCENDING" },
+      ],
+      limit: maxItems,
+    },
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Firestore runQuery failed: ${res.status}`);
+  }
+  const rows = (await res.json()) as Array<{
+    document?: { name: string; fields?: Record<string, unknown> };
+  }>;
+  return rows
+    .filter((r) => r.document)
+    .map((r) => parseRestSummary(r.document!));
+}
+
+function parseRestSummary(doc: {
+  name: string;
+  fields?: Record<string, unknown>;
+}): ReplayListItem {
+  const id = doc.name.split("/").pop() ?? "";
+  const f = doc.fields ?? {};
+  return {
+    id,
+    fileName: restStr(f.fileName) ?? `${id}.rrf`,
+    uploadedAt: restTimestamp(f.uploadedAt),
+    player: restStr(f.player),
+    map: restStr(f.map),
+    recordedAt: restTimestamp(f.recordedAt),
+    durationMs: restNum(f.durationMs),
+    totalDamage: restNum(f.totalDamage),
+    avgDps: restNum(f.avgDps),
+    damageEvents: restNum(f.damageEvents),
+    kills: restNum(f.kills),
+    entitiesSeen: restNum(f.entitiesSeen),
+    handledPackets: restNum(f.handledPackets),
+    packetCount: restNum(f.packetCount),
+  };
+}
+
+function restStr(v: unknown): string | null {
+  if (!v || typeof v !== "object") return null;
+  const sv = (v as { stringValue?: unknown }).stringValue;
+  return typeof sv === "string" ? sv : null;
+}
+
+function restNum(v: unknown): number | null {
+  if (!v || typeof v !== "object") return null;
+  const iv = (v as { integerValue?: unknown }).integerValue;
+  if (typeof iv === "string") {
+    const n = parseInt(iv, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (typeof iv === "number") return iv;
+  const dv = (v as { doubleValue?: unknown }).doubleValue;
+  if (typeof dv === "number") return dv;
+  if (typeof dv === "string") {
+    const n = parseFloat(dv);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function restTimestamp(v: unknown): Date | null {
+  if (!v || typeof v !== "object") return null;
+  const tv = (v as { timestampValue?: unknown }).timestampValue;
+  if (typeof tv !== "string") return null;
+  const d = new Date(tv);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions / comments
+// ---------------------------------------------------------------------------
+
+const SUGGESTIONS_COLLECTION = "suggestions";
+export const SUGGESTION_MAX_LENGTH = 500;
+
+export type Suggestion = {
+  id: string;
+  text: string;
+  createdAt: Date | null;
+  upvotes: number;
+  downvotes: number;
+};
+
+export async function createSuggestion(text: string): Promise<string> {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Sugestão vazia.");
+  if (trimmed.length > SUGGESTION_MAX_LENGTH) {
+    throw new Error(`Sugestão muito longa (máx. ${SUGGESTION_MAX_LENGTH}).`);
+  }
+  const ref = await addDoc(collection(getDb(), SUGGESTIONS_COLLECTION), {
+    text: trimmed,
+    createdAt: serverTimestamp(),
+    upvotes: 0,
+    downvotes: 0,
+  });
+  return ref.id;
+}
+
+export async function listSuggestions(): Promise<Suggestion[]> {
+  const col = collection(getDb(), SUGGESTIONS_COLLECTION);
+  const snap = await getDocs(query(col, orderBy("createdAt", "desc")));
+  return snap.docs.map((d) => {
     const data = d.data() as Record<string, unknown>;
     return {
       id: d.id,
-      fileName:
-        typeof data.fileName === "string" ? data.fileName : `${d.id}.rrf`,
-      uploadedAt:
-        data.uploadedAt instanceof Timestamp
-          ? data.uploadedAt.toDate()
-          : null,
-      player: typeof data.player === "string" ? data.player : null,
-      map: typeof data.map === "string" ? data.map : null,
-      recordedAt:
-        data.recordedAt instanceof Timestamp
-          ? data.recordedAt.toDate()
-          : null,
-      durationMs:
-        typeof data.durationMs === "number" ? data.durationMs : null,
-      totalDamage:
-        typeof data.totalDamage === "number" ? data.totalDamage : null,
-      avgDps: typeof data.avgDps === "number" ? data.avgDps : null,
-      damageEvents:
-        typeof data.damageEvents === "number" ? data.damageEvents : null,
-      kills: typeof data.kills === "number" ? data.kills : null,
-      entitiesSeen:
-        typeof data.entitiesSeen === "number" ? data.entitiesSeen : null,
-      handledPackets:
-        typeof data.handledPackets === "number" ? data.handledPackets : null,
-      packetCount:
-        typeof data.packetCount === "number" ? data.packetCount : null,
+      text: typeof data.text === "string" ? data.text : "",
+      createdAt:
+        data.createdAt instanceof Timestamp ? data.createdAt.toDate() : null,
+      upvotes: typeof data.upvotes === "number" ? data.upvotes : 0,
+      downvotes: typeof data.downvotes === "number" ? data.downvotes : 0,
     };
   });
-  return { items, lastDoc: snap.docs[snap.docs.length - 1] ?? null };
+}
+
+export async function voteSuggestion(
+  id: string,
+  direction: "up" | "down",
+): Promise<void> {
+  const ref = doc(getDb(), SUGGESTIONS_COLLECTION, id);
+  const field = direction === "up" ? "upvotes" : "downvotes";
+  await updateDoc(ref, { [field]: increment(1) });
 }
 
 export type { QueryDocumentSnapshot };

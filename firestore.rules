@@ -25,5 +25,44 @@ service cloud.firestore {
       // Replays are immutable and never expire by user action.
       allow update, delete: if false;
     }
+
+    match /suggestions/{suggestionId} {
+      // Anyone can read the suggestion list.
+      allow read: if true;
+
+      // Anyone can post a suggestion, but:
+      //  - the doc must contain exactly the listed keys
+      //  - text must be a non-empty string under 500 chars
+      //  - vote counters must start at 0
+      //  - createdAt must be the server timestamp (request time)
+      allow create: if request.resource.data.keys().hasOnly([
+                       'text', 'createdAt', 'upvotes', 'downvotes'
+                     ])
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 500
+                    && request.resource.data.upvotes == 0
+                    && request.resource.data.downvotes == 0
+                    && request.resource.data.createdAt == request.time;
+
+      // Updates may only bump exactly one of upvotes/downvotes by +1; the
+      // text and createdAt fields are immutable. Cookie-based dedup on the
+      // client prevents repeat voting; the rule just caps the damage if
+      // someone tries to script it.
+      allow update: if request.resource.data.keys().hasOnly([
+                       'text', 'createdAt', 'upvotes', 'downvotes'
+                     ])
+                    && request.resource.data.text == resource.data.text
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && (
+                         (request.resource.data.upvotes == resource.data.upvotes + 1
+                          && request.resource.data.downvotes == resource.data.downvotes)
+                         ||
+                         (request.resource.data.downvotes == resource.data.downvotes + 1
+                          && request.resource.data.upvotes == resource.data.upvotes)
+                       );
+
+      allow delete: if false;
+    }
   }
 }

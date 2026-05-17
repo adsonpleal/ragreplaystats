@@ -30,12 +30,16 @@ import {
 import { loadReferenceDb, type ReferenceDb } from "./db/loader.js";
 import { prefetchReplay } from "./divine-pride.js";
 import {
+  createSuggestion,
   fetchReplay,
   listRecentReplays,
-  type QueryDocumentSnapshot,
+  listSuggestions,
   type ReplayListItem,
   type ReplaySummary,
+  type Suggestion,
+  SUGGESTION_MAX_LENGTH,
   uploadReplay,
+  voteSuggestion,
 } from "./firebase.js";
 import { t, locale } from "./i18n.js";
 import { decodeReplay } from "./rrf/decode.js";
@@ -50,7 +54,15 @@ import { renderDpsScatter } from "./ui/dps-scatter.js";
 
 type Mode = "byPlayer" | "byMonster" | "stats" | "dpsAnalysis";
 
+/**
+ * Top-level page. The default ("home") renders the dropzone + recent replays
+ * (or the loaded replay's analysis if one is present). "suggestions" is a
+ * dedicated page on /suggestions that hides everything else.
+ */
+type Route = "home" | "suggestions";
+
 type State = {
+  route: Route;
   replay: Replay | null;
   db: ReferenceDb | null;
   mode: Mode;
@@ -72,6 +84,12 @@ type State = {
   /** Suggested filename when downloading — comes from the drop or the Firestore doc. */
   replayFileName: string | null;
   /**
+   * True when the current bytes were fetched from a shared URL (not the
+   * user's local drop). Gates the "Download replay" button — if the user
+   * loaded their own file, they already have it and download is pointless.
+   */
+  openedFromUrl: boolean;
+  /**
    * Per-victim filter for the "Habilidades de <mob>" card. Reset when the
    * selected monster changes.
    */
@@ -85,23 +103,33 @@ type State = {
    * fight slice across players. Reset when monster or tab changes.
    */
   byPlayerCompareRange: { startMs: number; endMs: number } | null;
-  /** Recent-replays list state, populated when the home view is visible. */
+  /**
+   * Recent-replays list state. The full set is bulk-fetched once via REST
+   * with the bytes blob projected out, so the player/map filters can do
+   * case-insensitive substring matching client-side without round-tripping.
+   * Pagination is then a slice over the filtered set.
+   */
   recent: {
     items: ReplayListItem[];
-    /**
-     * pageCursors[i] is the cursor we'd `startAfter` to load page i. Page 0
-     * uses `undefined`. Subsequent entries are pushed as the user advances.
-     */
-    pageCursors: (QueryDocumentSnapshot | undefined)[];
     pageIndex: number;
     loading: boolean;
     error: string | null;
-    /** Last request returned exactly pageSize items — likely more pages. */
-    hasMore: boolean;
+    /** Active filter (case-insensitive substring). Empty = no filter. */
+    playerFilter: string;
+    mapFilter: string;
+  };
+  /** Suggestions board state, also part of the home view. */
+  suggestions: {
+    items: Suggestion[];
+    loading: boolean;
+    error: string | null;
+    posting: boolean;
+    statusMsg: string | null;
   };
 };
 
 const state: State = {
+  route: routeFromLocation(),
   replay: null,
   db: null,
   mode: "byPlayer",
@@ -111,16 +139,24 @@ const state: State = {
   shareId: null,
   replayBytes: null,
   replayFileName: null,
+  openedFromUrl: false,
   selectedMobSkillTarget: null,
   dpsAnalysisRange: null,
   byPlayerCompareRange: null,
   recent: {
     items: [],
-    pageCursors: [undefined],
     pageIndex: 0,
     loading: false,
     error: null,
-    hasMore: false,
+    playerFilter: "",
+    mapFilter: "",
+  },
+  suggestions: {
+    items: [],
+    loading: false,
+    error: null,
+    posting: false,
+    statusMsg: null,
   },
 };
 
@@ -139,56 +175,134 @@ function primarySelectedPlayer(): number | null {
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
   document.querySelector<T>(sel)!;
 
+function routeFromLocation(): Route {
+  const path = location.pathname.replace(/\/+$/, "").toLowerCase();
+  return path === "/suggestions" ? "suggestions" : "home";
+}
+
 function init() {
   paintStaticStrings();
   setupDropZone();
   setupModeToggle();
   setupHomeLink();
+  setupSuggestionsNav();
+  setupSuggestionsForm();
+  setupRecentReplayFilters();
+  window.addEventListener("popstate", () => {
+    state.route = routeFromLocation();
+    applyRoute();
+  });
   void loadReferenceDb().then((db) => {
     state.db = db;
     if (state.replay) rerender();
   });
+  applyRoute();
+}
+
+function setupSuggestionsNav() {
+  const link = document.querySelector<HTMLAnchorElement>("#suggestions-nav");
+  if (!link) return;
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    navigateTo("suggestions");
+  });
+}
+
+function navigateTo(route: Route) {
+  if (state.route === route) return;
+  state.route = route;
+  const path = route === "suggestions" ? "/suggestions" : "/";
+  const url = new URL(location.href);
+  // Going to suggestions: strip replay-related params so the URL is clean.
+  if (route === "suggestions") {
+    url.searchParams.delete("r");
+    url.searchParams.delete("tab");
+  }
+  history.pushState(null, "", path + (url.search || ""));
+  applyRoute();
+}
+
+/**
+ * Show/hide top-level sections to match `state.route`. Called on init, on
+ * navigation, and on popstate. Each route owns the visibility of every
+ * section it cares about — there's no per-section toggle scattered around.
+ */
+function applyRoute() {
+  const navLink = document.querySelector<HTMLElement>("#suggestions-nav");
+  if (navLink) navLink.hidden = state.route === "suggestions";
+
+  if (state.route === "suggestions") {
+    $("#seo-intro").hidden = true;
+    $("#drop-zone").hidden = true;
+    $("#recent-replays").hidden = true;
+    $("#summary").hidden = true;
+    $("#explorer").hidden = true;
+    $("#share-controls").hidden = true;
+    void loadSuggestions();
+    return;
+  }
+
+  // Home route.
+  $("#seo-intro").hidden = false;
+  $("#drop-zone").hidden = false;
+  $("#suggestions").hidden = true;
+
   const hasR = new URLSearchParams(location.search).get("r");
   if (hasR) {
-    void loadFromUrl();
-  } else {
-    void loadRecentReplays();
+    if (!state.replay) void loadFromUrl();
+    else rerender();
+    return;
   }
+  if (state.replay) {
+    rerender();
+    return;
+  }
+  // Plain home — no replay loaded, no ?r=.
+  $("#summary").hidden = true;
+  $("#explorer").hidden = true;
+  void loadRecentReplays();
 }
 
 function setupHomeLink() {
   const link = document.querySelector<HTMLAnchorElement>("#home-link");
   if (!link) return;
   link.addEventListener("click", (e) => {
-    // Soft navigation: clear ?r=, drop the current replay, re-show the
-    // recent-uploads list — no full reload.
+    // Soft navigation: route back to home, clear any replay state, re-show
+    // the recent-uploads list — no full reload.
     e.preventDefault();
-    if (!state.replay && !new URLSearchParams(location.search).get("r")) return;
+    const onHome = state.route === "home";
+    if (
+      onHome &&
+      !state.replay &&
+      !new URLSearchParams(location.search).get("r")
+    ) {
+      return;
+    }
     const url = new URL(location.href);
     url.searchParams.delete("r");
     url.searchParams.delete("tab");
-    history.pushState(null, "", url.pathname + url.search);
+    history.pushState(null, "", "/" + (url.search || ""));
+    state.route = "home";
     state.replay = null;
     state.shareId = null;
     state.replayBytes = null;
     state.replayFileName = null;
+    state.openedFromUrl = false;
     state.selectedPlayers.clear();
     state.selectedMonster = null;
     state.selectedTimeRange = null;
     state.selectedMobSkillTarget = null;
     state.dpsAnalysisRange = null;
     state.byPlayerCompareRange = null;
-    $("#summary").hidden = true;
-    $("#explorer").hidden = true;
     $("#share-controls").innerHTML = "";
-    $("#share-controls").hidden = true;
     $("#drop-status").textContent = "";
-    // Reset pagination so the user sees page 1 of the freshest list.
+    // Reset pagination + filters so the user sees page 1 of the freshest list.
     state.recent.pageIndex = 0;
-    state.recent.pageCursors = [undefined];
     state.recent.items = [];
+    state.recent.playerFilter = "";
+    state.recent.mapFilter = "";
     state.recent.error = null;
-    void loadRecentReplays();
+    applyRoute();
   });
 }
 
@@ -219,7 +333,9 @@ function renderShareControls() {
   }
   host.hidden = false;
 
-  if (state.replayBytes) {
+  // Only worth showing when the bytes came from a shared URL — if the user
+  // dropped a local file they already have it on disk.
+  if (state.replayBytes && state.openedFromUrl) {
     const dl = document.createElement("button");
     dl.type = "button";
     dl.className = "share-btn";
@@ -292,7 +408,10 @@ function parseAndRender(
   state.dpsAnalysisRange = null;
   state.byPlayerCompareRange = null;
   state.shareId = shareId;
-  // Keep a copy of the raw bytes so the user can re-download the replay.
+  state.openedFromUrl = shareId != null;
+  // Keep a copy of the raw bytes so the user can re-download the replay
+  // (only surfaced when the bytes came from a shared URL — see
+  // `renderShareControls`).
   state.replayBytes = new Uint8Array(buf as ArrayBuffer).slice();
   state.replayFileName = fileName;
   // Honour ?tab=... if it was on the URL when the replay loaded.
@@ -319,6 +438,16 @@ function paintStaticStrings() {
   $("#tagline").textContent = t.appTagline;
   $("#drop-prompt").innerHTML =
     `${t.dropPrompt} <label class="link" for="file-input">${t.browse}</label>.`;
+  $("#drop-share-label").textContent = t.dropShareLabel;
+  $("#drop-share-hint").textContent = t.dropShareHint;
+  $("#recent-replays-filter-player-label").textContent =
+    t.recentReplaysFilterPlayer;
+  $("#recent-replays-filter-map-label").textContent = t.recentReplaysFilterMap;
+  $("#recent-replays-filter-clear").textContent = t.recentReplaysFilterClear;
+  $("#suggestions-nav").textContent = t.suggestionsNav;
+  $("#suggestions-title").textContent = t.suggestionsTitle;
+  $<HTMLInputElement>("#suggestions-input").placeholder = t.suggestionsPlaceholder;
+  $("#suggestions-submit").textContent = t.suggestionsSubmit;
   document
     .querySelectorAll<HTMLButtonElement>(".mode-btn")
     .forEach((btn) => {
@@ -346,8 +475,8 @@ function setupDropZone() {
 
   const handleFile = async (file: File) => {
     status.textContent = t.parsing(file.name, (file.size / 1024).toFixed(1));
-    // Drop any stale ?r=… so a refresh during upload doesn't reload the
-    // previous shared replay.
+    // Drop any stale ?r=… so a refresh doesn't reload the previous shared
+    // replay (also relevant when the user is viewing locally without upload).
     const url = new URL(location.href);
     if (url.searchParams.has("r")) {
       url.searchParams.delete("r");
@@ -356,12 +485,18 @@ function setupDropZone() {
     try {
       const buf = await file.arrayBuffer();
       parseAndRender(buf, file.name, null);
-      // Summary is built from the just-decoded replay; passes through to
-      // Firestore so the recent-replays list can render its row.
-      const summary = state.replay
-        ? buildReplaySummary(state.replay)
-        : undefined;
-      void uploadAndShare(buf, file.name, summary);
+      // Default is view-only — the parsed replay stays in this browser. The
+      // user opts in to public sharing via the toggle, which then uploads
+      // bytes + summary to Firestore.
+      const shareEl = document.querySelector<HTMLInputElement>(
+        "#drop-share-checkbox",
+      );
+      if (shareEl?.checked) {
+        const summary = state.replay
+          ? buildReplaySummary(state.replay)
+          : undefined;
+        void uploadAndShare(buf, file.name, summary);
+      }
     } catch (err) {
       console.error(err);
       status.textContent = t.parseError((err as Error).message);
@@ -2174,25 +2309,49 @@ function buildReplaySummary(replay: Replay): ReplaySummary {
   };
 }
 
+function setupRecentReplayFilters() {
+  const playerEl = document.querySelector<HTMLInputElement>(
+    "#recent-replays-filter-player",
+  );
+  const mapEl = document.querySelector<HTMLInputElement>(
+    "#recent-replays-filter-map",
+  );
+  const clearEl = document.querySelector<HTMLButtonElement>(
+    "#recent-replays-filter-clear",
+  );
+  if (!playerEl || !mapEl || !clearEl) return;
+  // Filtering is purely client-side over the already-loaded set, so each
+  // keystroke just resets the page slice and repaints. No round-trip.
+  playerEl.addEventListener("input", () => {
+    state.recent.playerFilter = playerEl.value;
+    state.recent.pageIndex = 0;
+    paintRecentReplays();
+  });
+  mapEl.addEventListener("input", () => {
+    state.recent.mapFilter = mapEl.value;
+    state.recent.pageIndex = 0;
+    paintRecentReplays();
+  });
+  clearEl.addEventListener("click", () => {
+    state.recent.playerFilter = "";
+    state.recent.mapFilter = "";
+    playerEl.value = "";
+    mapEl.value = "";
+    state.recent.pageIndex = 0;
+    paintRecentReplays();
+  });
+}
+
 async function loadRecentReplays() {
   const host = $("#recent-replays");
   if (state.recent.loading) return;
+  if (state.route !== "home" || state.replay) return;
   state.recent.loading = true;
   state.recent.error = null;
   paintRecentReplays();
   host.hidden = false;
   try {
-    const cursor = state.recent.pageCursors[state.recent.pageIndex];
-    const { items, lastDoc } = await listRecentReplays(
-      RECENT_PAGE_SIZE,
-      cursor,
-    );
-    state.recent.items = items;
-    state.recent.hasMore = items.length === RECENT_PAGE_SIZE && !!lastDoc;
-    // Stash the cursor for the next page (one slot ahead of current).
-    if (state.recent.hasMore && lastDoc) {
-      state.recent.pageCursors[state.recent.pageIndex + 1] = lastDoc;
-    }
+    state.recent.items = await listRecentReplays();
   } catch (err) {
     console.error(err);
     state.recent.error = (err as Error).message;
@@ -2202,32 +2361,65 @@ async function loadRecentReplays() {
   }
 }
 
+/**
+ * Case-insensitive substring match on player + map across the full loaded
+ * set. Both filters apply (AND) when both are non-empty.
+ */
+function filterRecentItems(): ReplayListItem[] {
+  const p = state.recent.playerFilter.trim().toLowerCase();
+  const m = state.recent.mapFilter.trim().toLowerCase();
+  if (!p && !m) return state.recent.items;
+  return state.recent.items.filter((it) => {
+    if (p && !(it.player ?? "").toLowerCase().includes(p)) return false;
+    if (m && !(it.map ?? "").toLowerCase().includes(m)) return false;
+    return true;
+  });
+}
+
 function paintRecentReplays() {
   const host = $("#recent-replays");
-  // If the user has loaded a replay since the fetch started, don't take the
-  // page back over.
-  if (state.replay) {
+  // If the user has loaded a replay since the fetch started, or navigated
+  // off the home route, don't take the page back over.
+  if (state.replay || state.route !== "home") {
     host.hidden = true;
     return;
   }
   $("#recent-replays-title").textContent = t.recentReplaysTitle;
-  $("#recent-replays-hint").textContent = state.recent.error
-    ? t.recentReplaysError(state.recent.error)
-    : state.recent.loading
-      ? t.recentReplaysLoading
-      : state.recent.items.length
-        ? t.recentReplaysHint
-        : t.recentReplaysEmpty;
 
-  const listEl = $("#recent-replays-list");
-  listEl.innerHTML = "";
-  if (!state.recent.loading && !state.recent.error && state.recent.items.length) {
-    for (const item of state.recent.items) {
-      listEl.appendChild(buildRecentRow(item));
+  const hasAnyFilter =
+    !!state.recent.playerFilter.trim() || !!state.recent.mapFilter.trim();
+  const filtered = filterRecentItems();
+
+  // Hint never says "loading" — the spinner up top owns that signal. Only
+  // when we have no items at all do we surface "Carregando…" so the empty
+  // section doesn't look broken on first paint.
+  let hint: string;
+  if (state.recent.error) hint = t.recentReplaysError(state.recent.error);
+  else if (!state.recent.items.length && state.recent.loading) {
+    hint = t.recentReplaysLoading;
+  } else if (!filtered.length) {
+    hint = hasAnyFilter ? t.recentReplaysNoMatch : t.recentReplaysEmpty;
+  } else hint = t.recentReplaysHint;
+  $("#recent-replays-hint").textContent = hint;
+
+  $<HTMLButtonElement>("#recent-replays-filter-clear").disabled = !hasAnyFilter;
+  $("#recent-replays-loading-indicator").hidden = !state.recent.loading;
+
+  // Only swap the list DOM when results have landed — during loading the
+  // previous render stays in place so the section doesn't flicker.
+  if (!state.recent.loading) {
+    const listEl = $("#recent-replays-list");
+    listEl.innerHTML = "";
+    if (!state.recent.error) {
+      const start = state.recent.pageIndex * RECENT_PAGE_SIZE;
+      const page = filtered.slice(start, start + RECENT_PAGE_SIZE);
+      for (const item of page) {
+        listEl.appendChild(buildRecentRow(item));
+      }
     }
   }
 
-  paintRecentPagination();
+  paintRecentPagination(filtered.length);
 }
 
 function buildRecentRow(item: ReplayListItem): HTMLElement {
@@ -2279,11 +2471,19 @@ function buildRecentRow(item: ReplayListItem): HTMLElement {
   return row;
 }
 
-function paintRecentPagination() {
+function paintRecentPagination(filteredCount: number) {
   const host = $("#recent-replays-pagination");
   host.innerHTML = "";
   if (state.recent.error || state.recent.loading) return;
-  if (!state.recent.items.length && state.recent.pageIndex === 0) return;
+  if (!filteredCount && state.recent.pageIndex === 0) return;
+
+  const pageCount = Math.max(1, Math.ceil(filteredCount / RECENT_PAGE_SIZE));
+  // Clamp pageIndex in case a fresh filter shrank the list past the active
+  // page (e.g. user paginates to page 4, types a filter with only 2 pages).
+  if (state.recent.pageIndex >= pageCount) {
+    state.recent.pageIndex = pageCount - 1;
+  }
+  const hasMore = state.recent.pageIndex < pageCount - 1;
 
   const prev = document.createElement("button");
   prev.type = "button";
@@ -2292,7 +2492,7 @@ function paintRecentPagination() {
   prev.addEventListener("click", () => {
     if (state.recent.pageIndex === 0) return;
     state.recent.pageIndex -= 1;
-    void loadRecentReplays();
+    paintRecentReplays();
   });
 
   const indicator = document.createElement("span");
@@ -2302,11 +2502,11 @@ function paintRecentPagination() {
   const next = document.createElement("button");
   next.type = "button";
   next.textContent = t.paginationNext;
-  next.disabled = !state.recent.hasMore;
+  next.disabled = !hasMore;
   next.addEventListener("click", () => {
-    if (!state.recent.hasMore) return;
+    if (!hasMore) return;
     state.recent.pageIndex += 1;
-    void loadRecentReplays();
+    paintRecentReplays();
   });
 
   host.appendChild(prev);
@@ -2480,6 +2680,217 @@ function renderDpsAnalysisStats(replay: Replay) {
   ];
 
   renderSummaryCard(host, t.dpsAnalysisStatsTitle, cells);
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions / comments
+// ---------------------------------------------------------------------------
+
+const SUGGESTION_VOTES_KEY = "ragnarecap.suggestionVotes";
+
+type LocalVoteMap = Record<string, "up" | "down">;
+
+// Single-cookie dedup: persists across sessions, survives clearing the tab
+// state. Not a real auth boundary — the user can wipe storage and vote
+// again, which is fine per the product brief.
+function readVotes(): LocalVoteMap {
+  try {
+    const raw = localStorage.getItem(SUGGESTION_VOTES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as LocalVoteMap) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeVote(id: string, dir: "up" | "down") {
+  try {
+    const votes = readVotes();
+    votes[id] = dir;
+    localStorage.setItem(SUGGESTION_VOTES_KEY, JSON.stringify(votes));
+  } catch {
+    // localStorage may be unavailable (Safari private mode, quotas) — silently
+    // accept the vote loss; the user can vote again next session.
+  }
+}
+
+function setupSuggestionsForm() {
+  const form = document.querySelector<HTMLFormElement>("#suggestions-form");
+  if (!form) return;
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = $<HTMLInputElement>("#suggestions-input");
+    const text = input.value.trim();
+    if (!text || state.suggestions.posting) return;
+    void submitSuggestion(text);
+  });
+}
+
+async function loadSuggestions() {
+  if (state.suggestions.loading) return;
+  state.suggestions.loading = true;
+  state.suggestions.error = null;
+  paintSuggestions();
+  $("#suggestions").hidden = false;
+  try {
+    state.suggestions.items = await listSuggestions();
+  } catch (err) {
+    console.error(err);
+    state.suggestions.error = (err as Error).message;
+  } finally {
+    state.suggestions.loading = false;
+    paintSuggestions();
+  }
+}
+
+async function submitSuggestion(text: string) {
+  if (text.length > SUGGESTION_MAX_LENGTH) {
+    state.suggestions.statusMsg = t.suggestionsTooLong;
+    paintSuggestions();
+    return;
+  }
+  state.suggestions.posting = true;
+  state.suggestions.statusMsg = t.suggestionsSending;
+  paintSuggestions();
+  try {
+    await createSuggestion(text);
+    state.suggestions.statusMsg = t.suggestionsSent;
+    $<HTMLInputElement>("#suggestions-input").value = "";
+    await loadSuggestions();
+  } catch (err) {
+    console.error(err);
+    state.suggestions.statusMsg = t.suggestionsSubmitError(
+      (err as Error).message,
+    );
+  } finally {
+    state.suggestions.posting = false;
+    paintSuggestions();
+  }
+}
+
+async function castVote(id: string, dir: "up" | "down") {
+  const votes = readVotes();
+  if (votes[id]) {
+    state.suggestions.statusMsg = t.suggestionsAlreadyVoted;
+    paintSuggestions();
+    return;
+  }
+  // Optimistic local bump so the UI reacts instantly.
+  const target = state.suggestions.items.find((s) => s.id === id);
+  if (target) {
+    if (dir === "up") target.upvotes += 1;
+    else target.downvotes += 1;
+  }
+  writeVote(id, dir);
+  paintSuggestions();
+  try {
+    await voteSuggestion(id, dir);
+  } catch (err) {
+    console.error(err);
+    // Rollback both the optimistic counter and the local vote record so the
+    // user can retry. Failure here usually means the network blew up or the
+    // doc disappeared.
+    if (target) {
+      if (dir === "up") target.upvotes -= 1;
+      else target.downvotes -= 1;
+    }
+    const v = readVotes();
+    delete v[id];
+    try {
+      localStorage.setItem(SUGGESTION_VOTES_KEY, JSON.stringify(v));
+    } catch {}
+    state.suggestions.statusMsg = t.suggestionsVoteError(
+      (err as Error).message,
+    );
+    paintSuggestions();
+  }
+}
+
+function paintSuggestions() {
+  const host = $("#suggestions");
+  if (state.route !== "suggestions") {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+
+  const hintEl = $("#suggestions-hint");
+  const statusEl = $("#suggestions-status");
+  const listEl = $("#suggestions-list");
+  const submitBtn = $<HTMLButtonElement>("#suggestions-submit");
+  const inputEl = $<HTMLInputElement>("#suggestions-input");
+
+  hintEl.textContent = state.suggestions.error
+    ? t.suggestionsError(state.suggestions.error)
+    : state.suggestions.loading
+      ? t.suggestionsLoading
+      : t.suggestionsHint;
+
+  statusEl.textContent = state.suggestions.statusMsg ?? "";
+  submitBtn.disabled = state.suggestions.posting;
+  submitBtn.textContent = state.suggestions.posting
+    ? t.suggestionsSending
+    : t.suggestionsSubmit;
+  inputEl.disabled = state.suggestions.posting;
+
+  listEl.innerHTML = "";
+  if (state.suggestions.loading || state.suggestions.error) return;
+  if (!state.suggestions.items.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted small";
+    empty.textContent = t.suggestionsEmpty;
+    listEl.appendChild(empty);
+    return;
+  }
+  const votes = readVotes();
+  for (const s of state.suggestions.items) {
+    listEl.appendChild(buildSuggestionRow(s, votes[s.id]));
+  }
+}
+
+function buildSuggestionRow(
+  s: Suggestion,
+  myVote: "up" | "down" | undefined,
+): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "suggestion-row";
+
+  const body = document.createElement("div");
+  body.className = "suggestion-body";
+  const text = document.createElement("div");
+  text.className = "suggestion-text";
+  text.textContent = s.text;
+  body.appendChild(text);
+  const meta = document.createElement("div");
+  meta.className = "suggestion-meta";
+  meta.textContent = s.createdAt
+    ? t.suggestionPostedAt(s.createdAt.toLocaleString(locale))
+    : "";
+  body.appendChild(meta);
+  row.appendChild(body);
+
+  const votes = document.createElement("div");
+  votes.className = "suggestion-votes";
+  const up = document.createElement("button");
+  up.type = "button";
+  up.className = "suggestion-vote-btn" + (myVote === "up" ? " active" : "");
+  up.textContent = `▲ ${s.upvotes}`;
+  up.title = t.suggestionUpvote;
+  up.disabled = !!myVote;
+  up.addEventListener("click", () => castVote(s.id, "up"));
+  const down = document.createElement("button");
+  down.type = "button";
+  down.className = "suggestion-vote-btn" + (myVote === "down" ? " active" : "");
+  down.textContent = `▼ ${s.downvotes}`;
+  down.title = t.suggestionDownvote;
+  down.disabled = !!myVote;
+  down.addEventListener("click", () => castVote(s.id, "down"));
+  votes.appendChild(up);
+  votes.appendChild(down);
+  row.appendChild(votes);
+
+  return row;
 }
 
 init();
