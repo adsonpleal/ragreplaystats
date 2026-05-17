@@ -4,6 +4,7 @@ All notable user-facing changes to RagnaRecap. Newest first.
 
 ## 2026-05-17
 
+- Página de Leaderboard de MVPs: top 5 maior dano e top 5 maior DPS por MVP, agregando todos os replays compartilhados. Cada linha tem "Ver replay" para abrir o recording de origem.
 - Análise local por padrão: o replay é decodificado no navegador e só vai para a nuvem se o usuário marcar "Enviar este replay para o servidor".
 - Filtros de jogador e mapa na lista de replays recentes (busca por qualquer parte do nome, sem diferenciar maiúsculas).
 - Página de sugestões e comentários, com votos persistidos no Firestore.

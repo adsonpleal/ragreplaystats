@@ -10,6 +10,7 @@
     "build:db": "node tools/build-db.mjs"
   },
   "devDependencies": {
+    "firebase-admin": "^13.10.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11"
   },

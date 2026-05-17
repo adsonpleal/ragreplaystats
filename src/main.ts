@@ -14,6 +14,7 @@ import {
   mobSkillBreakdown,
   monstersDamagedByPlayer,
   monstersWhoTookDamage,
+  mvpMatchups,
   paramCurve,
   playersDamagedByMonster,
   SP_HP,
@@ -32,7 +33,6 @@ import { prefetchReplay } from "./divine-pride.js";
 import {
   createSuggestion,
   fetchReplay,
-  listRecentReplays,
   listSuggestions,
   type ReplayListItem,
   type ReplaySummary,
@@ -51,15 +51,22 @@ import { renderSummaryCard, type SummaryCell } from "./ui/stats-summary.js";
 import { renderTable } from "./ui/table.js";
 import { renderTimelineBrush } from "./ui/timeline-brush.js";
 import { renderDpsScatter } from "./ui/dps-scatter.js";
+import { loadLeaderboard, setupLeaderboard } from "./leaderboard.js";
+import {
+  ensureLoaded as ensureSummariesLoaded,
+  getCached as getCachedSummaries,
+  invalidate as invalidateSummariesCache,
+  isFresh as isSummariesCacheFresh,
+} from "./replay-summaries.js";
 
 type Mode = "byPlayer" | "byMonster" | "stats" | "dpsAnalysis";
 
 /**
  * Top-level page. The default ("home") renders the dropzone + recent replays
- * (or the loaded replay's analysis if one is present). "suggestions" is a
- * dedicated page on /suggestions that hides everything else.
+ * (or the loaded replay's analysis if one is present). "suggestions" is the
+ * feedback board. "leaderboard" is the cross-replay MVP rankings page.
  */
-type Route = "home" | "suggestions";
+type Route = "home" | "suggestions" | "leaderboard";
 
 type State = {
   route: Route;
@@ -177,7 +184,9 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
 
 function routeFromLocation(): Route {
   const path = location.pathname.replace(/\/+$/, "").toLowerCase();
-  return path === "/suggestions" ? "suggestions" : "home";
+  if (path === "/suggestions") return "suggestions";
+  if (path === "/leaderboard") return "leaderboard";
+  return "home";
 }
 
 function init() {
@@ -188,6 +197,8 @@ function init() {
   setupSuggestionsNav();
   setupSuggestionsForm();
   setupRecentReplayFilters();
+  setupLeaderboardNav();
+  setupLeaderboard(openLeaderboardReplay);
   window.addEventListener("popstate", () => {
     state.route = routeFromLocation();
     applyRoute();
@@ -208,13 +219,44 @@ function setupSuggestionsNav() {
   });
 }
 
+function setupLeaderboardNav() {
+  const link = document.querySelector<HTMLAnchorElement>("#leaderboard-nav");
+  if (!link) return;
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    navigateTo("leaderboard");
+  });
+}
+
+/**
+ * Callback the leaderboard module invokes when a "Ver replay" link is
+ * left-clicked: switch back to the home route with ?r=<id> and let the
+ * normal home flow load the replay. Ctrl/Cmd-click is handled natively by
+ * the anchor's href and never reaches this callback.
+ */
+function openLeaderboardReplay(id: string) {
+  const url = new URL(location.href);
+  url.searchParams.set("r", id);
+  url.searchParams.delete("tab");
+  history.pushState(null, "", "/" + url.search);
+  state.route = "home";
+  applyRoute();
+}
+
 function navigateTo(route: Route) {
   if (state.route === route) return;
   state.route = route;
-  const path = route === "suggestions" ? "/suggestions" : "/";
+  const path =
+    route === "suggestions"
+      ? "/suggestions"
+      : route === "leaderboard"
+        ? "/leaderboard"
+        : "/";
   const url = new URL(location.href);
-  // Going to suggestions: strip replay-related params so the URL is clean.
-  if (route === "suggestions") {
+  // Leaving the home route: strip replay-related params so a /leaderboard
+  // or /suggestions URL is clean and doesn't try to reopen a shared replay
+  // on refresh.
+  if (route !== "home") {
     url.searchParams.delete("r");
     url.searchParams.delete("tab");
   }
@@ -228,13 +270,16 @@ function navigateTo(route: Route) {
  * section it cares about — there's no per-section toggle scattered around.
  */
 function applyRoute() {
-  const navLink = document.querySelector<HTMLElement>("#suggestions-nav");
-  if (navLink) navLink.hidden = state.route === "suggestions";
+  const suggestionsNav = document.querySelector<HTMLElement>("#suggestions-nav");
+  const leaderboardNav = document.querySelector<HTMLElement>("#leaderboard-nav");
+  if (suggestionsNav) suggestionsNav.hidden = state.route === "suggestions";
+  if (leaderboardNav) leaderboardNav.hidden = state.route === "leaderboard";
 
   if (state.route === "suggestions") {
     $("#seo-intro").hidden = true;
     $("#drop-zone").hidden = true;
     $("#recent-replays").hidden = true;
+    $("#leaderboard").hidden = true;
     $("#summary").hidden = true;
     $("#explorer").hidden = true;
     $("#share-controls").hidden = true;
@@ -242,10 +287,24 @@ function applyRoute() {
     return;
   }
 
+  if (state.route === "leaderboard") {
+    $("#seo-intro").hidden = true;
+    $("#drop-zone").hidden = true;
+    $("#recent-replays").hidden = true;
+    $("#suggestions").hidden = true;
+    $("#summary").hidden = true;
+    $("#explorer").hidden = true;
+    $("#share-controls").hidden = true;
+    $("#leaderboard").hidden = false;
+    void loadLeaderboard();
+    return;
+  }
+
   // Home route.
   $("#seo-intro").hidden = false;
   $("#drop-zone").hidden = false;
   $("#suggestions").hidden = true;
+  $("#leaderboard").hidden = true;
 
   const hasR = new URLSearchParams(location.search).get("r");
   if (hasR) {
@@ -445,6 +504,11 @@ function paintStaticStrings() {
   $("#recent-replays-filter-map-label").textContent = t.recentReplaysFilterMap;
   $("#recent-replays-filter-clear").textContent = t.recentReplaysFilterClear;
   $("#suggestions-nav").textContent = t.suggestionsNav;
+  $("#leaderboard-nav").textContent = t.leaderboardNav;
+  $("#leaderboard-title").textContent = t.leaderboardTitle;
+  $("#leaderboard-mvp-label").textContent = t.leaderboardMvpLabel;
+  $("#leaderboard-damage-title").textContent = t.leaderboardTopDamage;
+  $("#leaderboard-dps-title").textContent = t.leaderboardTopDps;
   $("#suggestions-title").textContent = t.suggestionsTitle;
   $<HTMLInputElement>("#suggestions-input").placeholder = t.suggestionsPlaceholder;
   $("#suggestions-submit").textContent = t.suggestionsSubmit;
@@ -514,6 +578,10 @@ function setupDropZone() {
     try {
       const id = await uploadReplay(new Uint8Array(buf), fileName, summary);
       state.shareId = id;
+      // The shared summaries cache no longer reflects reality — drop it so
+      // a return visit to home/leaderboard refetches and the new replay
+      // shows up immediately.
+      invalidateSummariesCache();
       const url = new URL(location.href);
       url.searchParams.set("r", id);
       history.replaceState(null, "", url.toString());
@@ -2294,6 +2362,12 @@ function buildReplaySummary(replay: Replay): ReplaySummary {
   const totalDamage = replay.damage.reduce((s, e) => s + e.damage, 0);
   const seconds = replay.sessionInfo.durationMs / 1000;
   const avgDps = seconds > 0 ? Math.round(totalDamage / seconds) : 0;
+  // Mob-name resolver from the DP DB if loaded; otherwise fall back to the
+  // `mob#<view>` placeholder — the aggregator will then prefer the
+  // server-reported per-instance name when available.
+  const resolveMob = state.db
+    ? (id: number) => state.db!.resolveMob(id)
+    : (id: number) => `mob#${id}`;
   return {
     player: replay.sessionInfo.player || "",
     map: replay.sessionInfo.map || "",
@@ -2306,6 +2380,7 @@ function buildReplaySummary(replay: Replay): ReplaySummary {
     entitiesSeen: replay.entities.size,
     handledPackets: replay.totals.handledPackets,
     packetCount: replay.totals.packetCount,
+    mvpRecords: mvpMatchups(replay, resolveMob),
   };
 }
 
@@ -2346,12 +2421,22 @@ async function loadRecentReplays() {
   const host = $("#recent-replays");
   if (state.recent.loading) return;
   if (state.route !== "home" || state.replay) return;
+  // Cache-aware: if the shared cache is fresh, paint instantly with no
+  // loading state. Otherwise fall through to the async path and show the
+  // spinner while the bulk fetch is in flight.
+  if (isSummariesCacheFresh()) {
+    state.recent.items = getCachedSummaries();
+    state.recent.error = null;
+    host.hidden = false;
+    paintRecentReplays();
+    return;
+  }
   state.recent.loading = true;
   state.recent.error = null;
   paintRecentReplays();
   host.hidden = false;
   try {
-    state.recent.items = await listRecentReplays();
+    state.recent.items = await ensureSummariesLoaded();
   } catch (err) {
     console.error(err);
     state.recent.error = (err as Error).message;

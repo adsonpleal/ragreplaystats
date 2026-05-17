@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "ragreplaystats"
+    "default": "ragreplaystats",
+    "dev": "ragreplaystats-dev"
   },
   "targets": {
     "ragreplaystats": {

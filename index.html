@@ -52,6 +52,7 @@
       <div class="topbar-row">
         <h1><a id="home-link" href="/">RagnaRecap</a></h1>
         <nav class="topnav">
+          <a id="leaderboard-nav" class="topnav-link topnav-link--secondary" href="/leaderboard"></a>
           <a id="suggestions-nav" class="topnav-link" href="/suggestions"></a>
         </nav>
       </div>
@@ -147,6 +148,52 @@
         </form>
         <p class="muted small" id="suggestions-status"></p>
         <div id="suggestions-list"></div>
+      </section>
+
+      <section id="leaderboard" class="leaderboard" hidden>
+        <div class="leaderboard-header">
+          <h2 id="leaderboard-title"></h2>
+          <span
+            id="leaderboard-loading-indicator"
+            class="recent-replays-loading-indicator"
+            hidden
+            aria-hidden="true"
+          ></span>
+        </div>
+        <p class="muted small" id="leaderboard-hint"></p>
+        <div class="leaderboard-controls">
+          <label class="leaderboard-control" for="leaderboard-mvp-input">
+            <span id="leaderboard-mvp-label" class="leaderboard-control-label"></span>
+            <div class="leaderboard-mvp-combobox">
+              <input
+                id="leaderboard-mvp-input"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="leaderboard-mvp-options"
+                aria-expanded="false"
+              />
+              <ul
+                id="leaderboard-mvp-options"
+                class="leaderboard-mvp-options"
+                role="listbox"
+                hidden
+              ></ul>
+            </div>
+          </label>
+        </div>
+        <div class="leaderboard-grid">
+          <div class="leaderboard-card">
+            <h3 id="leaderboard-damage-title"></h3>
+            <div id="leaderboard-damage-table"></div>
+          </div>
+          <div class="leaderboard-card">
+            <h3 id="leaderboard-dps-title"></h3>
+            <div id="leaderboard-dps-table"></div>
+          </div>
+        </div>
       </section>
 
       <section id="summary" hidden></section>

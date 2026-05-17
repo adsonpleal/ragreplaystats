@@ -33,6 +33,27 @@ export const t = {
   paginationNext: "Próxima",
   paginationPageOf: (n: number) => `Página ${n}`,
 
+  // Leaderboard page
+  leaderboardNav: "Leaderboard",
+  leaderboardTitle: "Leaderboard de MVPs",
+  leaderboardHint:
+    "Top 5 desempenhos por MVP, agregados entre todos os replays compartilhados.",
+  leaderboardLoading: "Carregando replays…",
+  leaderboardError: (msg: string) => `Falha ao carregar leaderboard: ${msg}`,
+  leaderboardMvpLabel: "MVP",
+  leaderboardTopDamage: "Top 5 — Maior dano",
+  leaderboardTopDps: "Top 5 — Maior DPS",
+  leaderboardColHighestHit: "Maior golpe",
+  leaderboardEmpty:
+    "Nenhum MVP encontrado nos replays compartilhados ainda. Marque \"Enviar para o servidor\" ao subir um replay para aparecer aqui.",
+  leaderboardEmptyForMvp: "Nenhum registro para este MVP.",
+  leaderboardViewReplay: "Ver replay",
+  leaderboardColRank: "#",
+  leaderboardColPlayer: "Jogador",
+  leaderboardColDps: "DPS",
+  leaderboardColDate: "Gravado em",
+  leaderboardColAction: "",
+
   // Suggestions section
   suggestionsNav: "Sugestões",
   suggestionsTitle: "Sugestões e comentários",

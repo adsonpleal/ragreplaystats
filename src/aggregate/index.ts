@@ -1374,3 +1374,129 @@ export function dpsAnalysisStats(
     topSkillDamage,
   };
 }
+
+// ---------------------------------------------------------------------------
+// MVP / boss-mob matchup aggregator
+//
+// One row per (mob species, player) pair across all spawn instances of that
+// species in the replay — used by the cross-replay leaderboard. Boss filter
+// follows the `isBoss` packet flag (captures both MVPs and mini-bosses).
+// ---------------------------------------------------------------------------
+
+export type MvpMatchupRecord = {
+  /** Mob species view id (1059 = Mistress, etc). */
+  view: number;
+  /** Canonical species name (DB-resolved, falls back to per-instance name). */
+  name: string;
+  /** Player AID inside the recording — stable only within this replay. */
+  playerAid: number;
+  /** Player display name at decode time. */
+  playerName: string;
+  /** Sum of damage events from this player to any instance of this species. */
+  totalDamage: number;
+  /**
+   * Biggest single damage event from this player against any instance of
+   * this species. Multi-hit skills land as one event with the cast total,
+   * matching the "highest hit" semantics used elsewhere in the app.
+   */
+  highestHit: number;
+  /** lastHit - firstHit in ms within this (player, view) pair. 0 with <2 hits. */
+  combatSpanMs: number;
+  /** Math.round(totalDamage / (combatSpanMs / 1000)). 0 when combatSpanMs is 0. */
+  dps: number;
+};
+
+export function mvpMatchups(
+  replay: Replay,
+  resolveMob: (view: number) => string,
+  maxRecords = 200,
+): MvpMatchupRecord[] {
+  // 1) Index boss-flagged mobs by AID → species view id. Some bosses may
+  //    spawn multiple instances of the same view in one recording; we treat
+  //    them as a single matchup per player (the user wants per-MVP, not
+  //    per-spawn-instance, on the leaderboard).
+  const bossAidToView = new Map<number, number>();
+  for (const [aid, ent] of replay.entities) {
+    if (ent.kind !== "mob") continue;
+    if (!ent.isBoss) continue;
+    bossAidToView.set(aid, ent.view);
+  }
+  if (bossAidToView.size === 0) return [];
+
+  // 2) Single pass over damage events; key by `${view}::${sourceAid}`.
+  type Bucket = {
+    view: number;
+    playerAid: number;
+    totalDamage: number;
+    highestHit: number;
+    firstHitMs: number;
+    lastHitMs: number;
+  };
+  const buckets = new Map<string, Bucket>();
+  for (const ev of replay.damage) {
+    const view = bossAidToView.get(ev.target);
+    if (view === undefined) continue;
+    if (!isPlayerSource(replay, ev.source)) continue;
+    const key = `${view}::${ev.source}`;
+    let b = buckets.get(key);
+    if (!b) {
+      b = {
+        view,
+        playerAid: ev.source,
+        totalDamage: 0,
+        highestHit: 0,
+        firstHitMs: ev.time,
+        lastHitMs: ev.time,
+      };
+      buckets.set(key, b);
+    }
+    b.totalDamage += ev.damage;
+    if (ev.damage > b.highestHit) b.highestHit = ev.damage;
+    if (ev.time < b.firstHitMs) b.firstHitMs = ev.time;
+    if (ev.time > b.lastHitMs) b.lastHitMs = ev.time;
+  }
+
+  // 3) Materialize, resolving names. Fall back to a per-instance entity name
+  //    for the mob when the DB hasn't been loaded yet or returned a `mob#<id>`
+  //    placeholder; player name comes from the entity table.
+  const out: MvpMatchupRecord[] = [];
+  for (const b of buckets.values()) {
+    const dbName = resolveMob(b.view);
+    const looksLikeFallback = /^mob#\d+$/.test(dbName);
+    let name = dbName;
+    if (looksLikeFallback) {
+      // Find any spawn instance of this view and use its server-reported name.
+      for (const [, ent] of replay.entities) {
+        if (ent.kind === "mob" && ent.isBoss && ent.view === b.view && ent.name) {
+          name = ent.name;
+          break;
+        }
+      }
+    }
+    const player = replay.entities.get(b.playerAid);
+    const playerName = player?.name || `aid#${b.playerAid}`;
+    const combatSpanMs = Math.max(0, b.lastHitMs - b.firstHitMs);
+    const dps =
+      combatSpanMs > 0
+        ? Math.round(b.totalDamage / (combatSpanMs / 1000))
+        : 0;
+    out.push({
+      view: b.view,
+      name,
+      playerAid: b.playerAid,
+      playerName,
+      totalDamage: b.totalDamage,
+      highestHit: b.highestHit,
+      combatSpanMs,
+      dps,
+    });
+  }
+
+  // 4) Deterministic order: (view asc, totalDamage desc) — totalDamage is
+  //    the densest signal for truncation purposes, even if the leaderboard
+  //    UI shows by `highestHit` for one of its tables. Cap to maxRecords so
+  //    a pathological WoE-style recording can't blow the doc size budget.
+  out.sort((a, b) => a.view - b.view || b.totalDamage - a.totalDamage);
+  if (out.length > maxRecords) out.length = maxRecords;
+  return out;
+}

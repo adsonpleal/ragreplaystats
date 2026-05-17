@@ -6,6 +6,10 @@ dist/
 .env*
 .claude/
 
+# Firebase Admin service account keys — keep these out of the repo.
+*-firebase-adminsdk-*.json
+service-account*.json
+
 # Sample replay — drop your own .rrf in the browser instead
 rag_test.rrf
 

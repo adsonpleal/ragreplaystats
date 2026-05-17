@@ -15,12 +15,15 @@ service cloud.firestore {
                        'bytes', 'uploadedAt', 'fileName',
                        'player', 'map', 'recordedAt', 'durationMs',
                        'totalDamage', 'avgDps', 'damageEvents', 'kills',
-                       'entitiesSeen', 'handledPackets', 'packetCount'
+                       'entitiesSeen', 'handledPackets', 'packetCount',
+                       'mvpRecords'
                      ])
                     && request.resource.data.bytes is bytes
                     && request.resource.data.bytes.size() < 1024 * 1024
                     && request.resource.data.fileName is string
-                    && request.resource.data.fileName.size() < 200;
+                    && request.resource.data.fileName.size() < 200
+                    && (!('mvpRecords' in request.resource.data)
+                        || request.resource.data.mvpRecords.size() <= 250);
 
       // Replays are immutable and never expire by user action.
       allow update, delete: if false;
