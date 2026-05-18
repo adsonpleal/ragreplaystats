@@ -215,7 +215,16 @@ function collectMvpOptions(items: ReplayListItem[]): MvpOption[] {
     }
     out.push({ view, name: topName });
   }
-  out.sort((a, b) => a.name.localeCompare(b.name, locale));
+  // Names starting with a Unicode letter sort first (regular alphabetical
+  // order, locale-aware). Anything else (brackets like "[PH]", hashes,
+  // digits, symbols) gets shoved to the bottom so the natural-looking MVP
+  // names dominate the list.
+  out.sort((a, b) => {
+    const aSpecial = !/^\p{L}/u.test(a.name);
+    const bSpecial = !/^\p{L}/u.test(b.name);
+    if (aSpecial !== bSpecial) return aSpecial ? 1 : -1;
+    return a.name.localeCompare(b.name, locale);
+  });
   return out;
 }
 

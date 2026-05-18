@@ -308,8 +308,25 @@ function applyRoute() {
 
   const hasR = new URLSearchParams(location.search).get("r");
   if (hasR) {
-    if (!state.replay) void loadFromUrl();
-    else rerender();
+    // If a different replay is already loaded (e.g. user is jumping between
+    // replays from the leaderboard), the URL change isn't enough — the old
+    // replay's state is still in memory. Reset and fetch the new one.
+    if (state.replay && state.shareId === hasR) {
+      rerender();
+    } else {
+      state.replay = null;
+      state.shareId = null;
+      state.replayBytes = null;
+      state.replayFileName = null;
+      state.openedFromUrl = false;
+      state.selectedPlayers.clear();
+      state.selectedMonster = null;
+      state.selectedTimeRange = null;
+      state.selectedMobSkillTarget = null;
+      state.dpsAnalysisRange = null;
+      state.byPlayerCompareRange = null;
+      void loadFromUrl();
+    }
     return;
   }
   if (state.replay) {
