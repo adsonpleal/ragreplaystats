@@ -139,31 +139,11 @@ body {
   letter-spacing: 0.05em;
 }
 
-.leaderboard-control select {
-  background: var(--bg);
-  color: inherit;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.4rem 0.6rem;
-  font: inherit;
-  font-size: 0.95rem;
-}
-
-.leaderboard-control select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.leaderboard-control select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.leaderboard-mvp-combobox {
+.leaderboard-combobox {
   position: relative;
 }
 
-.leaderboard-mvp-combobox input {
+.leaderboard-combobox input {
   width: 100%;
   background: var(--bg);
   color: inherit;
@@ -174,17 +154,17 @@ body {
   font-size: 0.95rem;
 }
 
-.leaderboard-mvp-combobox input:focus {
+.leaderboard-combobox input:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.leaderboard-mvp-combobox input:disabled {
+.leaderboard-combobox input:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.leaderboard-mvp-options {
+.leaderboard-combobox-options {
   position: absolute;
   top: calc(100% + 2px);
   left: 0;
@@ -201,23 +181,23 @@ body {
   overflow-y: auto;
 }
 
-.leaderboard-mvp-options[hidden] {
+.leaderboard-combobox-options[hidden] {
   display: none;
 }
 
-.leaderboard-mvp-option {
+.leaderboard-combobox-option {
   padding: 0.4rem 0.7rem;
   cursor: pointer;
   font-size: 0.95rem;
 }
 
-.leaderboard-mvp-option.is-active,
-.leaderboard-mvp-option:hover {
+.leaderboard-combobox-option.is-active,
+.leaderboard-combobox-option:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
 
-.leaderboard-mvp-option[aria-selected="true"] {
+.leaderboard-combobox-option[aria-selected="true"] {
   font-weight: 600;
 }
 

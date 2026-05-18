@@ -7,6 +7,7 @@
 // of the app aside from "what replay to open when a row is clicked," which
 // is wired via the `setupLeaderboard` callback.
 
+import type { ReferenceDb } from "./db/loader.js";
 import { type ReplayListItem } from "./firebase.js";
 import { t, locale } from "./i18n.js";
 import {
@@ -39,142 +40,228 @@ const state: State = {
   selectedClass: null,
 };
 
-/** Filter dropdown value used to represent the unresolved-class bucket. */
+/** Combobox value used to represent the unresolved-class bucket. */
 const CLASS_UNKNOWN_VALUE = "__unknown__";
-/** Filter dropdown value used for "all classes". */
+/** Combobox value used for "all classes". */
 const CLASS_ALL_VALUE = "__all__";
 
 let openReplay: (id: string) => void = () => {};
+/**
+ * Set after `loadReferenceDb()` resolves in main.ts. The leaderboard uses
+ * `db.pcClassNames()` to populate the class filter — keeping the list
+ * exhaustive (not derived from loaded records) so empty buckets are still
+ * discoverable in the dropdown.
+ */
+let db: ReferenceDb | null = null;
 
-// Combobox state — local UI state, not shared with the leaderboard logic.
-// `comboQuery` is the live text the user has typed (drives the filter);
-// `comboOpen` controls suggestion-panel visibility; `comboActive` is the
-// keyboard-highlighted index inside the currently-filtered list.
-let comboQuery = "";
-let comboOpen = false;
-let comboActive = 0;
-
-export function setupLeaderboard(onOpenReplay: (id: string) => void) {
-  openReplay = onOpenReplay;
-  const input = document.querySelector<HTMLInputElement>(
-    "#leaderboard-mvp-input",
-  );
-  const panel = document.querySelector<HTMLUListElement>(
-    "#leaderboard-mvp-options",
-  );
-  if (!input || !panel) return;
-
-  input.addEventListener("focus", () => {
-    comboQuery = "";
-    comboActive = 0;
-    comboOpen = true;
-    input.select();
-    paintMvpCombobox();
-  });
-
-  input.addEventListener("input", () => {
-    comboQuery = input.value;
-    comboActive = 0;
-    comboOpen = true;
-    paintMvpCombobox();
-  });
-
-  input.addEventListener("keydown", (e) => {
-    const matches = filterMvpOptions();
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      comboOpen = true;
-      comboActive = Math.min(matches.length - 1, comboActive + 1);
-      paintMvpCombobox();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      comboActive = Math.max(0, comboActive - 1);
-      paintMvpCombobox();
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const pick = matches[comboActive];
-      if (pick) selectMvp(pick);
-    } else if (e.key === "Escape") {
-      closeCombobox();
-    }
-  });
-
-  // Delay close so a click on a suggestion item is captured first — the
-  // blur fires before the click handler if we close synchronously.
-  input.addEventListener("blur", () => {
-    window.setTimeout(closeCombobox, 120);
-  });
-
-  const classSel = document.querySelector<HTMLSelectElement>(
-    "#leaderboard-class-select",
-  );
-  classSel?.addEventListener("change", () => {
-    const v = classSel.value;
-    if (v === CLASS_ALL_VALUE) state.selectedClass = null;
-    else if (v === CLASS_UNKNOWN_VALUE) state.selectedClass = "";
-    else state.selectedClass = v;
-    paint();
-  });
-}
-
-function filterMvpOptions(): MvpOption[] {
-  const all = collectMvpOptions(state.items);
-  const q = comboQuery.trim().toLowerCase();
-  if (!q) return all;
-  return all.filter((o) => o.name.toLowerCase().includes(q));
-}
-
-function selectMvp(o: MvpOption) {
-  state.selectedView = o.view;
-  const input = document.querySelector<HTMLInputElement>(
-    "#leaderboard-mvp-input",
-  );
-  if (input) input.value = o.name;
-  closeCombobox();
+export function setLeaderboardDb(next: ReferenceDb) {
+  db = next;
   paint();
 }
 
-function closeCombobox() {
-  comboOpen = false;
-  comboQuery = "";
-  paintMvpCombobox();
+// ---------------------------------------------------------------------------
+// Reusable combobox factory — both the MVP picker and the class filter are
+// instances of the same widget: an input that filters a popover list as the
+// user types, with keyboard nav and click-to-select. Each instance owns its
+// own little state machine (query / open / active-row).
+// ---------------------------------------------------------------------------
+
+type ComboboxItem = { value: string; label: string };
+
+type ComboboxOptions = {
+  inputSelector: string;
+  listSelector: string;
+  /** Re-evaluated on every render and keystroke. */
+  getItems(): ComboboxItem[];
+  /** Identifier of the currently-committed item, or null. */
+  getSelectedValue(): string | null;
+  /** Invoked when the user commits (Enter or click). */
+  onSelect(item: ComboboxItem): void;
+};
+
+type Combobox = {
+  setup(): void;
+  paint(): void;
+};
+
+function createCombobox(opts: ComboboxOptions): Combobox {
+  let query = "";
+  let open = false;
+  let active = 0;
+
+  const $input = () =>
+    document.querySelector<HTMLInputElement>(opts.inputSelector);
+  const $list = () =>
+    document.querySelector<HTMLUListElement>(opts.listSelector);
+
+  function filtered(): ComboboxItem[] {
+    const all = opts.getItems();
+    const q = query.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((o) => o.label.toLowerCase().includes(q));
+  }
+
+  function commit(item: ComboboxItem) {
+    opts.onSelect(item);
+    const el = $input();
+    if (el) el.value = item.label;
+    close();
+  }
+
+  function close() {
+    open = false;
+    query = "";
+    paint();
+  }
+
+  function paint() {
+    const inputEl = $input();
+    const listEl = $list();
+    if (!inputEl || !listEl) return;
+    const all = opts.getItems();
+    const matches = filtered();
+    if (active >= matches.length) active = Math.max(0, matches.length - 1);
+
+    inputEl.disabled = all.length === 0;
+    inputEl.setAttribute(
+      "aria-expanded",
+      String(open && matches.length > 0),
+    );
+    // Reflect the committed selection in the input when not editing.
+    if (document.activeElement !== inputEl) {
+      const sel = all.find((o) => o.value === opts.getSelectedValue());
+      inputEl.value = sel?.label ?? "";
+    }
+
+    listEl.innerHTML = "";
+    if (!open || matches.length === 0) {
+      listEl.hidden = true;
+      return;
+    }
+    listEl.hidden = false;
+    matches.forEach((o, i) => {
+      const li = document.createElement("li");
+      li.role = "option";
+      li.className =
+        "leaderboard-combobox-option" + (i === active ? " is-active" : "");
+      li.textContent = o.label;
+      if (o.value === opts.getSelectedValue())
+        li.setAttribute("aria-selected", "true");
+      // mousedown rather than click so we beat the input's blur handler.
+      li.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        commit(o);
+      });
+      listEl.appendChild(li);
+    });
+  }
+
+  function setup() {
+    const inputEl = $input();
+    const listEl = $list();
+    if (!inputEl || !listEl) return;
+    inputEl.addEventListener("focus", () => {
+      query = "";
+      active = 0;
+      open = true;
+      inputEl.select();
+      paint();
+    });
+    inputEl.addEventListener("input", () => {
+      query = inputEl.value;
+      active = 0;
+      open = true;
+      paint();
+    });
+    inputEl.addEventListener("keydown", (e) => {
+      const matches = filtered();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        open = true;
+        active = Math.min(matches.length - 1, active + 1);
+        paint();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        active = Math.max(0, active - 1);
+        paint();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const pick = matches[active];
+        if (pick) commit(pick);
+      } else if (e.key === "Escape") {
+        close();
+      }
+    });
+    // Delay close so a click on a suggestion item is captured first — the
+    // blur fires before the click handler if we close synchronously.
+    inputEl.addEventListener("blur", () => {
+      window.setTimeout(close, 120);
+    });
+  }
+
+  return { setup, paint };
 }
 
-function paintMvpCombobox() {
-  const input = document.querySelector<HTMLInputElement>(
-    "#leaderboard-mvp-input",
-  );
-  const panel = document.querySelector<HTMLUListElement>(
-    "#leaderboard-mvp-options",
-  );
-  if (!input || !panel) return;
-  const matches = filterMvpOptions();
-  // Clamp the keyboard cursor in case the filter shrank the list.
-  if (comboActive >= matches.length) comboActive = Math.max(0, matches.length - 1);
+// ---------------------------------------------------------------------------
+// Picker instances — wire the generic combobox to the leaderboard's two
+// filters. The data closures pull from `state` lazily so the comboboxes
+// re-render whatever the latest data set looks like on every paint pass.
+// ---------------------------------------------------------------------------
 
-  input.setAttribute("aria-expanded", String(comboOpen && matches.length > 0));
+const mvpCombobox = createCombobox({
+  inputSelector: "#leaderboard-mvp-input",
+  listSelector: "#leaderboard-mvp-options",
+  getItems: () =>
+    collectMvpOptions(state.items).map((o) => ({
+      value: String(o.view),
+      label: o.name,
+    })),
+  getSelectedValue: () =>
+    state.selectedView == null ? null : String(state.selectedView),
+  onSelect: (item) => {
+    const v = parseInt(item.value, 10);
+    if (Number.isFinite(v)) state.selectedView = v;
+    paint();
+  },
+});
 
-  panel.innerHTML = "";
-  if (!comboOpen || matches.length === 0) {
-    panel.hidden = true;
-    return;
-  }
-  panel.hidden = false;
-  matches.forEach((o, i) => {
-    const li = document.createElement("li");
-    li.role = "option";
-    li.className =
-      "leaderboard-mvp-option" + (i === comboActive ? " is-active" : "");
-    li.dataset.view = String(o.view);
-    li.textContent = o.name;
-    if (state.selectedView === o.view) li.setAttribute("aria-selected", "true");
-    // mousedown rather than click so we beat the input's blur handler.
-    li.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      selectMvp(o);
-    });
-    panel.appendChild(li);
-  });
+const classCombobox = createCombobox({
+  inputSelector: "#leaderboard-class-input",
+  listSelector: "#leaderboard-class-options",
+  getItems: () => {
+    const items: ComboboxItem[] = [
+      { value: CLASS_ALL_VALUE, label: t.leaderboardClassAll },
+    ];
+    for (const name of db?.pcClassNames() ?? []) {
+      items.push({ value: name, label: name });
+    }
+    // "(Sem classe)" only when there's something to fall into that bucket.
+    if (anyClasslessRecord()) {
+      items.push({
+        value: CLASS_UNKNOWN_VALUE,
+        label: t.leaderboardClassUnknown,
+      });
+    }
+    return items;
+  },
+  getSelectedValue: () =>
+    state.selectedClass === null
+      ? CLASS_ALL_VALUE
+      : state.selectedClass === ""
+        ? CLASS_UNKNOWN_VALUE
+        : state.selectedClass,
+  onSelect: (item) => {
+    if (item.value === CLASS_ALL_VALUE) state.selectedClass = null;
+    else if (item.value === CLASS_UNKNOWN_VALUE) state.selectedClass = "";
+    else state.selectedClass = item.value;
+    paint();
+  },
+});
+
+export function setupLeaderboard(onOpenReplay: (id: string) => void) {
+  openReplay = onOpenReplay;
+  mvpCombobox.setup();
+  classCombobox.setup();
 }
 
 export async function loadLeaderboard() {
@@ -308,10 +395,21 @@ function topN(
   return sorted.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
+/**
+ * Whether any record in the loaded set has an empty `class` — that's the
+ * signal to surface the "(Sem classe)" bucket. Independent of which MVP is
+ * selected, since the class list itself is now exhaustive.
+ */
+function anyClasslessRecord(): boolean {
+  for (const it of state.items) {
+    for (const r of it.mvpRecords) {
+      if (!r.class) return true;
+    }
+  }
+  return false;
+}
+
 function paint() {
-  // Hint + spinner. The hint is just informational text; we use the empty
-  // option list (rather than items.length) as the "really nothing here"
-  // signal because legacy docs without `mvpRecords` aren't worth flagging.
   const hintEl = document.querySelector<HTMLElement>("#leaderboard-hint");
   const spinnerEl = document.querySelector<HTMLElement>(
     "#leaderboard-loading-indicator",
@@ -328,20 +426,10 @@ function paint() {
     else hintEl.textContent = t.leaderboardHint;
   }
 
-  // Keep the combobox input in sync with the selected MVP. We only touch
-  // the value when the user isn't actively editing — otherwise typing into
-  // the input would overwrite mid-keystroke.
-  const input = document.querySelector<HTMLInputElement>(
-    "#leaderboard-mvp-input",
-  );
-  if (input) {
-    input.disabled = !options.length;
-    if (document.activeElement !== input) {
-      const picked = options.find((o) => o.view === state.selectedView);
-      input.value = picked?.name ?? "";
-    }
-  }
-  paintMvpCombobox();
+  // Comboboxes pull from `state` via their closures — paint just refreshes
+  // their visual state and reflects the current selection in each input.
+  mvpCombobox.paint();
+  classCombobox.paint();
 
   const damageHost = document.querySelector<HTMLElement>(
     "#leaderboard-damage-table",
@@ -350,13 +438,6 @@ function paint() {
     "#leaderboard-dps-table",
   );
   if (!damageHost || !dpsHost) return;
-
-  // Populate the class filter dropdown from the rows visible under the
-  // currently-selected MVP. Doing it per-MVP keeps the dropdown small and
-  // honest — only classes that actually have a leaderboard entry for *this*
-  // MVP appear. The previously-selected class is preserved if it's still
-  // present; otherwise the filter resets to "all".
-  paintClassFilter();
 
   if (!options.length || state.selectedView == null) {
     damageHost.innerHTML = "";
@@ -371,79 +452,6 @@ function paint() {
   );
   paintMetricTable(damageHost, "highestHit", topN(all, "highestHit", 5));
   paintMetricTable(dpsHost, "dps", topN(all, "dps", 5));
-}
-
-function collectClassesForView(view: number): {
-  classes: string[];
-  hasUnknown: boolean;
-} {
-  const set = new Set<string>();
-  let hasUnknown = false;
-  for (const it of state.items) {
-    for (const r of it.mvpRecords) {
-      if (r.view !== view) continue;
-      const c = r.class ?? "";
-      if (c) set.add(c);
-      else hasUnknown = true;
-    }
-  }
-  return {
-    classes: Array.from(set).sort((a, b) => a.localeCompare(b, locale)),
-    hasUnknown,
-  };
-}
-
-function paintClassFilter() {
-  const sel = document.querySelector<HTMLSelectElement>(
-    "#leaderboard-class-select",
-  );
-  if (!sel) return;
-  const view = state.selectedView;
-  const { classes, hasUnknown } =
-    view == null ? { classes: [], hasUnknown: false } : collectClassesForView(view);
-
-  // Always rebuild — the option set changes whenever the MVP changes. Cache
-  // the user's currently-selected value first, then restore it if it's
-  // still in the new list.
-  const wanted =
-    state.selectedClass === null
-      ? CLASS_ALL_VALUE
-      : state.selectedClass === ""
-        ? CLASS_UNKNOWN_VALUE
-        : state.selectedClass;
-
-  sel.innerHTML = "";
-  const all = document.createElement("option");
-  all.value = CLASS_ALL_VALUE;
-  all.textContent = t.leaderboardClassAll;
-  sel.appendChild(all);
-  for (const c of classes) {
-    const o = document.createElement("option");
-    o.value = c;
-    o.textContent = c;
-    sel.appendChild(o);
-  }
-  if (hasUnknown) {
-    const o = document.createElement("option");
-    o.value = CLASS_UNKNOWN_VALUE;
-    o.textContent = t.leaderboardClassUnknown;
-    sel.appendChild(o);
-  }
-
-  // If the previously-selected class doesn't exist under the new MVP, snap
-  // back to "all" so the user isn't staring at an empty top-5.
-  const valid = new Set<string>([
-    CLASS_ALL_VALUE,
-    ...classes,
-    ...(hasUnknown ? [CLASS_UNKNOWN_VALUE] : []),
-  ]);
-  if (!valid.has(wanted)) {
-    sel.value = CLASS_ALL_VALUE;
-    state.selectedClass = null;
-  } else {
-    sel.value = wanted;
-  }
-  sel.disabled = classes.length === 0 && !hasUnknown;
 }
 
 function paintMetricTable(

@@ -51,7 +51,11 @@ import { renderSummaryCard, type SummaryCell } from "./ui/stats-summary.js";
 import { renderTable } from "./ui/table.js";
 import { renderTimelineBrush } from "./ui/timeline-brush.js";
 import { renderDpsScatter } from "./ui/dps-scatter.js";
-import { loadLeaderboard, setupLeaderboard } from "./leaderboard.js";
+import {
+  loadLeaderboard,
+  setLeaderboardDb,
+  setupLeaderboard,
+} from "./leaderboard.js";
 import {
   ensureLoaded as ensureSummariesLoaded,
   getCached as getCachedSummaries,
@@ -205,6 +209,9 @@ function init() {
   });
   void loadReferenceDb().then((db) => {
     state.db = db;
+    // Hand the same db to the leaderboard so it can derive the static PC
+    // class list — repaints itself on receipt.
+    setLeaderboardDb(db);
     if (state.replay) rerender();
   });
   applyRoute();

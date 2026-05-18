@@ -164,7 +164,7 @@
         <div class="leaderboard-controls">
           <label class="leaderboard-control" for="leaderboard-mvp-input">
             <span id="leaderboard-mvp-label" class="leaderboard-control-label"></span>
-            <div class="leaderboard-mvp-combobox">
+            <div class="leaderboard-combobox">
               <input
                 id="leaderboard-mvp-input"
                 type="text"
@@ -177,15 +177,32 @@
               />
               <ul
                 id="leaderboard-mvp-options"
-                class="leaderboard-mvp-options"
+                class="leaderboard-combobox-options"
                 role="listbox"
                 hidden
               ></ul>
             </div>
           </label>
-          <label class="leaderboard-control" for="leaderboard-class-select">
+          <label class="leaderboard-control" for="leaderboard-class-input">
             <span id="leaderboard-class-label" class="leaderboard-control-label"></span>
-            <select id="leaderboard-class-select"></select>
+            <div class="leaderboard-combobox">
+              <input
+                id="leaderboard-class-input"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="leaderboard-class-options"
+                aria-expanded="false"
+              />
+              <ul
+                id="leaderboard-class-options"
+                class="leaderboard-combobox-options"
+                role="listbox"
+                hidden
+              ></ul>
+            </div>
           </label>
         </div>
         <div class="leaderboard-grid">
