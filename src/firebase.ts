@@ -85,6 +85,13 @@ export type MvpRecord = {
   name: string;
   playerAid: number;
   playerName: string;
+  /**
+   * Resolved class/job name at upload time (e.g. "Espadachim", "Sentinela
+   * Trans"). Empty string when the recorder is a homunculus/mercenary or
+   * when the job DB hadn't loaded yet at upload — those rows appear under
+   * the "(Sem classe)" bucket on the leaderboard filter.
+   */
+  class: string;
   /** Sum of damage events from this player to this MVP species. */
   totalDamage: number;
   /** Biggest single damage event (one cast / one auto-attack). */
@@ -170,6 +177,7 @@ export async function uploadReplay(
         name: r.name.slice(0, 40),
         playerAid: Math.round(r.playerAid),
         playerName: r.playerName.slice(0, 50),
+        class: r.class.slice(0, 30),
         totalDamage: Math.round(r.totalDamage),
         highestHit: Math.round(r.highestHit),
         combatSpanMs: Math.round(r.combatSpanMs),
@@ -289,6 +297,7 @@ function parseRestSummary(doc: {
 const MVP_RECORDS_PARSE_CAP = 250;
 const MVP_NAME_PARSE_CAP = 80;
 const MVP_PLAYER_NAME_PARSE_CAP = 80;
+const MVP_CLASS_PARSE_CAP = 60;
 
 function restMvpRecords(v: unknown): MvpRecord[] {
   if (!v || typeof v !== "object") return [];
@@ -304,6 +313,7 @@ function restMvpRecords(v: unknown): MvpRecord[] {
       name: (restStr(f.name) ?? "").slice(0, MVP_NAME_PARSE_CAP),
       playerAid: restNum(f.playerAid) ?? 0,
       playerName: (restStr(f.playerName) ?? "").slice(0, MVP_PLAYER_NAME_PARSE_CAP),
+      class: (restStr(f.class) ?? "").slice(0, MVP_CLASS_PARSE_CAP),
       totalDamage: restNum(f.totalDamage) ?? 0,
       highestHit: restNum(f.highestHit) ?? 0,
       combatSpanMs: restNum(f.combatSpanMs) ?? 0,

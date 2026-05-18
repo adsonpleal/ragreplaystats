@@ -524,6 +524,7 @@ function paintStaticStrings() {
   $("#leaderboard-nav").textContent = t.leaderboardNav;
   $("#leaderboard-title").textContent = t.leaderboardTitle;
   $("#leaderboard-mvp-label").textContent = t.leaderboardMvpLabel;
+  $("#leaderboard-class-label").textContent = t.leaderboardClassLabel;
   $("#leaderboard-damage-title").textContent = t.leaderboardTopDamage;
   $("#leaderboard-dps-title").textContent = t.leaderboardTopDps;
   $("#suggestions-title").textContent = t.suggestionsTitle;
@@ -2381,10 +2382,15 @@ function buildReplaySummary(replay: Replay): ReplaySummary {
   const avgDps = seconds > 0 ? Math.round(totalDamage / seconds) : 0;
   // Mob-name resolver from the DP DB if loaded; otherwise fall back to the
   // `mob#<view>` placeholder — the aggregator will then prefer the
-  // server-reported per-instance name when available.
+  // server-reported per-instance name when available. Job resolver is the
+  // same story; the aggregator will leave `class` empty if it returns the
+  // `job#<id>` placeholder.
   const resolveMob = state.db
     ? (id: number) => state.db!.resolveMob(id)
     : (id: number) => `mob#${id}`;
+  const resolveJob = state.db
+    ? (id: number) => state.db!.resolveJob(id)
+    : (id: number) => `job#${id}`;
   return {
     player: replay.sessionInfo.player || "",
     map: replay.sessionInfo.map || "",
@@ -2397,7 +2403,7 @@ function buildReplaySummary(replay: Replay): ReplaySummary {
     entitiesSeen: replay.entities.size,
     handledPackets: replay.totals.handledPackets,
     packetCount: replay.totals.packetCount,
-    mvpRecords: mvpMatchups(replay, resolveMob),
+    mvpRecords: mvpMatchups(replay, resolveMob, resolveJob),
   };
 }
 

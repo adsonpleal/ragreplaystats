@@ -75,6 +75,12 @@ function resolveMob(view) {
   return entry?.name || `mob#${view}`;
 }
 
+const jobRaw = await readFile(resolve("public/db/job.json"), "utf8");
+const jobDb = JSON.parse(jobRaw);
+function resolveJob(id) {
+  return jobDb[String(id)] ?? `job#${id}`;
+}
+
 // ---------------------------------------------------------------------------
 // Firebase Admin init.
 // ---------------------------------------------------------------------------
@@ -114,11 +120,13 @@ while (true) {
     const data = docSnap.data();
 
     if (!FORCE && Array.isArray(data.mvpRecords)) {
-      // A schema upgrade added `highestHit` — re-aggregate docs that lack
-      // it so existing records get the new field. Once every row has it,
-      // the script idempotently no-ops.
+      // Schema upgrades added `highestHit` and later `class` — re-aggregate
+      // docs that lack either so existing records get the new fields. Once
+      // every row has them, the script idempotently no-ops. Empty array is
+      // a valid up-to-date state (no boss in the recording).
       const missingNewFields = data.mvpRecords.some(
-        (r) => typeof r?.highestHit !== "number",
+        (r) =>
+          typeof r?.highestHit !== "number" || typeof r?.class !== "string",
       );
       if (!missingNewFields) {
         totalSkipped += 1;
@@ -145,7 +153,7 @@ while (true) {
       const replay = decode.decodeReplay(
         buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
       );
-      const records = aggregate.mvpMatchups(replay, resolveMob);
+      const records = aggregate.mvpMatchups(replay, resolveMob, resolveJob);
 
       // Sanitize like uploadReplay does — defensive against shape drift.
       const payload = records.slice(0, 200).map((r) => ({
@@ -153,6 +161,7 @@ while (true) {
         name: String(r.name).slice(0, 40),
         playerAid: Math.round(r.playerAid),
         playerName: String(r.playerName).slice(0, 50),
+        class: String(r.class ?? "").slice(0, 30),
         totalDamage: Math.round(r.totalDamage),
         highestHit: Math.round(r.highestHit ?? 0),
         combatSpanMs: Math.round(r.combatSpanMs),

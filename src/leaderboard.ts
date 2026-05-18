@@ -22,6 +22,13 @@ type State = {
   error: string | null;
   /** Currently selected MVP species (view id). Null = empty leaderboard. */
   selectedView: number | null;
+  /**
+   * Class filter. `null` = all classes, `""` = the "(Sem classe)" bucket
+   * (rows where the aggregator couldn't resolve a job name — homunculus,
+   * mercenary, or legacy docs without the class field), any non-empty
+   * string = exact match against `MvpRecord.class`.
+   */
+  selectedClass: string | null;
 };
 
 const state: State = {
@@ -29,7 +36,13 @@ const state: State = {
   loading: false,
   error: null,
   selectedView: null,
+  selectedClass: null,
 };
+
+/** Filter dropdown value used to represent the unresolved-class bucket. */
+const CLASS_UNKNOWN_VALUE = "__unknown__";
+/** Filter dropdown value used for "all classes". */
+const CLASS_ALL_VALUE = "__all__";
 
 let openReplay: (id: string) => void = () => {};
 
@@ -90,6 +103,17 @@ export function setupLeaderboard(onOpenReplay: (id: string) => void) {
   // blur fires before the click handler if we close synchronously.
   input.addEventListener("blur", () => {
     window.setTimeout(closeCombobox, 120);
+  });
+
+  const classSel = document.querySelector<HTMLSelectElement>(
+    "#leaderboard-class-select",
+  );
+  classSel?.addEventListener("change", () => {
+    const v = classSel.value;
+    if (v === CLASS_ALL_VALUE) state.selectedClass = null;
+    else if (v === CLASS_UNKNOWN_VALUE) state.selectedClass = "";
+    else state.selectedClass = v;
+    paint();
   });
 }
 
@@ -231,6 +255,8 @@ function collectMvpOptions(items: ReplayListItem[]): MvpOption[] {
 type LeaderboardRow = {
   rank: number;
   playerName: string;
+  /** Player class — possibly empty for homun/merc or legacy docs. */
+  className: string;
   /** Biggest single damage event (one cast / one auto-attack). */
   highestHit: number;
   dps: number;
@@ -244,18 +270,25 @@ type LeaderboardRow = {
  * are two independent rows, and one player who renamed across recordings
  * would split into two. Acceptable for v1: this is "top performances," not
  * "top unique players." Revisit if/when uploader-side identity arrives.
+ *
+ * When `classFilter` is non-null, only rows whose `r.class` matches it are
+ * included. Empty string matches the "(Sem classe)" bucket.
  */
 function collectRowsForView(
   items: ReplayListItem[],
   view: number,
+  classFilter: string | null,
 ): LeaderboardRow[] {
   const rows: LeaderboardRow[] = [];
   for (const it of items) {
     for (const r of it.mvpRecords) {
       if (r.view !== view) continue;
+      const rc = r.class ?? "";
+      if (classFilter !== null && rc !== classFilter) continue;
       rows.push({
         rank: 0,
         playerName: r.playerName,
+        className: rc,
         highestHit: r.highestHit,
         dps: r.dps,
         replayId: it.id,
@@ -318,15 +351,99 @@ function paint() {
   );
   if (!damageHost || !dpsHost) return;
 
+  // Populate the class filter dropdown from the rows visible under the
+  // currently-selected MVP. Doing it per-MVP keeps the dropdown small and
+  // honest — only classes that actually have a leaderboard entry for *this*
+  // MVP appear. The previously-selected class is preserved if it's still
+  // present; otherwise the filter resets to "all".
+  paintClassFilter();
+
   if (!options.length || state.selectedView == null) {
     damageHost.innerHTML = "";
     dpsHost.innerHTML = "";
     return;
   }
 
-  const all = collectRowsForView(state.items, state.selectedView);
+  const all = collectRowsForView(
+    state.items,
+    state.selectedView,
+    state.selectedClass,
+  );
   paintMetricTable(damageHost, "highestHit", topN(all, "highestHit", 5));
   paintMetricTable(dpsHost, "dps", topN(all, "dps", 5));
+}
+
+function collectClassesForView(view: number): {
+  classes: string[];
+  hasUnknown: boolean;
+} {
+  const set = new Set<string>();
+  let hasUnknown = false;
+  for (const it of state.items) {
+    for (const r of it.mvpRecords) {
+      if (r.view !== view) continue;
+      const c = r.class ?? "";
+      if (c) set.add(c);
+      else hasUnknown = true;
+    }
+  }
+  return {
+    classes: Array.from(set).sort((a, b) => a.localeCompare(b, locale)),
+    hasUnknown,
+  };
+}
+
+function paintClassFilter() {
+  const sel = document.querySelector<HTMLSelectElement>(
+    "#leaderboard-class-select",
+  );
+  if (!sel) return;
+  const view = state.selectedView;
+  const { classes, hasUnknown } =
+    view == null ? { classes: [], hasUnknown: false } : collectClassesForView(view);
+
+  // Always rebuild — the option set changes whenever the MVP changes. Cache
+  // the user's currently-selected value first, then restore it if it's
+  // still in the new list.
+  const wanted =
+    state.selectedClass === null
+      ? CLASS_ALL_VALUE
+      : state.selectedClass === ""
+        ? CLASS_UNKNOWN_VALUE
+        : state.selectedClass;
+
+  sel.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = CLASS_ALL_VALUE;
+  all.textContent = t.leaderboardClassAll;
+  sel.appendChild(all);
+  for (const c of classes) {
+    const o = document.createElement("option");
+    o.value = c;
+    o.textContent = c;
+    sel.appendChild(o);
+  }
+  if (hasUnknown) {
+    const o = document.createElement("option");
+    o.value = CLASS_UNKNOWN_VALUE;
+    o.textContent = t.leaderboardClassUnknown;
+    sel.appendChild(o);
+  }
+
+  // If the previously-selected class doesn't exist under the new MVP, snap
+  // back to "all" so the user isn't staring at an empty top-5.
+  const valid = new Set<string>([
+    CLASS_ALL_VALUE,
+    ...classes,
+    ...(hasUnknown ? [CLASS_UNKNOWN_VALUE] : []),
+  ]);
+  if (!valid.has(wanted)) {
+    sel.value = CLASS_ALL_VALUE;
+    state.selectedClass = null;
+  } else {
+    sel.value = wanted;
+  }
+  sel.disabled = classes.length === 0 && !hasUnknown;
 }
 
 function paintMetricTable(

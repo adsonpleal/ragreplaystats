@@ -1392,6 +1392,11 @@ export type MvpMatchupRecord = {
   playerAid: number;
   /** Player display name at decode time. */
   playerName: string;
+  /**
+   * Resolved class/job name (e.g. "Espadachim", "Sentinela Trans"). Empty
+   * for homunculus/mercenary attackers or when the job DB hadn't loaded.
+   */
+  class: string;
   /** Sum of damage events from this player to any instance of this species. */
   totalDamage: number;
   /**
@@ -1409,6 +1414,7 @@ export type MvpMatchupRecord = {
 export function mvpMatchups(
   replay: Replay,
   resolveMob: (view: number) => string,
+  resolveJob: (id: number) => string,
   maxRecords = 200,
 ): MvpMatchupRecord[] {
   // 1) Index boss-flagged mobs by AID → species view id. Some bosses may
@@ -1475,6 +1481,17 @@ export function mvpMatchups(
     }
     const player = replay.entities.get(b.playerAid);
     const playerName = player?.name || `aid#${b.playerAid}`;
+    // Class only resolves for PCs — homun/merc have their own view IDs that
+    // aren't in the job DB. We leave class empty for them so the leaderboard
+    // filter buckets them under "(Sem classe)" rather than under a bogus
+    // `job#<id>` string.
+    let className = "";
+    if (player?.kind === "pc") {
+      const resolved = resolveJob(player.view);
+      // Reject the `job#<n>` placeholder so missing rows fall into the
+      // "(Sem classe)" bucket instead of polluting the filter dropdown.
+      if (!/^job#\d+$/.test(resolved)) className = resolved;
+    }
     const combatSpanMs = Math.max(0, b.lastHitMs - b.firstHitMs);
     const dps =
       combatSpanMs > 0
@@ -1485,6 +1502,7 @@ export function mvpMatchups(
       name,
       playerAid: b.playerAid,
       playerName,
+      class: className,
       totalDamage: b.totalDamage,
       highestHit: b.highestHit,
       combatSpanMs,
