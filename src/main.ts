@@ -1653,6 +1653,7 @@ function renderSkillUsesChart(replay: Replay) {
         key: r.key,
         label: labelText,
         labelSegments,
+        iconSrc: r.skillId ? `./icons/skill/${r.skillId}.png` : undefined,
         value: r.count,
         display: fmt(r.count),
       };
@@ -1704,6 +1705,31 @@ function renderClassCell(replay: Replay, aid: number, td: HTMLTableCellElement) 
     const img = document.createElement("img");
     img.className = "class-icon";
     img.src = `./icons/job/${view}.png`;
+    img.alt = "";
+    img.loading = "lazy";
+    img.addEventListener("error", () => img.remove());
+    span.appendChild(img);
+  }
+  span.appendChild(document.createTextNode(name));
+  td.appendChild(span);
+}
+
+/**
+ * Render a skill cell: the skill icon (keyed by skill id) followed by the
+ * skill name. Auto-attack (id 0 / missing) and skills whose sprite asset is
+ * absent degrade to plain text.
+ */
+function renderSkillCell(
+  skillId: number | undefined,
+  name: string,
+  td: HTMLTableCellElement,
+) {
+  const span = document.createElement("span");
+  span.className = "skill-cell";
+  if (skillId) {
+    const img = document.createElement("img");
+    img.className = "skill-icon";
+    img.src = `./icons/skill/${skillId}.png`;
     img.alt = "";
     img.loading = "lazy";
     img.addEventListener("error", () => img.remove());
@@ -2479,7 +2505,12 @@ function renderMobSkills(
         format: (r) => (r.skillId ? String(r.skillId) : t.none),
         href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
       },
-      { key: "name", label: t.colSkill },
+      {
+        key: "name",
+        label: t.colSkill,
+        render: (r, td) => renderSkillCell(r.skillId, r.name, td),
+        sortValue: (r) => r.name,
+      },
       { key: "hits", label: t.colHits, numeric: true, format: (r) => fmt(r.hits) },
       {
         key: "totalDamage",
@@ -2538,7 +2569,12 @@ function renderSkillTable(host: HTMLElement, events: DamageEvent[], title: strin
         format: (r) => (r.skillId ? String(r.skillId) : t.none),
         href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
       },
-      { key: "name", label: t.colSkill },
+      {
+        key: "name",
+        label: t.colSkill,
+        render: (r, td) => renderSkillCell(r.skillId, r.name, td),
+        sortValue: (r) => r.name,
+      },
       { key: "count", label: t.colHits, numeric: true, format: (r) => fmt(r.count) },
       { key: "totalDamage", label: t.colTotalDamage, numeric: true, format: (r) => fmt(r.totalDamage) },
       { key: "avgDamage", label: t.colAvgDamage, numeric: true, format: (r) => fmt(r.avgDamage) },
@@ -2579,7 +2615,12 @@ function renderSkillByPlayerTable(
         format: (r) => (r.skillId ? String(r.skillId) : t.none),
         href: (r) => (r.skillId ? skillDpUrl(r.skillId) : null),
       },
-      { key: "name", label: t.colSkill },
+      {
+        key: "name",
+        label: t.colSkill,
+        render: (r, td) => renderSkillCell(r.skillId, r.name, td),
+        sortValue: (r) => r.name,
+      },
       { key: "playerName", label: t.colPlayer },
       {
         key: "class",

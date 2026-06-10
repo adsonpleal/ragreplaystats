@@ -25,6 +25,8 @@ export type BarRow = {
    * monster goes to its DP page).
    */
   labelSegments?: BarLabelSegment[];
+  /** Optional icon shown before the label (e.g. a skill sprite). */
+  iconSrc?: string;
   /** Bar value (used for fill width). */
   value: number;
   /** Optional pre-formatted right-hand label (e.g. "1.2M / 23.4k DPS"). */
@@ -61,6 +63,20 @@ export function renderBarChart(host: HTMLElement, rows: BarRow[]) {
       </span>
       <span class="bar-value">${escape(r.display ?? String(r.value))}</span>
     `;
+    // Prepend the icon via DOM (not the innerHTML string) so a missing sprite
+    // can quietly remove itself on error instead of showing a broken image.
+    if (r.iconSrc) {
+      const labelEl = row.querySelector(".bar-label");
+      if (labelEl) {
+        const img = document.createElement("img");
+        img.className = "bar-label-icon";
+        img.src = r.iconSrc;
+        img.alt = "";
+        img.loading = "lazy";
+        img.addEventListener("error", () => img.remove());
+        labelEl.prepend(img);
+      }
+    }
     wrap.appendChild(row);
   }
   host.appendChild(wrap);
