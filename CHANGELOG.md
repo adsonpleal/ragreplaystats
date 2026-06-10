@@ -4,6 +4,9 @@ All notable user-facing changes to RagnaRecap. Newest first.
 
 ## 2026-06-10
 
+- Card de Equipamento redesenhado no estilo da janela do jogo: cada item vira um card com ícone e nome, dispostos em duas colunas (Equip e Especial) que se reorganizam em telas menores. Slots vazios continuam visíveis, armas de duas mãos ocupam os dois espaços (arma e escudo), e ao passar o mouse ou clicar abre-se um popover com o slot, as cartas e encantamentos, e links para o Divine Pride (do item e de cada carta).
+- Ícones de itens extraídos do cliente do jogo passam a ser exibidos no card de Equipamento.
+- Correção: equipamentos iniciais e itens de fantasia (que apareciam sem informação ou com ID 0) agora são lidos corretamente em replays de clientes mais novos.
 - Nomes de itens, habilidades e classes agora vêm direto do cliente do jogo, em português, no lugar do scraping do Divine Pride. Passa a incluir itens recentes que faltavam (equipamentos novos) e a contagem de brechas no nome (ex.: "Adaga [3]"). Habilidades cobrem também as classes de 4ª geração.
 - Nomes de monstros continuam vindo do Divine Pride (não fazem parte dos arquivos do cliente).
 

@@ -522,23 +522,36 @@ const NAMEID_OFFSET = 104;
 
 /**
  * Pick the record stride for an Items-container chunk. A chunk is a tight
- * array of equal-size records, so the real size divides the chunk length; we
- * disambiguate the candidates by checking that the `nameid` field of the first
- * two records reads as a plausible item id. Returns 0 when nothing fits (empty
- * or non-item chunks).
+ * array of equal-size records, so the real size divides the chunk length.
+ *
+ * We can't disambiguate on just the first record(s): the equipped-gear chunks
+ * (4601 main / 4603 costume+shadow) interleave EMPTY placeholder records whose
+ * `nameid` is 0, and they often sit at the start of the chunk. Validating only
+ * the first couple of nameids would reject the right stride and skip the whole
+ * chunk — dropping all worn gear and leaving costume slots unresolved.
+ *
+ * Instead, validate every record: with the correct stride each `nameid` reads
+ * as either an empty slot (0) or a plausible item id, and at least one is a
+ * real item. A wrong stride lands most nameids on garbage and fails this.
+ * Returns 0 when nothing fits (empty or non-item chunks).
  */
 function detectItemRecordSize(view: DataView, byteLength: number): number {
   const validId = (id: number) => id > 0 && id < 5_000_000;
   for (const size of ITEM_RECORD_SIZES) {
     if (byteLength < size || byteLength % size !== 0) continue;
-    const first = view.getInt32(NAMEID_OFFSET, true);
-    if (!validId(first)) continue;
-    // With >=2 records, the wrong stride lands the 2nd nameid on garbage.
-    if (byteLength >= size * 2) {
-      const second = view.getInt32(size + NAMEID_OFFSET, true);
-      if (!validId(second)) continue;
+    const count = byteLength / size;
+    let anyValid = false;
+    let ok = true;
+    for (let r = 0; r < count; r++) {
+      const id = view.getInt32(r * size + NAMEID_OFFSET, true);
+      if (id === 0) continue; // empty slot — neutral
+      if (!validId(id)) {
+        ok = false;
+        break;
+      }
+      anyValid = true;
     }
-    return size;
+    if (ok && anyValid) return size;
   }
   return 0;
 }

@@ -48,7 +48,7 @@ import { renderBarChart } from "./ui/bar-chart.js";
 import { renderDamageMulti } from "./ui/dps-chart.js";
 import { renderLineChart } from "./ui/line-chart.js";
 import { renderSummaryCard, type SummaryCell } from "./ui/stats-summary.js";
-import { type Column, renderTable } from "./ui/table.js";
+import { renderTable } from "./ui/table.js";
 import { renderTimelineBrush } from "./ui/timeline-brush.js";
 import { renderDpsScatter } from "./ui/dps-scatter.js";
 import {
@@ -1105,8 +1105,11 @@ function pct(n: number, total: number): number {
 
 /**
  * Bit → label mapping for the `equipped` (equipLocation) bitmask. Values
- * follow rAthena's `e_equip_pos`. First matching bit wins as the row's
- * primary slot; order also drives the row sort within the equipment table.
+ * follow rAthena's `e_equip_pos`. Array index doubles as the slot order: it
+ * drives the fixed grid layout and which group (Equip vs Especial) the slot
+ * lands in. An item occupies EVERY slot whose bit is set in its mask, so a
+ * two-handed weapon (EQP_HAND_R | EQP_HAND_L = 2 | 32) fills both the weapon
+ * and shield slots, mirroring the in-game window.
  */
 const EQUIP_SLOTS: Array<readonly [bit: number, label: () => string]> = [
   [256, () => t.slotHeadTop],          // EQP_HEAD_TOP
@@ -1141,13 +1144,34 @@ type EquippedRow = {
   cards: number[];
 };
 
-/** Map an equipLocation bitmask to its primary display slot (first matching). */
-function primaryEquipSlot(mask: number): { order: number; label: string } {
+/**
+ * Slot orders shown in each group, in grid order. We always render every one
+ * of these — empty slots get a placeholder card so the layout stays stable
+ * and mirrors the in-game Equip / Especial tabs.
+ */
+const NORMAL_SLOT_ORDERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+// Row-major fill across the 2-column grid:
+//   Topo  Meio        (costume head top / mid)
+//   Baixo Malha       (costume head low / shadow armor)
+//   Manopla Escudo    (shadow weapon / shadow shield)
+//   Capa  Bota        (costume garment / shadow shoes)
+//   AccEsq AccDir     (shadow acc left / shadow acc right)
+const ESPECIAL_SLOT_ORDERS = [11, 12, 13, 15, 16, 17, 14, 18, 20, 19] as const;
+
+/**
+ * All display slots an equipLocation mask occupies (every matching bit), in
+ * slot order. Two-handed weapons and multi-slot headgear therefore span more
+ * than one slot. Falls back to the catch-all "Outro" slot when no known bit
+ * matches.
+ */
+function occupiedEquipSlots(mask: number): Array<{ order: number; label: string }> {
+  const out: Array<{ order: number; label: string }> = [];
   for (let i = 0; i < EQUIP_SLOTS.length; i++) {
     const [bit, label] = EQUIP_SLOTS[i];
-    if (mask & bit) return { order: i, label: label() };
+    if (mask & bit) out.push({ order: i, label: label() });
   }
-  return { order: EQUIP_SLOTS.length, label: t.slotOther };
+  if (!out.length) out.push({ order: EQUIP_SLOTS.length, label: t.slotOther });
+  return out;
 }
 
 type EquipPage = {
@@ -1186,12 +1210,31 @@ function buildEquipmentPages(replay: Replay): EquipPage[] {
     cards: cards.filter((c) => c > 0),
   });
 
-  // Current worn set keyed by primary slot order.
+  // Current worn set keyed by slot order. A single item can occupy several
+  // slots (two-handed weapon → weapon + shield), so we fan it across all of
+  // them; takeoff clears every slot the mask covers.
   const worn = new Map<number, EquippedRow>();
+  const wear = (
+    mask: number,
+    itemId: number,
+    refine: number,
+    cards: number[],
+  ): number[] => {
+    const slots = occupiedEquipSlots(mask);
+    for (const { order, label } of slots) {
+      worn.set(order, rowFor(order, label, itemId, refine, cards));
+    }
+    return slots.map((s) => s.order);
+  };
+  const takeOff = (mask: number): number[] => {
+    const orders = occupiedEquipSlots(mask).map((s) => s.order);
+    for (const order of orders) worn.delete(order);
+    return orders;
+  };
+
   for (const inv of replay.initialInventory.values()) {
     if (!inv.equipped || !inv.itemId) continue;
-    const { order, label } = primaryEquipSlot(inv.equipped);
-    worn.set(order, rowFor(order, label, inv.itemId, inv.refine, inv.cards));
+    wear(inv.equipped, inv.itemId, inv.refine, inv.cards);
   }
   const snapshot = () =>
     [...worn.values()].sort((a, b) => a.slotOrder - b.slotOrder);
@@ -1208,19 +1251,37 @@ function buildEquipmentPages(replay: Replay): EquipPage[] {
     let last = start;
     while (i < changes.length && changes[i].time - last <= EQUIP_PAGE_GROUP_MS) {
       const c = changes[i];
-      const { order, label } = primaryEquipSlot(c.location);
-      if (c.equipped) {
-        worn.set(order, rowFor(order, label, c.itemId, c.refine, c.cards));
-      } else {
-        worn.delete(order);
-      }
-      changedSlots.add(order);
+      const orders = c.equipped
+        ? wear(c.location, c.itemId, c.refine, c.cards)
+        : takeOff(c.location);
+      for (const order of orders) changedSlots.add(order);
       last = c.time;
       i++;
     }
     pages.push({ timeMs: start, rows: snapshot(), changedSlots });
   }
   return pages;
+}
+
+/**
+ * A click anywhere outside an equipment card dismisses the sticky-open
+ * popover. Registered once for the lifetime of the page — `renderEquipment`
+ * can run many times (one per loaded replay) but we only want one listener.
+ * Card clicks set `is-open` and stop here via the `.closest` guard; the card's
+ * own handler and the popover links call `stopPropagation`, so this only fires
+ * for genuine outside clicks.
+ */
+let equipDismissBound = false;
+function bindEquipPopoverDismiss() {
+  if (equipDismissBound) return;
+  equipDismissBound = true;
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest(".equip-item-card")) return;
+    document
+      .querySelectorAll(".equip-item-card.is-open")
+      .forEach((el) => el.classList.remove("is-open"));
+  });
 }
 
 function renderEquipment(replay: Replay) {
@@ -1235,53 +1296,13 @@ function renderEquipment(replay: Replay) {
     return;
   }
 
-  const columns: Column<EquippedRow>[] = [
-    {
-      key: "itemId",
-      label: t.colId,
-      format: (r) => String(r.itemId),
-      href: (r) => itemDpUrl(r.itemId),
-    },
-    { key: "slotLabel", label: t.colSlot, sortValue: (r) => r.slotOrder },
-    { key: "itemName", label: t.colItem },
-    {
-      key: "refine",
-      label: t.colRefine,
-      numeric: true,
-      format: (r) => (r.refine > 0 ? `+${r.refine}` : t.none),
-      sortValue: (r) => r.refine,
-    },
-    {
-      key: "cards",
-      label: t.colCards,
-      sortValue: (r) => r.cards.length,
-      render: (r, td) => {
-        if (!r.cards.length) {
-          td.textContent = t.equipmentEmptyCardSlot;
-          return;
-        }
-        for (let i = 0; i < r.cards.length; i++) {
-          if (i > 0) td.appendChild(document.createTextNode(", "));
-          const id = r.cards[i];
-          const link = document.createElement("a");
-          link.className = "cell-link";
-          link.href = itemDpUrl(id);
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          link.textContent = `#${id}`;
-          link.addEventListener("click", (e) => e.stopPropagation());
-          td.appendChild(link);
-          td.appendChild(document.createTextNode(` · ${itemResolver(id)}`));
-        }
-      },
-    },
-  ];
+  bindEquipPopoverDismiss();
 
   host.innerHTML = `<h2 class="section-title">${t.equipmentTitle}</h2>
     <div id="equipment-pager"></div>
-    <div id="equipment-table"></div>`;
+    <div id="equipment-view"></div>`;
   const pagerHost = $("#equipment-pager");
-  const tableHost = $("#equipment-table");
+  const viewHost = $("#equipment-view");
 
   let pageIdx = 0;
   function paint() {
@@ -1291,16 +1312,19 @@ function renderEquipment(replay: Replay) {
       const bar = document.createElement("div");
       bar.className = "equip-pager";
 
+      // Inline SVG chevrons rather than text glyphs (‹ ›): the glyph ink sits
+      // high within its line box on most fonts, so it never visually centers.
+      const chevron = (d: string) =>
+        `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`;
+
       const prev = document.createElement("button");
       prev.type = "button";
       prev.className = "equip-arrow";
-      prev.textContent = "‹";
+      prev.setAttribute("aria-label", t.paginationPrev);
+      prev.innerHTML = chevron("M15 5l-7 7 7 7");
       prev.disabled = pageIdx === 0;
       prev.addEventListener("click", () => {
-        if (pageIdx > 0) {
-          pageIdx--;
-          paint();
-        }
+        if (pageIdx > 0) { pageIdx--; paint(); }
       });
 
       const counter = document.createElement("span");
@@ -1310,13 +1334,11 @@ function renderEquipment(replay: Replay) {
       const next = document.createElement("button");
       next.type = "button";
       next.className = "equip-arrow";
-      next.textContent = "›";
+      next.setAttribute("aria-label", t.paginationNext);
+      next.innerHTML = chevron("M9 5l7 7-7 7");
       next.disabled = pageIdx === pages.length - 1;
       next.addEventListener("click", () => {
-        if (pageIdx < pages.length - 1) {
-          pageIdx++;
-          paint();
-        }
+        if (pageIdx < pages.length - 1) { pageIdx++; paint(); }
       });
 
       const caption = document.createElement("span");
@@ -1330,12 +1352,145 @@ function renderEquipment(replay: Replay) {
       pagerHost.appendChild(bar);
     }
 
-    renderTable<EquippedRow>(tableHost, columns, page.rows, {
-      initialSort: { key: "slotLabel", asc: true },
-      isSelected: (r) => page.changedSlots.has(r.slotOrder),
-    });
+    const wornByOrder = new Map(page.rows.map((r) => [r.slotOrder, r]));
+    // Any items in catch-all slots (mask matched no known bit) tack onto the
+    // Especial group so they're never dropped from the view.
+    const extraEspecial = page.rows
+      .filter((r) => r.slotOrder >= EQUIP_SLOTS.length)
+      .map((r) => r.slotOrder);
+
+    viewHost.innerHTML = "";
+    const groups = document.createElement("div");
+    groups.className = "equip-groups";
+
+    const appendGroup = (label: string, slotOrders: readonly number[]) => {
+      const col = document.createElement("div");
+      col.className = "equip-group";
+      const heading = document.createElement("div");
+      heading.className = "equip-group-heading";
+      heading.textContent = label;
+      col.appendChild(heading);
+      const cards = document.createElement("div");
+      cards.className = "equip-cards";
+      for (const order of slotOrders) {
+        const slotLabel =
+          order < EQUIP_SLOTS.length ? EQUIP_SLOTS[order][1]() : t.slotOther;
+        cards.appendChild(
+          buildEquipCard(
+            slotLabel,
+            wornByOrder.get(order) ?? null,
+            page.changedSlots.has(order),
+            itemResolver,
+          ),
+        );
+      }
+      col.appendChild(cards);
+      groups.appendChild(col);
+    };
+
+    appendGroup(t.equipGroupEquip, NORMAL_SLOT_ORDERS);
+    appendGroup(t.equipGroupEspecial, [...ESPECIAL_SLOT_ORDERS, ...extraEspecial]);
+    viewHost.appendChild(groups);
   }
   paint();
+}
+
+function buildEquipCard(
+  slotLabel: string,
+  row: EquippedRow | null,
+  isChanged: boolean,
+  itemResolver: (id: number) => string,
+): HTMLElement {
+  // Empty slot — a non-interactive placeholder showing the slot name, so the
+  // grid stays aligned and the player can see which slots are unfilled.
+  if (!row) {
+    const empty = document.createElement("div");
+    empty.className = "equip-item-card equip-item-card--empty";
+    const name = document.createElement("span");
+    name.className = "equip-item-name";
+    name.textContent = slotLabel;
+    empty.appendChild(name);
+    return empty;
+  }
+
+  const displayName =
+    row.refine > 0 ? `+${row.refine} ${row.itemName}` : row.itemName;
+
+  // An item-icon <img> that hides itself when the PNG is missing.
+  const icon = (id: number, cls: string, size: number): HTMLImageElement => {
+    const img = document.createElement("img");
+    img.className = cls;
+    img.src = `./icons/item/${id}.png`;
+    img.alt = "";
+    img.width = size;
+    img.height = size;
+    img.addEventListener("error", () => { img.hidden = true; });
+    return img;
+  };
+  // A Divine Pride link that doesn't bubble its click to the card toggle.
+  const dpLink = (id: number, cls: string): HTMLAnchorElement => {
+    const a = document.createElement("a");
+    a.className = cls;
+    a.href = itemDpUrl(id);
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.addEventListener("click", (e) => e.stopPropagation());
+    return a;
+  };
+
+  const card = document.createElement("div");
+  card.className =
+    "equip-item-card" + (isChanged ? " equip-item-card--changed" : "");
+  card.setAttribute("tabindex", "0");
+
+  // Click toggles a sticky-open state so the user can move into the popover
+  // and click the Divine Pride link. Opening one card closes the others.
+  card.addEventListener("click", () => {
+    const wasOpen = card.classList.contains("is-open");
+    const root = card.closest(".equip-groups");
+    root
+      ?.querySelectorAll(".equip-item-card.is-open")
+      .forEach((el) => el.classList.remove("is-open"));
+    if (!wasOpen) card.classList.add("is-open");
+  });
+
+  card.appendChild(icon(row.itemId, "equip-item-icon", 24));
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "equip-item-name";
+  nameSpan.textContent = displayName;
+  card.appendChild(nameSpan);
+
+  // Inline popover shown on :hover via CSS
+  const popover = document.createElement("div");
+  popover.className = "equip-popover";
+
+  const slotDiv = document.createElement("div");
+  slotDiv.className = "equip-popover-slot";
+  slotDiv.textContent = row.slotLabel;
+  popover.appendChild(slotDiv);
+
+  const nameLink = dpLink(row.itemId, "equip-popover-name");
+  nameLink.textContent = displayName;
+  popover.appendChild(nameLink);
+
+  if (row.cards.length > 0) {
+    const section = document.createElement("span");
+    section.className = "equip-popover-section";
+    section.textContent = t.equipCardsTitle;
+    popover.appendChild(section);
+    for (const cardId of row.cards) {
+      const cardRow = dpLink(cardId, "equip-popover-card-row");
+      cardRow.appendChild(icon(cardId, "equip-popover-card-icon", 16));
+      const cardName = document.createElement("span");
+      cardName.textContent = itemResolver(cardId);
+      cardRow.appendChild(cardName);
+      popover.appendChild(cardRow);
+    }
+  }
+
+  card.appendChild(popover);
+  return card;
 }
 
 
