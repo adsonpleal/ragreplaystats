@@ -837,8 +837,8 @@ main > section {
 
 .class-icon {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 25px;
+  height: 25px;
   image-rendering: pixelated;
 }
 
@@ -852,17 +852,17 @@ main > section {
 
 .skill-icon {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 25px;
+  height: 25px;
   image-rendering: pixelated;
 }
 
 /* Inline skill icon inside a bar-chart label. */
 .bar-label-icon {
-  width: 16px;
-  height: 16px;
-  margin-right: 0.3rem;
-  vertical-align: -3px;
+  width: 25px;
+  height: 25px;
+  margin-right: 0.35rem;
+  vertical-align: -8px;
   image-rendering: pixelated;
 }
 
