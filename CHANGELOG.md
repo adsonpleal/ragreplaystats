@@ -2,6 +2,22 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-06-10
+
+- Nomes de itens, habilidades e classes agora vêm direto do cliente do jogo, em português, no lugar do scraping do Divine Pride. Passa a incluir itens recentes que faltavam (equipamentos novos) e a contagem de brechas no nome (ex.: "Adaga [3]"). Habilidades cobrem também as classes de 4ª geração.
+- Nomes de monstros continuam vindo do Divine Pride (não fazem parte dos arquivos do cliente).
+
+## 2026-06-09
+
+- Card de Equipamento (aba "Estatísticas") virou uma linha do tempo: a primeira página mostra o conjunto no início da gravação e cada troca de equipamento cria uma nova página com o conjunto completo, o horário e destaque nos itens alterados. Navegação com contador e setas; trocas quase simultâneas são agrupadas; sem paginação quando o replay não tem trocas.
+- Correção na leitura do conjunto equipado em replays de clientes mais novos.
+
+## 2026-05-18
+
+- Filtro por classe no Leaderboard, listando todas as classes de personagem mesmo as sem registros.
+- Busca com autocompletar (combobox) para jogador e classe, com navegação por teclado.
+- Correção ao abrir um segundo replay pela lista ("Ver replay") e ordenação dos MVPs sem nome real (placeholder) por último.
+
 ## 2026-05-17
 
 - Página de Leaderboard de MVPs: top 5 maior dano e top 5 maior DPS por MVP, agregando todos os replays compartilhados. Cada linha tem "Ver replay" para abrir o recording de origem.

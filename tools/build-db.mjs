@@ -1,15 +1,22 @@
 #!/usr/bin/env node
-// Extract player-class display names from a Ragnarok Online GRF and emit
-// public/db/job.json. Other reference data (skills, mobs, items, status
-// effects) comes from the Divine Pride API at runtime — see
-// src/divine-pride.ts.
+// Extract PT-BR reference data from a Ragnarok Online client and emit JSON to
+// public/db/:
+//   job.json    player-class names  (pcjobnamegender + pcidentity; classes only)
+//   item.json   item names + slots  (System/iteminfo_new.lub, via the Lua VM)
+//   skill.json  skill names         (skillid.lub + skillinfolist_ptbr.lub, VM)
+// Plus on-demand icon extraction (--icons). Monster names are not in the client
+// (they're server-side) and come from Divine Pride — see src/divine-pride.ts.
+//
+// The reader handles GRF 0x101/0x103/0x200 and the 0x300 "Event Horizon" fork,
+// including the custom DES encryption used by many texture entries.
 //
 // Usage:
-//   node tools/build-db.mjs --grf <file.grf>           # build from GRF
+//   node tools/build-db.mjs --grf <file.grf>           # build job/item/skill JSON
 //   node tools/build-db.mjs --dir <folder>             # from extracted folder
 //   node tools/build-db.mjs --list <file.grf>          # print listing
+//   node tools/build-db.mjs --grf <file.grf> --icons <dir>   # extract icons by id
 //   node tools/build-db.mjs --grf <file.grf> --extract <dir> [--match <regex>]
-//   node tools/build-db.mjs --dump <file.grf>::<path>  # dump one file
+//   node tools/build-db.mjs --dump <file.grf>::<path>  # dump one file (fwd-slash path)
 
 import {
   closeSync,
@@ -23,18 +30,21 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { resolve, join } from "node:path";
-import { inflateSync } from "node:zlib";
+import { resolve, join, dirname } from "node:path";
+import { inflateSync, deflateSync } from "node:zlib";
+import { runChunk, runChunkInto, decodeClientString, LuaTable } from "./lua51.mjs";
 
 const WANTED_FILES = [
-  "data/luafiles514/lua files/datainfo/jobname.lub",
-  "data/luafiles514/lua files/datainfo/jobname.lua",
-  "data/luafiles514/lua files/datainfo/npcidentity.lub",
-  "data/luafiles514/lua files/datainfo/npcidentity.lua",
   "data/luafiles514/lua files/datainfo/pcjobnamegender.lub",
   "data/luafiles514/lua files/datainfo/pcjobnamegender.lua",
   "data/luafiles514/lua files/admin/pcidentity.lub",
   "data/luafiles514/lua files/admin/pcidentity.lua",
+  // Skill names (PT-BR): skillid maps SKID const -> numeric id; the _ptbr
+  // localization list maps SKID const -> display name.
+  "data/luafiles514/lua files/skillinfoz/skillid.lub",
+  "data/luafiles514/lua files/skillinfoz/skillid.lua",
+  "data/luafiles514/lua files/skillinfoz/skillinfolist_ptbr.lub",
+  "data/luafiles514/lua files/skillinfoz/skillinfolist_ptbr.lua",
 ];
 
 // kRO-default JT name → numeric id, used as a fallback when the server's own
@@ -80,6 +90,10 @@ const PLAYER_JT_IDS = {
   JT_CHICKEN: 4045, JT_CHICKEN2: 4046,
 };
 
+// All work runs inside main() invoked at the very bottom of the file, so every
+// module-level const (including the DES tables) is initialized before any
+// extraction touches it.
+async function main() {
 const args = parseArgs(process.argv.slice(2));
 const outDir = resolve(process.cwd(), "public/db");
 if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
@@ -108,9 +122,9 @@ if (args.dump) {
   const [grfPath, wantPath] = args.dump.split("::");
   const grf = openGrf(grfPath);
   try {
-    const entry = grf.files.find(
-      (f) => normalize(f.filename).endsWith(wantPath.toLowerCase()),
-    );
+    // normalize() the query too — stored names use mixed/backslash separators.
+    const want = normalize(wantPath);
+    const entry = findBestEntry(grf, want);
     if (!entry) {
       console.error(`Not found: ${wantPath}`);
       process.exit(1);
@@ -123,14 +137,33 @@ if (args.dump) {
   process.exit(0);
 }
 
+if (args.icons) {
+  if (!args.grf) {
+    console.error("usage: --icons <out-dir> --grf <file.grf>");
+    process.exit(1);
+  }
+  await extractIcons(args.grf, args.icons, args);
+  process.exit(0);
+}
+
 const fileMap = await collectSourceFiles(args);
 console.log(`Collected ${fileMap.size} source file(s):`);
 for (const [k, v] of fileMap) console.log(`  ${k}  (${v.byteLength} bytes)`);
 
 const job = parseJobNames(fileMap);
 writeJson(`${outDir}/job.json`, job);
+
+const item = parseItemNames(args);
+if (Object.keys(item).length) writeJson(`${outDir}/item.json`, item);
+
+const skill = parseSkillNames(fileMap);
+if (Object.keys(skill).length) writeJson(`${outDir}/skill.json`, skill);
+
 console.log(`\nDone:`);
-console.log(`  job.json — ${Object.keys(job).length} entries`);
+console.log(`  job.json   — ${Object.keys(job).length} entries`);
+console.log(`  item.json  — ${Object.keys(item).length} entries`);
+console.log(`  skill.json — ${Object.keys(skill).length} entries`);
+} // end main()
 
 // ---------------------------------------------------------------------------
 // CLI helpers
@@ -146,6 +179,8 @@ function parseArgs(argv) {
     else if (a === "--dump") out.dump = argv[++i];
     else if (a === "--extract") out.extract = argv[++i];
     else if (a === "--match") out.match = argv[++i];
+    else if (a === "--icons") out.icons = argv[++i];
+    else if (a === "--iteminfo") out.iteminfo = argv[++i];
     else if (a === "-h" || a === "--help") {
       console.error(
         "usage: node tools/build-db.mjs (--grf <file> | --dir <folder> | --list <grf>)",
@@ -165,9 +200,7 @@ async function collectSourceFiles(args) {
     const grf = openGrf(args.grf);
     try {
       for (const want of WANTED_FILES) {
-        const entry = grf.files.find(
-          (f) => normalize(f.filename).endsWith(want),
-        );
+        const entry = findBestEntry(grf, want);
         if (entry) {
           try {
             const bytes = extractFile(grf, entry);
@@ -189,6 +222,21 @@ async function collectSourceFiles(args) {
     });
   }
   return map;
+}
+
+// The merged "Event Horizon" GRF carries several copies of the same logical
+// path (patch layering, `data\\…` double-slash artifacts, `.txt.txt`, etc.).
+// `normalize` collapses repeated slashes so they compare equal; among the
+// matches we keep the largest by uncompressed size, which is the complete,
+// non-truncated copy in practice.
+function findBestEntry(grf, want) {
+  let best = null;
+  for (const f of grf.files) {
+    if (!(f.flags & 0x01)) continue;
+    if (!normalize(f.filename).endsWith(want)) continue;
+    if (!best || f.uncompSize > best.uncompSize) best = f;
+  }
+  return best;
 }
 
 function walkDir(root, cb, base = root) {
@@ -284,7 +332,12 @@ function readFileTableV200(fd, tableStart, entryTrailerBytes = 17) {
     const compSizeAligned = table.readUInt32LE(p + 4);
     const uncompSize = table.readUInt32LE(p + 8);
     const flags = table.readUInt8(p + 12);
-    const offset = table.readUInt32LE(p + 13);
+    // The 0x300 "Event Horizon" fork stores a 64-bit data offset (its 21-byte
+    // trailer = the standard 17 + a high u32), so files appended past the 4 GB
+    // mark — recent patches — resolve correctly. v0x200 is 32-bit.
+    const offsetLow = table.readUInt32LE(p + 13);
+    const offsetHigh = entryTrailerBytes >= 21 ? table.readUInt32LE(p + 17) : 0;
+    const offset = offsetHigh * 0x100000000 + offsetLow;
     p += entryTrailerBytes;
     files.push({ filename, compSize, compSizeAligned, uncompSize, flags, offset });
   }
@@ -312,17 +365,194 @@ function readFileTableV103(fd, tableStart, fileCount, fileSize) {
   return files;
 }
 
+// ---------------------------------------------------------------------------
+// GRF DES decryption — Ragnarok's custom single-round DES with block cycling
+// and a byte shuffle. Ported from grf-loader (vthibault/grf-loader, MIT).
+// Encrypted entries are flagged ENC_MIXED (0x02 — header DES + periodic
+// DES/shuffle) or ENC_HEADER (0x04 — first 20 blocks DES only). Both operate
+// on the *compressed* bytes in place, before inflate.
+// ---------------------------------------------------------------------------
+
+const DES_MASK = new Uint8Array([0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01]);
+const _t = new Uint8Array(8);
+const _t2 = new Uint8Array(8);
+const _zero = new Uint8Array(8);
+
+// prettier-ignore
+const DES_IP = new Uint8Array([
+  58,50,42,34,26,18,10,2, 60,52,44,36,28,20,12,4,
+  62,54,46,38,30,22,14,6, 64,56,48,40,32,24,16,8,
+  57,49,41,33,25,17,9,1,  59,51,43,35,27,19,11,3,
+  61,53,45,37,29,21,13,5, 63,55,47,39,31,23,15,7,
+]);
+// prettier-ignore
+const DES_FP = new Uint8Array([
+  40,8,48,16,56,24,64,32, 39,7,47,15,55,23,63,31,
+  38,6,46,14,54,22,62,30, 37,5,45,13,53,21,61,29,
+  36,4,44,12,52,20,60,28, 35,3,43,11,51,19,59,27,
+  34,2,42,10,50,18,58,26, 33,1,41,9,49,17,57,25,
+]);
+// prettier-ignore
+const DES_TP = new Uint8Array([
+  16,7,20,21, 29,12,28,17, 1,15,23,26, 5,18,31,10,
+  2,8,24,14,  32,27,3,9,   19,13,30,6,  22,11,4,25,
+]);
+// prettier-ignore
+const DES_SBOX = [
+  new Uint8Array([
+    0xef,0x03,0x41,0xfd,0xd8,0x74,0x1e,0x47, 0x26,0xef,0xfb,0x22,0xb3,0xd8,0x84,0x1e,
+    0x39,0xac,0xa7,0x60,0x62,0xc1,0xcd,0xba, 0x5c,0x96,0x90,0x59,0x05,0x3b,0x7a,0x85,
+    0x40,0xfd,0x1e,0xc8,0xe7,0x8a,0x8b,0x21, 0xda,0x43,0x64,0x9f,0x2d,0x14,0xb1,0x72,
+    0xf5,0x5b,0xc8,0xb6,0x9c,0x37,0x76,0xec, 0x39,0xa0,0xa3,0x05,0x52,0x6e,0x0f,0xd9,
+  ]),
+  new Uint8Array([
+    0xa7,0xdd,0x0d,0x78,0x9e,0x0b,0xe3,0x95, 0x60,0x36,0x36,0x4f,0xf9,0x60,0x5a,0xa3,
+    0x11,0x24,0xd2,0x87,0xc8,0x52,0x75,0xec, 0xbb,0xc1,0x4c,0xba,0x24,0xfe,0x8f,0x19,
+    0xda,0x13,0x66,0xaf,0x49,0xd0,0x90,0x06, 0x8c,0x6a,0xfb,0x91,0x37,0x8d,0x0d,0x78,
+    0xbf,0x49,0x11,0xf4,0x23,0xe5,0xce,0x3b, 0x55,0xbc,0xa2,0x57,0xe8,0x22,0x74,0xce,
+  ]),
+  new Uint8Array([
+    0x2c,0xea,0xc1,0xbf,0x4a,0x24,0x1f,0xc2, 0x79,0x47,0xa2,0x7c,0xb6,0xd9,0x68,0x15,
+    0x80,0x56,0x5d,0x01,0x33,0xfd,0xf4,0xae, 0xde,0x30,0x07,0x9b,0xe5,0x83,0x9b,0x68,
+    0x49,0xb4,0x2e,0x83,0x1f,0xc2,0xb5,0x7c, 0xa2,0x19,0xd8,0xe5,0x7c,0x2f,0x83,0xda,
+    0xf7,0x6b,0x90,0xfe,0xc4,0x01,0x5a,0x97, 0x61,0xa6,0x3d,0x40,0x0b,0x58,0xe6,0x3d,
+  ]),
+  new Uint8Array([
+    0x4d,0xd1,0xb2,0x0f,0x28,0xbd,0xe4,0x78, 0xf6,0x4a,0x0f,0x93,0x8b,0x17,0xd1,0xa4,
+    0x3a,0xec,0xc9,0x35,0x93,0x56,0x7e,0xcb, 0x55,0x20,0xa0,0xfe,0x6c,0x89,0x17,0x62,
+    0x17,0x62,0x4b,0xb1,0xb4,0xde,0xd1,0x87, 0xc9,0x14,0x3c,0x4a,0x7e,0xa8,0xe2,0x7d,
+    0xa0,0x9f,0xf6,0x5c,0x6a,0x09,0x8d,0xf0, 0x0f,0xe3,0x53,0x25,0x95,0x36,0x28,0xcb,
+  ]),
+];
+
+const DES_SHUFFLE = (() => {
+  const list = new Uint8Array([
+    0x00, 0x2b, 0x6c, 0x80, 0x01, 0x68, 0x48,
+    0x77, 0x60, 0xff, 0xb9, 0xc0, 0xfe, 0xeb,
+  ]);
+  const out = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) out[i] = i;
+  for (let i = 0; i < list.length; i += 2) {
+    out[list[i]] = list[i + 1];
+    out[list[i + 1]] = list[i];
+  }
+  return out;
+})();
+
+function desInitialPerm(src, index) {
+  for (let i = 0; i < 64; ++i) {
+    const j = DES_IP[i] - 1;
+    if (src[index + ((j >> 3) & 7)] & DES_MASK[j & 7]) _t[(i >> 3) & 7] |= DES_MASK[i & 7];
+  }
+  src.set(_t, index);
+  _t.set(_zero);
+}
+
+function desFinalPerm(src, index) {
+  for (let i = 0; i < 64; ++i) {
+    const j = DES_FP[i] - 1;
+    if (src[index + ((j >> 3) & 7)] & DES_MASK[j & 7]) _t[(i >> 3) & 7] |= DES_MASK[i & 7];
+  }
+  src.set(_t, index);
+  _t.set(_zero);
+}
+
+function desTransposition(src, index) {
+  for (let i = 0; i < 32; ++i) {
+    const j = DES_TP[i] - 1;
+    if (src[index + (j >> 3)] & DES_MASK[j & 7]) _t[(i >> 3) + 4] |= DES_MASK[i & 7];
+  }
+  src.set(_t, index);
+  _t.set(_zero);
+}
+
+function desExpansion(src, index) {
+  _t[0] = ((src[index + 7] << 5) | (src[index + 4] >> 3)) & 0x3f;
+  _t[1] = ((src[index + 4] << 1) | (src[index + 5] >> 7)) & 0x3f;
+  _t[2] = ((src[index + 4] << 5) | (src[index + 5] >> 3)) & 0x3f;
+  _t[3] = ((src[index + 5] << 1) | (src[index + 6] >> 7)) & 0x3f;
+  _t[4] = ((src[index + 5] << 5) | (src[index + 6] >> 3)) & 0x3f;
+  _t[5] = ((src[index + 6] << 1) | (src[index + 7] >> 7)) & 0x3f;
+  _t[6] = ((src[index + 6] << 5) | (src[index + 7] >> 3)) & 0x3f;
+  _t[7] = ((src[index + 7] << 1) | (src[index + 4] >> 7)) & 0x3f;
+  src.set(_t, index);
+  _t.set(_zero);
+}
+
+function desSbox(src, index) {
+  for (let i = 0; i < 4; ++i) {
+    _t[i] =
+      (DES_SBOX[i][src[i * 2 + 0 + index]] & 0xf0) |
+      (DES_SBOX[i][src[i * 2 + 1 + index]] & 0x0f);
+  }
+  src.set(_t, index);
+  _t.set(_zero);
+}
+
+function desRound(src, index) {
+  for (let i = 0; i < 8; i++) _t2[i] = src[index + i];
+  desExpansion(_t2, 0);
+  desSbox(_t2, 0);
+  desTransposition(_t2, 0);
+  src[index + 0] ^= _t2[4];
+  src[index + 1] ^= _t2[5];
+  src[index + 2] ^= _t2[6];
+  src[index + 3] ^= _t2[7];
+}
+
+function desDecryptBlock(src, index) {
+  desInitialPerm(src, index);
+  desRound(src, index);
+  desFinalPerm(src, index);
+}
+
+function desShuffleDec(src, index) {
+  _t[0] = src[index + 3];
+  _t[1] = src[index + 4];
+  _t[2] = src[index + 6];
+  _t[3] = src[index + 0];
+  _t[4] = src[index + 1];
+  _t[5] = src[index + 2];
+  _t[6] = src[index + 5];
+  _t[7] = DES_SHUFFLE[src[index + 7]];
+  src.set(_t, index);
+  _t.set(_zero);
+}
+
+// ENC_MIXED: first 20 blocks DES-decrypted; thereafter every `cycle`-th block
+// is DES-decrypted and every 7th remaining block is de-shuffled. `entryLength`
+// is the *compressed* size and drives the cycle gap.
+function desDecodeFull(src, length, entryLength) {
+  const digits = entryLength.toString().length;
+  const cycle =
+    digits < 3 ? 1 : digits < 5 ? digits + 1 : digits < 7 ? digits + 9 : digits + 15;
+  const nblocks = length >> 3;
+  for (let i = 0; i < 20 && i < nblocks; ++i) desDecryptBlock(src, i * 8);
+  for (let i = 20, j = -1; i < nblocks; ++i) {
+    if (i % cycle === 0) {
+      desDecryptBlock(src, i * 8);
+      continue;
+    }
+    if (++j && j % 7 === 0) desShuffleDec(src, i * 8);
+  }
+}
+
+// ENC_HEADER: only the first 20 blocks are DES-decrypted; the rest is plaintext.
+function desDecodeHeader(src, length) {
+  const count = length >> 3;
+  for (let i = 0; i < 20 && i < count; ++i) desDecryptBlock(src, i * 8);
+}
+
 function extractFile(grf, entry) {
   const FILE_BIT = 0x01;
   const ENC_MIXED = 0x02;
   const ENC_HEADER = 0x04;
   if (!(entry.flags & FILE_BIT)) return new Uint8Array(0);
-  if (entry.flags & (ENC_MIXED | ENC_HEADER)) {
-    throw new Error(
-      `encrypted file (flags=0x${entry.flags.toString(16)}) not supported`,
-    );
-  }
   const raw = readBytes(grf.fd, entry.compSizeAligned, 0x2e + entry.offset);
+  if (entry.flags & ENC_MIXED) desDecodeFull(raw, entry.compSizeAligned, entry.compSize);
+  else if (entry.flags & ENC_HEADER) desDecodeHeader(raw, entry.compSizeAligned);
+  // Stored (not deflated) when compressed size == real size.
+  if (entry.uncompSize === entry.compSize) return raw;
   return inflateSync(raw);
 }
 
@@ -348,10 +578,7 @@ async function extractAll(grfPath, outDir, matchPattern) {
       const entry = grf.files[i];
       if (!(entry.flags & 0x01)) continue;
       if (re && !re.test(entry.filename)) continue;
-      if (entry.flags & 0x06) {
-        encrypted++;
-        continue;
-      }
+      if (entry.flags & 0x06) encrypted++; // decrypted in extractFile; just track count
 
       const safe = sanitizePath(entry.filename);
       if (!safe) {
@@ -359,7 +586,7 @@ async function extractAll(grfPath, outDir, matchPattern) {
         continue;
       }
       const dest = join(root, safe);
-      const dir = dest.substring(0, dest.lastIndexOf("/"));
+      const dir = dirname(dest);
       try {
         if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
         const data = extractFile(grf, entry);
@@ -387,7 +614,7 @@ async function extractAll(grfPath, outDir, matchPattern) {
   console.error(
     `\nExtracted ${written} file(s), ${(bytes / 1e9).toFixed(2)} GB to ${root} in ${dur}s.`,
   );
-  if (encrypted) console.error(`Skipped ${encrypted} encrypted file(s).`);
+  if (encrypted) console.error(`Decrypted ${encrypted} encrypted file(s).`);
   if (skipped) console.error(`Skipped ${skipped} unreadable/invalid file(s).`);
 }
 
@@ -498,24 +725,6 @@ function parseFunction(ctx) {
 // Job parser
 // ---------------------------------------------------------------------------
 
-function parseJobAndMobIds(map) {
-  const npcBytes =
-    map.get("data/luafiles514/lua files/datainfo/npcidentity.lub") ??
-    map.get("data/luafiles514/lua files/datainfo/npcidentity.lua");
-  const jt = new Map();
-  if (!npcBytes) return jt;
-  const consts = parseLua51Constants(npcBytes);
-  if (!consts) return jt;
-  for (let i = 0; i + 1 < consts.length; i++) {
-    const a = consts[i];
-    const b = consts[i + 1];
-    if (a.type === "string" && /^JT_/.test(a.value) && b.type === "number") {
-      if (!jt.has(a.value)) jt.set(a.value, b.value);
-    }
-  }
-  return jt;
-}
-
 function parseJobNames(map) {
   const out = {};
 
@@ -578,21 +787,399 @@ function parseJobNames(map) {
     if (label) out[id] = label;
   }
 
-  // NPC sprite fallbacks for ids not covered by pcjobnamegender.
-  const jt = parseJobAndMobIds(map);
-  for (const [name, id] of jt) {
-    if (out[id]) continue;
-    out[id] = humanizeJtName(name);
+  // Player classes only — no NPC/mob sprite fallback. Mob names aren't in the
+  // client (they're server-side); they come from Divine Pride at runtime.
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Item names — `idnum2itemdisplaynametable.txt` is plain text, one `id#Nome#`
+// per line, CP1252-encoded (Portuguese accents are single bytes). Lines
+// starting with `//` are comments.
+// ---------------------------------------------------------------------------
+
+function parseItemNames(args) {
+  // Single source: the live, daily-patched System/iteminfo_new.lub — it has
+  // every item (incl. modern equipment) with the correct identified name.
+  const lubPath = resolveItemInfoPath(args);
+  if (!lubPath) {
+    throw new Error(
+      "iteminfo_new.lub not found next to the GRF (System/) — pass --iteminfo <path>",
+    );
+  }
+  console.log(`  (items from ${lubPath})`);
+  return parseItemInfoLub(readFileSync(lubPath));
+}
+
+// System/iteminfo_new.lub is a sibling of data.grf. Allow an explicit override
+// via --iteminfo; otherwise look next to the GRF (or the --dir root).
+function resolveItemInfoPath(args) {
+  if (args.iteminfo) return existsSync(args.iteminfo) ? args.iteminfo : null;
+  const roots = [];
+  if (args.grf) roots.push(join(dirname(resolve(args.grf)), "System"));
+  if (args.dir) roots.push(join(resolve(args.dir), "System"), resolve(args.dir));
+  for (const root of roots) {
+    for (const name of ["iteminfo_new.lub", "itemInfo.lub", "iteminfo.lub"]) {
+      const p = join(root, name);
+      // Skip the tiny stub itemInfo.lub (a few hundred bytes that just chains
+      // to the real table).
+      if (existsSync(p) && statSync(p).size > 4096) return p;
+    }
+  }
+  return null;
+}
+
+function parseItemInfoLub(bytes) {
+  const tbl = runChunk(bytes).get("tbl");
+  const out = {};
+  if (!(tbl instanceof LuaTable)) return out;
+  for (const [id, entry] of tbl.map) {
+    if (typeof id !== "number" || !(entry instanceof LuaTable)) continue;
+    let name = decodeClientString(entry.get("identifiedDisplayName"));
+    if (!name) continue;
+    // Append the slot count for slotted gear, matching the in-client display
+    // ("Faca" -> "Faca [3]"). itemInfo stores it numerically; 0 = no slots.
+    const slots = entry.get("slotCount");
+    if (typeof slots === "number" && slots > 0) name += ` [${Math.round(slots)}]`;
+    out[String(id)] = { name };
   }
   return out;
 }
 
-function humanizeJtName(jt) {
-  return jt
-    .replace(/^JT_/, "")
-    .toLowerCase()
-    .split("_")
-    .filter(Boolean)
-    .map((s) => s[0].toUpperCase() + s.slice(1))
-    .join(" ");
+// ---------------------------------------------------------------------------
+// Skill names — execute the client's Lua data tables through the VM:
+//   skillid.lub            defines the SKID table (const -> numeric skill id)
+//   skillinfolist_ptbr.lub builds SkillInfoList keyed by [SKID.x] = { SkillName }
+// skillid runs first so SKID resolves; we then read the SkillName off the
+// resulting table, covering every skill (incl. 4th-class).
+// ---------------------------------------------------------------------------
+
+function parseSkillNames(map) {
+  const skillId =
+    map.get("data/luafiles514/lua files/skillinfoz/skillid.lub") ??
+    map.get("data/luafiles514/lua files/skillinfoz/skillid.lua");
+  const skillInfo =
+    map.get("data/luafiles514/lua files/skillinfoz/skillinfolist_ptbr.lub") ??
+    map.get("data/luafiles514/lua files/skillinfoz/skillinfolist_ptbr.lua");
+  if (!skillId || !skillInfo) {
+    throw new Error("skillid.lub / skillinfolist_ptbr.lub not found in GRF");
+  }
+  const g = new LuaTable();
+  runChunkInto(skillId, g); // populate SKID
+  runChunkInto(skillInfo, g); // build SkillInfoList keyed by numeric id
+  // The result is the largest table global that isn't SKID.
+  let list = null;
+  for (const [k, v] of g.map) {
+    if (k === "SKID") continue;
+    if (v instanceof LuaTable && (!list || v.map.size > list.map.size)) list = v;
+  }
+  const out = {};
+  if (list) {
+    for (const [id, entry] of list.map) {
+      if (typeof id !== "number" || !(entry instanceof LuaTable)) continue;
+      const name = decodeClientString(entry.get("SkillName"));
+      if (name) out[String(id)] = { name };
+    }
+  }
+  return out;
 }
+
+// SKID const -> numeric id, read from skillid.lub's constant pool. Used by the
+// icon extractor to map a skill's icon file (named after the const) to its id.
+function parseSkillIds(map) {
+  const ids = new Map();
+  const bytes =
+    map.get("data/luafiles514/lua files/skillinfoz/skillid.lub") ??
+    map.get("data/luafiles514/lua files/skillinfoz/skillid.lua");
+  if (!bytes) return ids;
+  const consts = parseLua51Constants(bytes);
+  if (!consts) return ids;
+  for (let i = 0; i + 1 < consts.length; i++) {
+    const a = consts[i];
+    const b = consts[i + 1];
+    if (a.type === "string" && a.value !== "SKID" && b.type === "number") {
+      if (!ids.has(a.value)) ids.set(a.value, b.value);
+    }
+  }
+  return ids;
+}
+
+// ---------------------------------------------------------------------------
+// Icon extraction — decodes each BMP to a transparent PNG keyed by numeric id:
+//   <out>/item/<id>.png        inventory icon   (item\<resname>.bmp)
+//   <out>/collection/<id>.png  description image (collection\<resname>.bmp)
+//   <out>/skill/<id>.png        skill icon       (item\<skid-const>.bmp)
+//   <out>/job/<id>.png          class icon       (renewalparty\icon_jobs_<id>.bmp)
+// resnames come from idnum2itemresnametable.txt (EUC-KR, Korean sprite names);
+// skill icon filenames are the lowercased SKID constant. Magenta (#FF00FF) is
+// mapped to transparent.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// BMP -> PNG conversion. RO icons are uncompressed BMPs (8-bit palettized,
+// some 24/32-bit) that use magenta #FF00FF as the transparency colorkey. We
+// decode to RGBA (keying magenta -> alpha 0) and re-encode as a PNG using only
+// node:zlib — no external image library.
+// ---------------------------------------------------------------------------
+
+function bmpToRgba(buf) {
+  const b = Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength);
+  if (b.length < 54 || b[0] !== 0x42 || b[1] !== 0x4d) return null; // "BM"
+  const dataOffset = b.readUInt32LE(10);
+  const dibSize = b.readUInt32LE(14);
+  const w = b.readInt32LE(18);
+  const rawH = b.readInt32LE(22);
+  const bpp = b.readUInt16LE(28);
+  const compression = b.readUInt32LE(30);
+  if (compression !== 0 || w <= 0 || rawH === 0) return null; // BI_RGB only
+  const topDown = rawH < 0;
+  const h = Math.abs(rawH);
+
+  let palette = null;
+  if (bpp <= 8) {
+    let palCount = b.readUInt32LE(46); // biClrUsed
+    if (!palCount) palCount = 1 << bpp;
+    const palStart = 14 + dibSize;
+    palette = new Array(palCount);
+    for (let i = 0; i < palCount; i++) {
+      const o = palStart + i * 4; // stored BGRA
+      palette[i] = [b[o + 2], b[o + 1], b[o]];
+    }
+  } else if (bpp !== 24 && bpp !== 32) {
+    return null; // unsupported depth
+  }
+
+  const rowSize = Math.floor((bpp * w + 31) / 32) * 4; // padded to 4 bytes
+  const rgba = Buffer.alloc(w * h * 4);
+  for (let row = 0; row < h; row++) {
+    const srcRow = topDown ? row : h - 1 - row; // BMP rows are bottom-up
+    const srcBase = dataOffset + srcRow * rowSize;
+    for (let x = 0; x < w; x++) {
+      let r, g, bl;
+      if (bpp === 8) {
+        const p = palette[b[srcBase + x]] || [0, 0, 0];
+        [r, g, bl] = p;
+      } else if (bpp === 4) {
+        const byte = b[srcBase + (x >> 1)];
+        const p = palette[x & 1 ? byte & 0x0f : byte >> 4] || [0, 0, 0];
+        [r, g, bl] = p;
+      } else if (bpp === 1) {
+        const byte = b[srcBase + (x >> 3)];
+        const p = palette[(byte >> (7 - (x & 7))) & 1] || [0, 0, 0];
+        [r, g, bl] = p;
+      } else if (bpp === 24) {
+        const o = srcBase + x * 3;
+        bl = b[o]; g = b[o + 1]; r = b[o + 2];
+      } else {
+        const o = srcBase + x * 4; // 32bpp BGRA — ignore stored alpha
+        bl = b[o]; g = b[o + 1]; r = b[o + 2];
+      }
+      const di = (row * w + x) * 4;
+      rgba[di] = r;
+      rgba[di + 1] = g;
+      rgba[di + 2] = bl;
+      rgba[di + 3] = r === 255 && g === 0 && bl === 255 ? 0 : 255; // magenta key
+    }
+  }
+  return { width: w, height: h, rgba };
+}
+
+const PNG_CRC = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = PNG_CRC[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body), 0);
+  return Buffer.concat([len, body, crc]);
+}
+
+function encodePng(width, height, rgba) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // color type RGBA
+  // 10..12 = compression / filter / interlace = 0
+  const stride = width * 4;
+  const raw = Buffer.alloc((stride + 1) * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * (stride + 1)] = 0; // filter: none
+    rgba.copy(raw, y * (stride + 1) + 1, y * stride, y * stride + stride);
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(raw)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function bmpToPng(bmpBytes) {
+  const decoded = bmpToRgba(bmpBytes);
+  if (!decoded) return null;
+  return encodePng(decoded.width, decoded.height, decoded.rgba);
+}
+
+const UI = "data/texture/유저인터페이스"; // "user interface" texture root
+
+// id -> icon resource name (lowercased). The live System/iteminfo_new.lub is
+// authoritative and complete (modern equipment like 450147 = "Illusion_Armor_A"
+// is only there); the legacy GRF idnum2itemresnametable.txt fills any gaps.
+function buildResNameMap(args) {
+  const out = new Map();
+  const lubPath = resolveItemInfoPath(args);
+  if (!lubPath) {
+    throw new Error(
+      "iteminfo_new.lub not found next to the GRF (System/) — pass --iteminfo <path>",
+    );
+  }
+  const tbl = runChunk(readFileSync(lubPath)).get("tbl");
+  if (tbl instanceof LuaTable) {
+    for (const [id, entry] of tbl.map) {
+      if (typeof id !== "number" || !(entry instanceof LuaTable)) continue;
+      const res =
+        decodeClientString(entry.get("identifiedResourceName")) ||
+        decodeClientString(entry.get("unidentifiedResourceName"));
+      if (res) out.set(String(id), res.toLowerCase());
+    }
+  }
+  return out;
+}
+
+function indexIcons(grf) {
+  // normalized filename -> best entry, limited to the icon folders we need.
+  const idx = new Map();
+  const itemDir = `${UI}/item/`;
+  const collDir = `${UI}/collection/`;
+  const jobPrefix = `${UI}/renewalparty/icon_jobs_`;
+  for (const f of grf.files) {
+    if (!(f.flags & 0x01)) continue;
+    const n = normalize(f.filename);
+    if (!n.endsWith(".bmp")) continue;
+    if (
+      !n.startsWith(itemDir) &&
+      !n.startsWith(collDir) &&
+      !n.startsWith(jobPrefix)
+    )
+      continue;
+    const prev = idx.get(n);
+    if (!prev || f.uncompSize > prev.uncompSize) idx.set(n, f);
+  }
+  return idx;
+}
+
+function extractIcons(grfPath, outBase, args) {
+  const grf = openGrf(grfPath);
+  try {
+    const root = resolve(outBase);
+    const dirs = {
+      item: join(root, "item"),
+      collection: join(root, "collection"),
+      skill: join(root, "skill"),
+      job: join(root, "job"),
+    };
+    for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
+
+    console.error("Indexing icon entries…");
+    const idx = indexIcons(grf);
+    console.error(`  ${idx.size} icon files indexed`);
+
+    const counts = { item: 0, collection: 0, skill: 0, job: 0 };
+    const fails = { extract: 0, convert: 0 };
+    const writeIcon = (kind, id, entry) => {
+      let bmp;
+      try {
+        bmp = extractFile(grf, entry);
+      } catch {
+        fails.extract++;
+        return false;
+      }
+      const png = bmpToPng(bmp);
+      if (!png) {
+        fails.convert++;
+        return false;
+      }
+      writeFileSync(join(dirs[kind], `${id}.png`), png);
+      counts[kind]++;
+      return true;
+    };
+
+    // Item inventory + collection icons, keyed by resource name.
+    const resNames = buildResNameMap(args);
+    for (const [id, res] of resNames) {
+      const itemEntry = idx.get(`${UI}/item/${res}.bmp`);
+      if (itemEntry) writeIcon("item", id, itemEntry);
+      const collEntry = idx.get(`${UI}/collection/${res}.bmp`);
+      if (collEntry) writeIcon("collection", id, collEntry);
+    }
+
+    // Skill icons share the item folder, named after the lowercased SKID const.
+    const fileMap = collectGrfFiles(grf, [
+      "data/luafiles514/lua files/skillinfoz/skillid.lub",
+      "data/luafiles514/lua files/skillinfoz/skillid.lua",
+    ]);
+    const skillIds = parseSkillIds(fileMap);
+    for (const [konst, id] of skillIds) {
+      const entry = idx.get(`${UI}/item/${konst.toLowerCase()}.bmp`);
+      if (entry) writeIcon("skill", id, entry);
+    }
+
+    // Class icons keyed directly by numeric job id (skip the _die variants).
+    const jobRe = new RegExp(
+      `${UI.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/renewalparty/icon_jobs_(\\d+)\\.bmp$`,
+    );
+    const jobFailed = [];
+    for (const [name, entry] of idx) {
+      const m = name.match(jobRe);
+      if (m && !writeIcon("job", m[1], entry)) jobFailed.push(Number(m[1]));
+    }
+
+    console.error(
+      `\nIcons (PNG) → ${root}\n  item: ${counts.item}  collection: ${counts.collection}  skill: ${counts.skill}  job: ${counts.job}` +
+        (fails.extract ? `\n  ${fails.extract} entry(s) failed to extract` : "") +
+        (fails.convert ? `\n  ${fails.convert} BMP(s) skipped (unsupported encoding)` : ""),
+    );
+    if (jobFailed.length)
+      console.error(`  job ids not written: ${jobFailed.sort((a, b) => a - b).join(", ")}`);
+  } finally {
+    closeGrf(grf);
+  }
+}
+
+// Pull a small set of named files from an already-open GRF into a name->bytes
+// map (same keying as collectSourceFiles, but without reopening the archive).
+function collectGrfFiles(grf, wants) {
+  const map = new Map();
+  for (const want of wants) {
+    const entry = findBestEntry(grf, want);
+    if (entry) {
+      try {
+        map.set(want, extractFile(grf, entry));
+      } catch {
+        /* skip */
+      }
+    }
+  }
+  return map;
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
