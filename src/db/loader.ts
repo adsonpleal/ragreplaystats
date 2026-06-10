@@ -21,6 +21,12 @@ export type ReferenceDb = {
    * every class, not just the ones present in the current data set.
    */
   pcClassNames(): string[];
+  /**
+   * Job/view id whose sprite represents a given pc class name, for showing a
+   * class icon next to the name. Returns the first `PC_JOB_IDS` entry that
+   * resolves to `name`, or `undefined` when the name isn't a known pc class.
+   */
+  pcClassIconId(name: string): number | undefined;
 };
 
 /**
@@ -68,7 +74,10 @@ export async function loadReferenceDb(base = "./db"): Promise<ReferenceDb> {
 
   // Compute once at load time — the underlying `job` map is immutable for
   // the session, so the result is too.
-  const cachedPcClassNames = computePcClassNames(job);
+  const cachedClassIcons = computePcClassIcons(job);
+  const cachedPcClassNames = [...cachedClassIcons.keys()].sort((a, b) =>
+    a.localeCompare(b, "pt-BR"),
+  );
 
   return {
     job,
@@ -78,16 +87,24 @@ export async function loadReferenceDb(base = "./db"): Promise<ReferenceDb> {
     resolveJob: (id: number) => job[String(id)] ?? `job#${id}`,
     resolveItem: (id: number) => getItemName(id) ?? `item#${id}`,
     pcClassNames: () => cachedPcClassNames,
+    pcClassIconId: (name: string) => cachedClassIcons.get(name),
   };
 }
 
-function computePcClassNames(job: Record<string, JobInfo>): string[] {
-  const distinct = new Set<string>();
+/**
+ * Map each distinct pc class name to a representative view id (the first
+ * `PC_JOB_IDS` entry resolving to it), used both for the dropdown list and
+ * for picking which job sprite to show beside the name.
+ */
+function computePcClassIcons(job: Record<string, JobInfo>): Map<string, number> {
+  const byName = new Map<string, number>();
   for (const id of PC_JOB_IDS) {
     const name = job[String(id)];
     // Drop the `job#<id>` fallback so alt-sprites missing from the GRF
     // don't clutter the list — base-class names cover them either way.
-    if (name && !/^job#\d+$/.test(name)) distinct.add(name);
+    if (name && !/^job#\d+$/.test(name) && !byName.has(name)) {
+      byName.set(name, id);
+    }
   }
-  return [...distinct].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return byName;
 }

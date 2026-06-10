@@ -186,6 +186,9 @@ body {
 }
 
 .leaderboard-combobox-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.4rem 0.7rem;
   cursor: pointer;
   font-size: 0.95rem;
@@ -821,6 +824,21 @@ main > section {
   flex-shrink: 0;
   width: 24px;
   height: 24px;
+  image-rendering: pixelated;
+}
+
+/* Class name + job icon, used in any table cell that shows a player class. */
+.class-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.class-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
   image-rendering: pixelated;
 }
 

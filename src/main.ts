@@ -1690,6 +1690,29 @@ function playerLevel(replay: Replay, aid: number): number {
   return replay.entities.get(aid)?.level ?? 0;
 }
 
+/**
+ * Render a class cell: the job icon (keyed by the entity's view id) followed
+ * by the resolved class name. The icon is dropped when the class is unknown
+ * or the sprite asset is missing, so the cell degrades to plain text.
+ */
+function renderClassCell(replay: Replay, aid: number, td: HTMLTableCellElement) {
+  const name = playerClass(replay, aid);
+  const span = document.createElement("span");
+  span.className = "class-cell";
+  const view = replay.entities.get(aid)?.view;
+  if (view && name !== t.none) {
+    const img = document.createElement("img");
+    img.className = "class-icon";
+    img.src = `./icons/job/${view}.png`;
+    img.alt = "";
+    img.loading = "lazy";
+    img.addEventListener("error", () => img.remove());
+    span.appendChild(img);
+  }
+  span.appendChild(document.createTextNode(name));
+  td.appendChild(span);
+}
+
 function effectiveMaxHp(rawMaxHp: number, view: number): number {
   if (rawMaxHp > 0) return rawMaxHp;
   return state.db?.resolveMobHp(view) ?? 0;
@@ -1808,7 +1831,7 @@ function renderByPlayerMode(replay: Replay) {
       {
         key: "class",
         label: t.colClass,
-        format: (r) => playerClass(replay, r.aid),
+        render: (r, td) => renderClassCell(replay, r.aid, td),
         sortValue: (r) => playerClass(replay, r.aid),
       },
       {
@@ -2101,7 +2124,7 @@ function renderByMonsterMode(replay: Replay) {
       {
         key: "class",
         label: t.colClass,
-        format: (r) => playerClass(replay, r.aid),
+        render: (r, td) => renderClassCell(replay, r.aid, td),
         sortValue: (r) => playerClass(replay, r.aid),
       },
       {
@@ -2337,7 +2360,7 @@ function renderMobVictims(
       {
         key: "class",
         label: t.colClass,
-        format: (r) => playerClass(replay, r.aid),
+        render: (r, td) => renderClassCell(replay, r.aid, td),
         sortValue: (r) => playerClass(replay, r.aid),
       },
       {
@@ -2561,7 +2584,7 @@ function renderSkillByPlayerTable(
       {
         key: "class",
         label: t.colClass,
-        format: (r) => playerClass(state.replay!, r.playerAid),
+        render: (r, td) => renderClassCell(state.replay!, r.playerAid, td),
         sortValue: (r) => playerClass(state.replay!, r.playerAid),
       },
       { key: "count", label: t.colHits, numeric: true, format: (r) => fmt(r.count) },

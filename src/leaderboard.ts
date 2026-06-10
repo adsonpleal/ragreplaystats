@@ -66,7 +66,7 @@ export function setLeaderboardDb(next: ReferenceDb) {
 // own little state machine (query / open / active-row).
 // ---------------------------------------------------------------------------
 
-type ComboboxItem = { value: string; label: string };
+type ComboboxItem = { value: string; label: string; iconSrc?: string };
 
 type ComboboxOptions = {
   inputSelector: string;
@@ -144,7 +144,16 @@ function createCombobox(opts: ComboboxOptions): Combobox {
       li.role = "option";
       li.className =
         "leaderboard-combobox-option" + (i === active ? " is-active" : "");
-      li.textContent = o.label;
+      if (o.iconSrc) {
+        const img = document.createElement("img");
+        img.className = "class-icon";
+        img.src = o.iconSrc;
+        img.alt = "";
+        img.loading = "lazy";
+        img.addEventListener("error", () => img.remove());
+        li.appendChild(img);
+      }
+      li.appendChild(document.createTextNode(o.label));
       if (o.value === opts.getSelectedValue())
         li.setAttribute("aria-selected", "true");
       // mousedown rather than click so we beat the input's blur handler.
@@ -233,7 +242,12 @@ const classCombobox = createCombobox({
       { value: CLASS_ALL_VALUE, label: t.leaderboardClassAll },
     ];
     for (const name of db?.pcClassNames() ?? []) {
-      items.push({ value: name, label: name });
+      const iconId = db?.pcClassIconId(name);
+      items.push({
+        value: name,
+        label: name,
+        iconSrc: iconId != null ? `./icons/job/${iconId}.png` : undefined,
+      });
     }
     // "(Sem classe)" only when there's something to fall into that bucket.
     if (anyClasslessRecord()) {
