@@ -2,6 +2,54 @@ import { ByteReader } from "../reader.js";
 import type { ItemAddEvent, ItemDeleteEvent } from "../types.js";
 
 /**
+ * Raw shape of an equip/take-off ack before the orchestrator resolves the
+ * item identity from the running inventory snapshot.
+ */
+export type EquipChangePacket = {
+  time: number;
+  slot: number;
+  location: number;
+  equipped: boolean;
+  /** True only when the server reported the action succeeded (result === 0). */
+  success: boolean;
+};
+
+/**
+ * 0x0999 — ZC_ACK_WEAR_EQUIP_V5 (11 bytes incl. pkt id).
+ *   index u16, wearLocation u32, wItemSpriteNumber u16, result u8
+ *
+ * `result === 0` (EQUIP_ITEM_SUCCESS) means the item was actually worn; any
+ * other value is a failure (level/job/refine restriction) and is dropped.
+ * `index` is the server slot (logical slot + 2), matching 0x07fa/0x0a37.
+ */
+export function decodeWearEquip(
+  reader: ByteReader,
+  time: number,
+): EquipChangePacket {
+  const slot = reader.u16() - 2;
+  const location = reader.u32();
+  reader.u16(); // wItemSpriteNumber (view id, not the item id)
+  const result = reader.u8();
+  return { time, slot, location, equipped: true, success: result === 0 };
+}
+
+/**
+ * 0x099a — ZC_ACK_TAKEOFF_EQUIP_V5 (9 bytes incl. pkt id).
+ *   index u16, wearLocation u32, result u8
+ *
+ * `result === 0` (UNEQUIP_ITEM_SUCCESS) means the item was removed.
+ */
+export function decodeTakeoffEquip(
+  reader: ByteReader,
+  time: number,
+): EquipChangePacket {
+  const slot = reader.u16() - 2;
+  const location = reader.u32();
+  const result = reader.u8();
+  return { time, slot, location, equipped: false, success: result === 0 };
+}
+
+/**
  * 0x07fa — ZC_DELETE_ITEM_FROM_BODY (8 bytes incl. pkt id).
  *   reason u16, index u16, amount u16
  *

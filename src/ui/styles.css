@@ -743,6 +743,47 @@ main > section {
   color: var(--fg);
 }
 
+.equip-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+}
+
+.equip-arrow {
+  background: transparent;
+  border: 1px solid var(--border, color-mix(in srgb, var(--fg) 18%, transparent));
+  border-radius: 0.35rem;
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0.1rem 0.5rem;
+}
+
+.equip-arrow:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.equip-arrow:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.equip-page-counter {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--fg);
+  min-width: 2.5rem;
+  text-align: center;
+}
+
+.equip-page-caption {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .section-hint {
   margin: 0 0 0.5rem;
   color: var(--muted);

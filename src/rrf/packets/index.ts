@@ -24,6 +24,9 @@ import {
   decodeItemAdd,
   decodeItemDelete,
   decodeItemUseAck,
+  decodeTakeoffEquip,
+  decodeWearEquip,
+  type EquipChangePacket,
   type ItemUseAckPacket,
 } from "./inventory.js";
 import { decodeParamChange32, decodeParamChange64 } from "./stats.js";
@@ -66,6 +69,8 @@ export const PacketIds = {
   ITEM_DELETE: 0x07fa,
   ITEM_ADD: 0x0a37,
   ITEM_USE_ACK: 0x01c8,
+  WEAR_EQUIP: 0x0999,
+  TAKEOFF_EQUIP: 0x099a,
   PARAM_CHANGE_32: 0x00b0,
   PARAM_CHANGE_64: 0x0b1b,
   STATUS_0196: 0x0196,
@@ -86,6 +91,7 @@ export type DecodedPacket =
   | { type: "itemDelete"; data: ItemDeleteEvent }
   | { type: "itemAdd"; data: ItemAddEvent }
   | { type: "itemUseAck"; data: ItemUseAckPacket }
+  | { type: "equipChange"; data: EquipChangePacket }
   | { type: "paramChange"; data: ParamChangeEvent }
   | { type: "status"; data: StatusEvent }
   | { type: "groundSkillEntry"; data: GroundSkillEntry }
@@ -136,6 +142,10 @@ export function decodePacket(
         return { type: "itemAdd", data: decodeItemAdd(reader, time) };
       case PacketIds.ITEM_USE_ACK:
         return { type: "itemUseAck", data: decodeItemUseAck(reader, time) };
+      case PacketIds.WEAR_EQUIP:
+        return { type: "equipChange", data: decodeWearEquip(reader, time) };
+      case PacketIds.TAKEOFF_EQUIP:
+        return { type: "equipChange", data: decodeTakeoffEquip(reader, time) };
       case PacketIds.PARAM_CHANGE_32:
         return { type: "paramChange", data: decodeParamChange32(reader, time) };
       case PacketIds.PARAM_CHANGE_64:

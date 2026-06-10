@@ -48,7 +48,7 @@ import { renderBarChart } from "./ui/bar-chart.js";
 import { renderDamageMulti } from "./ui/dps-chart.js";
 import { renderLineChart } from "./ui/line-chart.js";
 import { renderSummaryCard, type SummaryCell } from "./ui/stats-summary.js";
-import { renderTable } from "./ui/table.js";
+import { type Column, renderTable } from "./ui/table.js";
 import { renderTimelineBrush } from "./ui/timeline-brush.js";
 import { renderDpsScatter } from "./ui/dps-scatter.js";
 import {
@@ -1141,92 +1141,201 @@ type EquippedRow = {
   cards: number[];
 };
 
+/** Map an equipLocation bitmask to its primary display slot (first matching). */
+function primaryEquipSlot(mask: number): { order: number; label: string } {
+  for (let i = 0; i < EQUIP_SLOTS.length; i++) {
+    const [bit, label] = EQUIP_SLOTS[i];
+    if (mask & bit) return { order: i, label: label() };
+  }
+  return { order: EQUIP_SLOTS.length, label: t.slotOther };
+}
+
+type EquipPage = {
+  /** ms into the session this set became active (0 = recording start). */
+  timeMs: number;
+  rows: EquippedRow[];
+  /** slotOrder values whose item changed to reach this page (for highlight). */
+  changedSlots: Set<number>;
+};
+
+// Near-simultaneous equip events (a take-off immediately followed by the
+// matching wear, or a quick multi-slot outfit swap) collapse into one page so
+// a single outfit change reads as a single step.
+const EQUIP_PAGE_GROUP_MS = 250;
+
+/**
+ * Walk `replay.equipChanges` to produce the equipment timeline: page 0 is the
+ * set worn at recording start, then one page per (grouped) change showing the
+ * full worn set at that moment.
+ */
+function buildEquipmentPages(replay: Replay): EquipPage[] {
+  const itemResolver = (id: number) =>
+    state.db?.resolveItem(id) ?? t.itemFallback(id);
+  const rowFor = (
+    order: number,
+    label: string,
+    itemId: number,
+    refine: number,
+    cards: number[],
+  ): EquippedRow => ({
+    slotOrder: order,
+    slotLabel: label,
+    itemId,
+    itemName: itemResolver(itemId),
+    refine,
+    cards: cards.filter((c) => c > 0),
+  });
+
+  // Current worn set keyed by primary slot order.
+  const worn = new Map<number, EquippedRow>();
+  for (const inv of replay.initialInventory.values()) {
+    if (!inv.equipped || !inv.itemId) continue;
+    const { order, label } = primaryEquipSlot(inv.equipped);
+    worn.set(order, rowFor(order, label, inv.itemId, inv.refine, inv.cards));
+  }
+  const snapshot = () =>
+    [...worn.values()].sort((a, b) => a.slotOrder - b.slotOrder);
+
+  const pages: EquipPage[] = [
+    { timeMs: 0, rows: snapshot(), changedSlots: new Set() },
+  ];
+
+  const changes = [...replay.equipChanges].sort((a, b) => a.time - b.time);
+  let i = 0;
+  while (i < changes.length) {
+    const start = changes[i].time;
+    const changedSlots = new Set<number>();
+    let last = start;
+    while (i < changes.length && changes[i].time - last <= EQUIP_PAGE_GROUP_MS) {
+      const c = changes[i];
+      const { order, label } = primaryEquipSlot(c.location);
+      if (c.equipped) {
+        worn.set(order, rowFor(order, label, c.itemId, c.refine, c.cards));
+      } else {
+        worn.delete(order);
+      }
+      changedSlots.add(order);
+      last = c.time;
+      i++;
+    }
+    pages.push({ timeMs: start, rows: snapshot(), changedSlots });
+  }
+  return pages;
+}
+
 function renderEquipment(replay: Replay) {
   const host = $("#equipment-pane");
   const itemResolver = (id: number) =>
     state.db?.resolveItem(id) ?? t.itemFallback(id);
 
-  const rows: EquippedRow[] = [];
-  for (const inv of replay.initialInventory.values()) {
-    if (!inv.equipped) continue;
-    if (!inv.itemId) continue;
-    let slotOrder = EQUIP_SLOTS.length;
-    let slotLabel = t.slotOther;
-    for (let i = 0; i < EQUIP_SLOTS.length; i++) {
-      const [bit, label] = EQUIP_SLOTS[i];
-      if (inv.equipped & bit) {
-        slotOrder = i;
-        slotLabel = label();
-        break;
-      }
-    }
-    rows.push({
-      slotOrder,
-      slotLabel,
-      itemId: inv.itemId,
-      itemName: itemResolver(inv.itemId),
-      refine: inv.refine,
-      cards: inv.cards.filter((c) => c > 0),
-    });
-  }
-
-  if (!rows.length) {
+  const pages = buildEquipmentPages(replay);
+  // Nothing worn at any point — keep the pane empty (matches prior behaviour).
+  if (pages.length === 1 && pages[0].rows.length === 0) {
     host.innerHTML = "";
     return;
   }
-  rows.sort((a, b) => a.slotOrder - b.slotOrder);
+
+  const columns: Column<EquippedRow>[] = [
+    {
+      key: "itemId",
+      label: t.colId,
+      format: (r) => String(r.itemId),
+      href: (r) => itemDpUrl(r.itemId),
+    },
+    { key: "slotLabel", label: t.colSlot, sortValue: (r) => r.slotOrder },
+    { key: "itemName", label: t.colItem },
+    {
+      key: "refine",
+      label: t.colRefine,
+      numeric: true,
+      format: (r) => (r.refine > 0 ? `+${r.refine}` : t.none),
+      sortValue: (r) => r.refine,
+    },
+    {
+      key: "cards",
+      label: t.colCards,
+      sortValue: (r) => r.cards.length,
+      render: (r, td) => {
+        if (!r.cards.length) {
+          td.textContent = t.equipmentEmptyCardSlot;
+          return;
+        }
+        for (let i = 0; i < r.cards.length; i++) {
+          if (i > 0) td.appendChild(document.createTextNode(", "));
+          const id = r.cards[i];
+          const link = document.createElement("a");
+          link.className = "cell-link";
+          link.href = itemDpUrl(id);
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = `#${id}`;
+          link.addEventListener("click", (e) => e.stopPropagation());
+          td.appendChild(link);
+          td.appendChild(document.createTextNode(` · ${itemResolver(id)}`));
+        }
+      },
+    },
+  ];
 
   host.innerHTML = `<h2 class="section-title">${t.equipmentTitle}</h2>
+    <div id="equipment-pager"></div>
     <div id="equipment-table"></div>`;
+  const pagerHost = $("#equipment-pager");
+  const tableHost = $("#equipment-table");
 
-  renderTable<EquippedRow>(
-    $("#equipment-table"),
-    [
-      {
-        key: "itemId",
-        label: t.colId,
-        format: (r) => String(r.itemId),
-        href: (r) => itemDpUrl(r.itemId),
-      },
-      { key: "slotLabel", label: t.colSlot, sortValue: (r) => r.slotOrder },
-      { key: "itemName", label: t.colItem },
-      {
-        key: "refine",
-        label: t.colRefine,
-        numeric: true,
-        format: (r) => (r.refine > 0 ? `+${r.refine}` : t.none),
-        sortValue: (r) => r.refine,
-      },
-      {
-        key: "cards",
-        label: t.colCards,
-        sortValue: (r) => r.cards.length,
-        render: (r, td) => {
-          if (!r.cards.length) {
-            td.textContent = t.equipmentEmptyCardSlot;
-            return;
-          }
-          for (let i = 0; i < r.cards.length; i++) {
-            if (i > 0) td.appendChild(document.createTextNode(", "));
-            const id = r.cards[i];
-            const link = document.createElement("a");
-            link.className = "cell-link";
-            link.href = itemDpUrl(id);
-            link.target = "_blank";
-            link.rel = "noopener noreferrer";
-            link.textContent = `#${id}`;
-            link.addEventListener("click", (e) => e.stopPropagation());
-            td.appendChild(link);
-            td.appendChild(
-              document.createTextNode(` · ${itemResolver(id)}`),
-            );
-          }
-        },
-      },
-    ],
-    rows,
-    { initialSort: { key: "slotLabel", asc: true } },
-  );
+  let pageIdx = 0;
+  function paint() {
+    const page = pages[pageIdx];
+    pagerHost.innerHTML = "";
+    if (pages.length > 1) {
+      const bar = document.createElement("div");
+      bar.className = "equip-pager";
+
+      const prev = document.createElement("button");
+      prev.type = "button";
+      prev.className = "equip-arrow";
+      prev.textContent = "‹";
+      prev.disabled = pageIdx === 0;
+      prev.addEventListener("click", () => {
+        if (pageIdx > 0) {
+          pageIdx--;
+          paint();
+        }
+      });
+
+      const counter = document.createElement("span");
+      counter.className = "equip-page-counter";
+      counter.textContent = t.equipmentPageOf(pageIdx + 1, pages.length);
+
+      const next = document.createElement("button");
+      next.type = "button";
+      next.className = "equip-arrow";
+      next.textContent = "›";
+      next.disabled = pageIdx === pages.length - 1;
+      next.addEventListener("click", () => {
+        if (pageIdx < pages.length - 1) {
+          pageIdx++;
+          paint();
+        }
+      });
+
+      const caption = document.createElement("span");
+      caption.className = "equip-page-caption";
+      caption.textContent =
+        pageIdx === 0
+          ? t.equipmentPageStart
+          : t.equipmentChangedAt(formatDuration(page.timeMs));
+
+      bar.append(prev, counter, next, caption);
+      pagerHost.appendChild(bar);
+    }
+
+    renderTable<EquippedRow>(tableHost, columns, page.rows, {
+      initialSort: { key: "slotLabel", asc: true },
+      isSelected: (r) => page.changedSlots.has(r.slotOrder),
+    });
+  }
+  paint();
 }
 
 

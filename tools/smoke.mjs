@@ -73,6 +73,15 @@ if (process.argv.includes("--stats")) {
   console.log("  on local player by statusId:", [...buffs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id, c]) => `${id}:${c}`).join(" "));
   process.exit(0);
 }
+if (process.argv.includes("--equip-changes")) {
+  console.log("equipChanges:", replay.equipChanges.length);
+  for (const e of replay.equipChanges) {
+    console.log(
+      `  t=${e.time}ms ${e.equipped ? "WEAR   " : "TAKEOFF"} slot=${e.slot} loc=0x${e.location.toString(16)} item=${e.itemId} +${e.refine} cards=[${e.cards}]`,
+    );
+  }
+  process.exit(0);
+}
 if (process.argv.includes("--skill-events")) {
   const skillId = Number(process.argv[process.argv.indexOf("--skill-events") + 1]);
   console.log(`Looking for skill id=${skillId}`);

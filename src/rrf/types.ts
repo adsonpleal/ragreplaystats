@@ -89,6 +89,25 @@ export type ItemAddEvent = {
   refine: number;
 };
 
+/**
+ * A worn/removed equipment change for the local player, decoded from the
+ * equip/take-off ack packets (0x0999 / 0x099a). The packet only carries the
+ * inventory slot + equip location; `itemId`/`refine`/`cards` are resolved at
+ * decode time from the running inventory snapshot (0 / empty if unknown).
+ */
+export type EquipChangeEvent = {
+  time: number;
+  /** Inventory slot the item lives in (raw index - 2). */
+  slot: number;
+  /** `equipLocation` bitmask the item was worn at / removed from. */
+  location: number;
+  /** True = item was put on; false = item was taken off. */
+  equipped: boolean;
+  itemId: number;
+  refine: number;
+  cards: number[];
+};
+
 export type ParamChangeEvent = {
   time: number;
   /** Parameter type — 1=base exp, 2=job exp, 5=hp, 7=sp, 11=base lvl, 12=job lvl, 20=zeny, 22=next base exp, 23=next job exp. */
@@ -153,6 +172,7 @@ export type Replay = {
   initialInventory: Map<number, InventoryRecord>;
   itemDeletes: ItemDeleteEvent[];
   itemAdds: ItemAddEvent[];
+  equipChanges: EquipChangeEvent[];
   paramChanges: ParamChangeEvent[];
   statusEvents: StatusEvent[];
   chats: ChatEvent[];

@@ -14,6 +14,7 @@ import type {
   DamageEvent,
   Entity,
   EntityKind,
+  EquipChangeEvent,
   InventoryRecord,
   ItemAddEvent,
   ItemDeleteEvent,
@@ -135,6 +136,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   const mapChanges: MapChange[] = [];
   const itemDeletes: ItemDeleteEvent[] = [];
   const itemAdds: ItemAddEvent[] = [];
+  const equipChanges: EquipChangeEvent[] = [];
   const paramChanges: ParamChangeEvent[] = [];
   const statusEvents: StatusEvent[] = [];
   const chats: ChatEvent[] = [];
@@ -150,7 +152,13 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   // `itemId` for slots when 0x07fa fires later. Mutated as 0x0a37 / 0x07fa
   // packets stream in.
   const initialInventory = readItemsContainer(containers);
-  const inventory = new Map(initialInventory);
+  // Copy the records, not just the map: the running inventory mutates `qty`
+  // (itemDelete) and `equipped` (equipChange), and those records are shared by
+  // reference with `initialInventory` — without a per-record copy those edits
+  // would retroactively corrupt the start-of-recording snapshot.
+  const inventory = new Map<number, InventoryRecord>(
+    [...initialInventory].map(([slot, rec]) => [slot, { ...rec }]),
+  );
 
   let packetCount = 0;
   let handledPackets = 0;
@@ -348,6 +356,29 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         }
         break;
       }
+      case "equipChange": {
+        // 0x0999 / 0x099a are sent only to the acting client, so every one is
+        // the recording player's. Resolve the item identity from the running
+        // inventory snapshot (same pattern as itemDelete) and keep the snapshot
+        // coherent by toggling the record's equipped bits.
+        const ev = decoded.data;
+        if (!ev.success) break;
+        const inv = inventory.get(ev.slot);
+        if (inv) {
+          if (ev.equipped) inv.equipped |= ev.location;
+          else inv.equipped &= ~ev.location;
+        }
+        equipChanges.push({
+          time: ev.time,
+          slot: ev.slot,
+          location: ev.location,
+          equipped: ev.equipped,
+          itemId: inv?.itemId ?? 0,
+          refine: inv?.refine ?? 0,
+          cards: inv ? inv.cards.filter((c) => c > 0) : [],
+        });
+        break;
+      }
       case "paramChange":
         paramChanges.push(decoded.data);
         break;
@@ -399,6 +430,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     initialInventory,
     itemDeletes,
     itemAdds,
+    equipChanges,
     paramChanges: dedupedParams,
     statusEvents: dedupedStatus,
     chats,
@@ -484,6 +516,33 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
  * that varies but doesn't decode as the rAthena `ItemOptions` triple). If a
  * future server's snapshots carry them, append the offsets here.
  */
+/** Known EQUIPITEM_INFO record sizes, newest first. */
+const ITEM_RECORD_SIZES = [221, 172] as const;
+const NAMEID_OFFSET = 104;
+
+/**
+ * Pick the record stride for an Items-container chunk. A chunk is a tight
+ * array of equal-size records, so the real size divides the chunk length; we
+ * disambiguate the candidates by checking that the `nameid` field of the first
+ * two records reads as a plausible item id. Returns 0 when nothing fits (empty
+ * or non-item chunks).
+ */
+function detectItemRecordSize(view: DataView, byteLength: number): number {
+  const validId = (id: number) => id > 0 && id < 5_000_000;
+  for (const size of ITEM_RECORD_SIZES) {
+    if (byteLength < size || byteLength % size !== 0) continue;
+    const first = view.getInt32(NAMEID_OFFSET, true);
+    if (!validId(first)) continue;
+    // With >=2 records, the wrong stride lands the 2nd nameid on garbage.
+    if (byteLength >= size * 2) {
+      const second = view.getInt32(size + NAMEID_OFFSET, true);
+      if (!validId(second)) continue;
+    }
+    return size;
+  }
+  return 0;
+}
+
 function readItemsContainer(
   containers: AnyContainer[],
 ): Map<number, InventoryRecord> {
@@ -494,7 +553,11 @@ function readItemsContainer(
   );
   if (!itemsContainer) return out;
 
-  const RECORD = 172;
+  // The per-item record size depends on the client that recorded the replay:
+  // older builds use a 172-byte EQUIPITEM_INFO, newer ones 221 bytes (extra
+  // grade / option-slot fields appended at the end). The field offsets below
+  // are unchanged between the two — only the stride differs — so we detect the
+  // stride per chunk from its length + a sanity check on the item id.
   // The Items container has multiple chunks:
   //   4601 — currently-equipped main gear (head/weapon/armor/etc.)
   //   4603 — currently-equipped costume + shadow gear
@@ -521,6 +584,8 @@ function readItemsContainer(
       chunk.data.byteOffset,
       chunk.data.byteLength,
     );
+    const RECORD = detectItemRecordSize(view, chunk.data.byteLength);
+    if (!RECORD) continue;
     let p = 0;
     while (p + RECORD <= chunk.data.byteLength) {
       const pos = view.getInt16(p + 22, true) - 2;
