@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-06-11
+
+- Visualizador de personagem no card de Equipamento: sprite animado do jogador vestindo o conjunto equipado da página atual (chapéus, manto, arma e escudo; itens de fantasia têm precedência sobre os normais). Controles para girar o corpo em 8 direções e a cabeça (só parado/sentado, como no jogo), e seletor de estado (parado, andar, sentar, atacar, conjurando, morto etc.). A animação de ataque é a da arma equipada, o sexo do personagem é detectado automaticamente do replay, e os pés ficam alinhados na mesma linha de chão em todos os estados. Imagens servidas por [ragassets](https://github.com/adsonpleal/ragassets), uma camada de cache sobre o [zrenderer](https://github.com/zhad3/zrenderer).
+- A aba "Estatísticas" agora é a primeira e abre por padrão, com o card de Equipamento no topo da aba.
+
 ## 2026-06-10
 
 - Card de Equipamento redesenhado no estilo da janela do jogo: cada item vira um card com ícone e nome, dispostos em duas colunas (Equip e Especial) que se reorganizam em telas menores. Slots vazios continuam visíveis, armas de duas mãos ocupam os dois espaços (arma e escudo), e ao passar o mouse ou clicar abre-se um popover com o slot, as cartas e encantamentos, e links para o Divine Pride (do item e de cada carta).
