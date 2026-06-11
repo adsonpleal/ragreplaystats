@@ -841,7 +841,15 @@ function parseItemInfoLub(bytes) {
     // ("Faca" -> "Faca [3]"). itemInfo stores it numerically; 0 = no slots.
     const slots = entry.get("slotCount");
     if (typeof slots === "number" && slots > 0) name += ` [${Math.round(slots)}]`;
-    out[String(id)] = { name };
+    const rec = { name };
+    // ClassNum is the sprite "view" id the client uses to draw the gear: the
+    // accessory id for headgears/costumes, the robe id for garments, the
+    // shield/weapon look. It's exactly what zrenderer/ragassets needs to render
+    // equipped gear on a character (see src/ui/character-viewer.ts). Keep it
+    // only when present so item.json stays lean.
+    const view = entry.get("ClassNum");
+    if (typeof view === "number" && view > 0) rec.view = Math.round(view);
+    out[String(id)] = rec;
   }
   return out;
 }

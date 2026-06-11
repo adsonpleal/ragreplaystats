@@ -45,6 +45,8 @@ import { t, locale } from "./i18n.js";
 import { decodeReplay } from "./rrf/decode.js";
 import type { DamageEvent, Replay } from "./rrf/types.js";
 import { renderBarChart } from "./ui/bar-chart.js";
+import { buildCharacterViewer, type CharacterViewer } from "./ui/character-viewer.js";
+import { CHEVRON_LEFT, CHEVRON_RIGHT, chevronButton } from "./ui/controls.js";
 import { renderDamageMulti } from "./ui/dps-chart.js";
 import { renderLineChart } from "./ui/line-chart.js";
 import { renderSummaryCard, type SummaryCell } from "./ui/stats-summary.js";
@@ -143,7 +145,7 @@ const state: State = {
   route: routeFromLocation(),
   replay: null,
   db: null,
-  mode: "byPlayer",
+  mode: "stats",
   selectedPlayers: new Set(),
   selectedMonster: null,
   selectedTimeRange: null,
@@ -1110,6 +1112,9 @@ function pct(n: number, total: number): number {
  * lands in. An item occupies EVERY slot whose bit is set in its mask, so a
  * two-handed weapon (EQP_HAND_R | EQP_HAND_L = 2 | 32) fills both the weapon
  * and shield slots, mirroring the in-game window.
+ *
+ * NOTE: the index order is mirrored by `SLOT` in ui/character-viewer.ts (which
+ * picks the visually-rendered pieces by slot order) — keep them in sync.
  */
 const EQUIP_SLOTS: Array<readonly [bit: number, label: () => string]> = [
   [256, () => t.slotHeadTop],          // EQP_HEAD_TOP
@@ -1304,6 +1309,20 @@ function renderEquipment(replay: Replay) {
   const pagerHost = $("#equipment-pager");
   const viewHost = $("#equipment-view");
 
+  // Live sprite of the local player wearing their gear, shown as a third column
+  // beside the (shadow-gear-tailed) Especial group. Built once so its rotate/
+  // state controls survive equipment-page navigation; paint() re-homes it into
+  // the freshly-built groups and feeds it the current page.
+  const player = replay.entities.get(replay.sessionInfo.aid);
+  let characterViewer: CharacterViewer | null = null;
+  if (player?.kind === "pc") {
+    characterViewer = buildCharacterViewer({
+      jobView: player.view,
+      sex: player.sex,
+      resolveItemView: (id) => state.db?.resolveItemView(id) ?? null,
+    });
+  }
+
   let pageIdx = 0;
   function paint() {
     const page = pages[pageIdx];
@@ -1312,16 +1331,7 @@ function renderEquipment(replay: Replay) {
       const bar = document.createElement("div");
       bar.className = "equip-pager";
 
-      // Inline SVG chevrons rather than text glyphs (‹ ›): the glyph ink sits
-      // high within its line box on most fonts, so it never visually centers.
-      const chevron = (d: string) =>
-        `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`;
-
-      const prev = document.createElement("button");
-      prev.type = "button";
-      prev.className = "equip-arrow";
-      prev.setAttribute("aria-label", t.paginationPrev);
-      prev.innerHTML = chevron("M15 5l-7 7 7 7");
+      const prev = chevronButton(CHEVRON_LEFT, t.paginationPrev);
       prev.disabled = pageIdx === 0;
       prev.addEventListener("click", () => {
         if (pageIdx > 0) { pageIdx--; paint(); }
@@ -1331,11 +1341,7 @@ function renderEquipment(replay: Replay) {
       counter.className = "equip-page-counter";
       counter.textContent = t.equipmentPageOf(pageIdx + 1, pages.length);
 
-      const next = document.createElement("button");
-      next.type = "button";
-      next.className = "equip-arrow";
-      next.setAttribute("aria-label", t.paginationNext);
-      next.innerHTML = chevron("M9 5l7 7-7 7");
+      const next = chevronButton(CHEVRON_RIGHT, t.paginationNext);
       next.disabled = pageIdx === pages.length - 1;
       next.addEventListener("click", () => {
         if (pageIdx < pages.length - 1) { pageIdx++; paint(); }
@@ -1389,8 +1395,13 @@ function renderEquipment(replay: Replay) {
     };
 
     appendGroup(t.equipGroupEquip, NORMAL_SLOT_ORDERS);
+    // Viewer sits between Equip and Especial. It's a persistent node, so this just
+    // moves it into the freshly-rebuilt groups each paint (preserving its state).
+    if (characterViewer) groups.appendChild(characterViewer.el);
     appendGroup(t.equipGroupEspecial, [...ESPECIAL_SLOT_ORDERS, ...extraEspecial]);
     viewHost.appendChild(groups);
+
+    characterViewer?.update(page.rows);
   }
   paint();
 }

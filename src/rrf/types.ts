@@ -13,6 +13,9 @@ export type Entity = {
   firstSeenMs: number;
   /** Last reported HP (mobs). */
   lastHp: number;
+  /** 0 = female, 1 = male; undefined = unknown. From spawn packets, with the
+   *  local player falling back to the session snapshot. */
+  sex?: number;
 };
 
 export type HitType = "normal" | "critical" | "double" | "lucky" | "miss";

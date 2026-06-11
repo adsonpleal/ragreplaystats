@@ -11,6 +11,8 @@ export type EntityPacket = {
   level: number;
   maxHp: number;
   hp: number;
+  /** 0 = female, 1 = male, -1 = unknown (not in this packet variant). */
+  sex: number;
 };
 
 function classifyObjectType(t: number): EntityKind {
@@ -99,6 +101,7 @@ export function decodeInitialSpawn0857(reader: ByteReader): EntityPacket {
     level: 0,
     maxHp: 0,
     hp: 0,
+    sex: -1, // 0x0857 snapshot has no sex field
   };
 }
 
@@ -124,7 +127,8 @@ function readEntity(
   reader.skip(2); // robe
   reader.skip(4); // GUID
   reader.skip(2 + 2 + 4); // GEmblemVer, honor, virtue
-  reader.skip(1 + 1); // isPKModeON, sex
+  reader.skip(1); // isPKModeON
+  const sex = reader.u8();
 
   if (hasMoveStart) {
     reader.skip(6); // MoveData
@@ -157,5 +161,6 @@ function readEntity(
     level,
     maxHp,
     hp,
+    sex,
   };
 }

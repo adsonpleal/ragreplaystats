@@ -126,6 +126,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
       maxHp: 0,
       firstSeenMs: 0,
       lastHp: 0,
+      sex: session.sex === 0 || session.sex === 1 ? session.sex : undefined,
     });
   }
   const damage: DamageEvent[] = [];
@@ -239,6 +240,9 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         if (ep.maxHp) e.maxHp = ep.maxHp;
         if (ep.hp) e.lastHp = ep.hp;
         if (ep.isBoss) e.isBoss = true;
+        // Documented sex field (spawn packets only); authoritative over the
+        // session-snapshot fallback used to seed the local player.
+        if (ep.sex === 0 || ep.sex === 1) e.sex = ep.sex;
         break;
       }
       case "vanish":
@@ -469,6 +473,10 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
   let aid = 0;
   let job = 0;
   let baseLevel = 0;
+  // Sex byte from the session/char snapshot. Chunk 1098 is the trailing 1-byte
+  // field of the serialized CHARACTER_INFO (0 = female, 1 = male). Used only as a
+  // fallback — a spawn packet's documented sex overrides it when present.
+  let sex = -1;
 
   const replayData = containers.find(
     (c): c is GenericContainer =>
@@ -491,9 +499,10 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
     aid = readU32ChunkById(sessionContainer, 1010) ?? 0;
     job = readU32ChunkById(sessionContainer, 1014) ?? 0;
     baseLevel = readU32ChunkById(sessionContainer, 1016) ?? 0;
+    sex = readU8ChunkById(sessionContainer, 1098) ?? -1;
   }
 
-  return { player, map, aid, job, baseLevel, recordedAt };
+  return { player, map, aid, job, baseLevel, recordedAt, sex };
 }
 
 /**
@@ -633,4 +642,13 @@ function readU32ChunkById(
   if (!ch || ch.data.byteLength < 4) return null;
   const view = new DataView(ch.data.buffer, ch.data.byteOffset, 4);
   return view.getUint32(0, true);
+}
+
+function readU8ChunkById(
+  container: GenericContainer,
+  chunkId: number,
+): number | null {
+  const ch = container.chunks.find((c) => c.id === chunkId);
+  if (!ch || ch.data.byteLength < 1) return null;
+  return ch.data[0];
 }

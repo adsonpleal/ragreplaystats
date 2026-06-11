@@ -12,7 +12,7 @@
 
 import type { Replay } from "./rrf/types.js";
 
-type ItemEntry = { name: string };
+type ItemEntry = { name: string; view?: number };
 type MonsterEntry = { name: string; hp: number; level: number };
 type SkillEntry = { name: string };
 
@@ -74,6 +74,16 @@ export async function prefetchReplay(_replay: Replay): Promise<void> {
 
 export function getItemName(id: number): string | null {
   return items?.get(id)?.name ?? null;
+}
+
+/**
+ * Sprite "view" id for an item (the client's `ClassNum`): accessory id for
+ * headgears/costumes, robe id for garments, shield/weapon look. Used to render
+ * equipped gear on the character viewer. `null` until item.json is regenerated
+ * with the `view` field (tools/build-db.mjs), or for items without a view.
+ */
+export function getItemView(id: number): number | null {
+  return items?.get(id)?.view ?? null;
 }
 
 export function getMonsterName(id: number): string | null {

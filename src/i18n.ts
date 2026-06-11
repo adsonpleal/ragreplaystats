@@ -259,7 +259,7 @@ export const t = {
   equipmentPageStart: "Início da gravação",
   equipmentPageOf: (i: number, n: number) => `${i}/${n}`,
   equipmentChangedAt: (at: string) => `Troca em ${at}`,
-  equipGroupEquip: "Equip",
+  equipGroupEquip: "Equipamento",
   equipGroupEspecial: "Especial",
   equipCardsTitle: "Cartas e Encantamentos",
   slotHeadTop: "Topo",
@@ -284,6 +284,31 @@ export const t = {
   slotShadowAccLeft: "Sombrio (acess. esq.)",
   slotShadowAccRight: "Sombrio (acess. dir.)",
   slotOther: "Outro",
+
+  // Character viewer (Equipamento) — sprite served by ragassets/zrenderer
+  characterViewerError: "Não foi possível carregar o sprite.",
+  characterBodyLabel: "Corpo",
+  characterHeadLabel: "Cabeça",
+  characterStateLabel: "Estado",
+  characterRotatePrev: "Girar para a esquerda",
+  characterRotateNext: "Girar para a direita",
+  // Animation states for the viewer dropdown, wired to zrenderer animation types
+  // by STATE_LIST in ui/character-viewer.ts (new keys need an entry there too).
+  // "Atacar" is a single entry — the actual attack animation is chosen from the
+  // equipped weapon (weapon-action.ts).
+  characterStates: {
+    idle: "Parado",
+    walk: "Andar",
+    sit: "Sentar",
+    pickup: "Pegar item",
+    standby: "Em guarda",
+    attack: "Atacar",
+    casting: "Conjurando",
+    hurt: "Ferido",
+    frozen: "Atordoado",
+    dead: "Morto",
+    frozen2: "Congelado",
+  },
 
   statsConsumablesTitle: "Itens consumidos",
   statsConsumablesEmpty: "Nenhum item consumido nesta janela.",

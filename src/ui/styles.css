@@ -1029,6 +1029,98 @@ a.equip-popover-card-row:hover {
   color: var(--muted);
 }
 
+/* Character viewer — player sprite served by ragassets/zrenderer. Sits as a
+   third column inside .equip-groups, beside Especial; align-items:stretch makes
+   it match the equipment columns' height and the sprite scales to fit. */
+.character-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  /* Sized so the (width-limited) sprite renders ~1.3x larger than the equipment
+     columns would allow; the viewer is intentionally taller/wider than them. */
+  min-width: 252px;
+  /* Override the parent's align-items:flex-start so the viewer also stretches to
+     match an even taller equipment column; the sprite scales to fit. */
+  align-self: stretch;
+}
+
+.character-stage {
+  position: relative;
+  /* basis 0 so the sprite doesn't set the height; the stage fills the viewer and
+     the sprite scales to fit. min-height matches the 200x169 render canvas at the
+     same ~1.15 scale the 252px width allows, so the character keeps its size and
+     width stays the limiting factor. */
+  flex: 1 1 0;
+  min-height: 196px;
+  width: 100%;
+}
+
+.character-sprite {
+  /* Absolute so the image never dictates the stage's height. Fills the stage and
+     scales (up or down) to fit while keeping aspect, so a taller card shows a
+     bigger sprite. Pixelated keeps the upscale crisp. */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  visibility: hidden;
+}
+
+.character-sprite.is-loaded {
+  visibility: visible;
+}
+
+.character-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.character-error[hidden] {
+  display: none;
+}
+
+.character-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.character-control-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.character-control-label {
+  flex: 1 1 auto;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+
+.character-state-select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
 .section-hint {
   margin: 0 0 0.5rem;
   color: var(--muted);

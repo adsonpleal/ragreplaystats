@@ -1,5 +1,6 @@
 import {
   getItemName,
+  getItemView,
   getMonsterHp,
   getMonsterName,
   getSkillName,
@@ -14,6 +15,11 @@ export type ReferenceDb = {
   resolveSkill(id: number): string;
   resolveJob(id: number): string;
   resolveItem(id: number): string;
+  /**
+   * Sprite "view" id (client `ClassNum`) for an equipped item, or `null` when
+   * unknown. Feeds the character viewer's headgear/garment/weapon/shield params.
+   */
+  resolveItemView(id: number): number | null;
   /**
    * Distinct pt-BR PC class names, sorted alphabetically. Derived from
    * `PC_JOB_IDS` (a curated whitelist of player-character job ids) mapped
@@ -86,6 +92,7 @@ export async function loadReferenceDb(base = "./db"): Promise<ReferenceDb> {
     resolveSkill: (id: number) => getSkillName(id) ?? `skill#${id}`,
     resolveJob: (id: number) => job[String(id)] ?? `job#${id}`,
     resolveItem: (id: number) => getItemName(id) ?? `item#${id}`,
+    resolveItemView: (id: number) => getItemView(id),
     pcClassNames: () => cachedPcClassNames,
     pcClassIconId: (name: string) => cachedClassIcons.get(name),
   };
