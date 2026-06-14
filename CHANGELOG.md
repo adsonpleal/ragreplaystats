@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-06-14
+
+- Botões "Baixar PDF" e "Baixar Excel" na barra das abas. O PDF gera um relatório com **todas as abas** (Estatísticas, Por jogador, Por monstro e Análise de DPS) em um único documento — incluindo os gráficos e o sprite do personagem — via a opção "Salvar como PDF" da impressão do navegador. O Excel (.xlsx) exporta os números das tabelas em uma **planilha com várias abas** (Sessão, Resumo, Por jogador, Por monstro, Habilidades, Abates e Itens), com cabeçalhos em negrito, primeira linha fixada, números formatados com separador de milhar e colunas dimensionadas.
+
 ## 2026-06-11
 
 - Visualizador de personagem no card de Equipamento: sprite animado do jogador vestindo o conjunto equipado da página atual (chapéus, manto, arma e escudo; itens de fantasia têm precedência sobre os normais). Controles para girar o corpo em 8 direções e a cabeça (só parado/sentado, como no jogo), e seletor de estado (parado, andar, sentar, atacar, conjurando, morto etc.). A animação de ataque é a da arma equipada, o sexo do personagem é detectado automaticamente do replay, e os pés ficam alinhados na mesma linha de chão em todos os estados. Imagens servidas por [ragassets](https://github.com/adsonpleal/ragassets), uma camada de cache sobre o [zrenderer](https://github.com/zhad3/zrenderer).

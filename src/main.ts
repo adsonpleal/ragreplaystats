@@ -199,6 +199,7 @@ function init() {
   paintStaticStrings();
   setupDropZone();
   setupModeToggle();
+  setupExportControls();
   setupHomeLink();
   setupSuggestionsNav();
   setupSuggestionsForm();
@@ -539,6 +540,8 @@ function paintStaticStrings() {
   $("#suggestions-title").textContent = t.suggestionsTitle;
   $<HTMLInputElement>("#suggestions-input").placeholder = t.suggestionsPlaceholder;
   $("#suggestions-submit").textContent = t.suggestionsSubmit;
+  $("#export-pdf").textContent = t.exportPdf;
+  $("#export-xlsx").textContent = t.exportXlsx;
   document
     .querySelectorAll<HTMLButtonElement>(".mode-btn")
     .forEach((btn) => {
@@ -647,6 +650,233 @@ function setupModeToggle() {
       rerender();
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Export — "Baixar PDF" (every tab, one document, via the browser's print →
+// "Save as PDF") and "Baixar Excel" (the tabular numbers as a multi-sheet
+// .xlsx workbook).
+// ---------------------------------------------------------------------------
+
+function setupExportControls() {
+  $("#export-pdf").addEventListener("click", () => void exportReportPdf());
+  $("#export-xlsx").addEventListener("click", () => void exportXlsx());
+}
+
+/** Slug for download filenames: player + recording date, ascii-safe. */
+function reportBaseName(): string {
+  const r = state.replay;
+  const player = (r?.sessionInfo.player || "replay")
+    .normalize("NFKD")
+    .replace(/[^\w]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "replay";
+  const d = r?.sessionInfo.recordedAt ?? new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  return `RagnaRecap-${player}-${stamp}`;
+}
+
+async function exportXlsx() {
+  if (!state.replay) return;
+  const btn = $<HTMLButtonElement>("#export-xlsx");
+  if (btn.disabled) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t.exportGenerating;
+  try {
+    // Lazy-load the xlsx writer so its ~70 kB only ships when actually used.
+    const { buildReplayXlsxBlob } = await import("./ui/export-xlsx.js");
+    const blob = await buildReplayXlsxBlob(state.replay, state.db);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${reportBaseName()}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+// A macrotask yield. We deliberately avoid requestAnimationFrame here: rAF
+// doesn't fire in a backgrounded/headless tab, which would hang the export.
+// uPlot draws to its canvas synchronously during render, so a 0ms yield is
+// enough to let layout settle before snapshotting.
+const delay = (ms = 0) => new Promise<void>((res) => setTimeout(res, ms));
+
+/** Wait for every <img> under `root` to finish loading (bounded by a timeout
+ *  so a slow sprite fetch can't hang the print). */
+function waitForImages(root: HTMLElement, timeoutMs = 4000): Promise<void> {
+  const imgs = [...root.querySelectorAll("img")];
+  const pending = imgs
+    .filter((img) => !(img.complete && img.naturalWidth > 0))
+    .map(
+      (img) =>
+        new Promise<void>((res) => {
+          img.addEventListener("load", () => res(), { once: true });
+          img.addEventListener("error", () => res(), { once: true });
+        }),
+    );
+  if (!pending.length) return Promise.resolve();
+  return Promise.race([
+    Promise.all(pending).then(() => undefined),
+    new Promise<void>((res) => setTimeout(res, timeoutMs)),
+  ]);
+}
+
+// Panes inside #explorer, in visual (DOM) order. Each tab's render fills a
+// subset; we snapshot whichever are non-empty after rendering that tab.
+const EXPLORER_PANE_IDS = [
+  "equipment-pane",
+  "primary-pane",
+  "brush-pane",
+  "monster-overview-pane",
+  "secondary-pane",
+  "bar-pane",
+  "chart-pane",
+  "hp-curve-pane",
+  "kills-pane",
+  "skill-pane",
+  "mob-victims-pane",
+  "mob-skills-pane",
+  "skill-uses-pane",
+  "dps-analysis-help-pane",
+  "dps-analysis-chart-pane",
+  "dps-analysis-stats-pane",
+] as const;
+
+/**
+ * Deep-clone a node for the print report, replacing every live <canvas>
+ * (uPlot charts) with a static <img> of its current pixels. Cloning a canvas
+ * yields a blank element, and keeping the live canvas would let uPlot's
+ * ResizeObserver blank it once it lands in the hidden report — the snapshot
+ * sidesteps both, and prints reliably.
+ */
+function snapshotNode(node: Node): Node {
+  if (node instanceof HTMLCanvasElement) {
+    try {
+      const img = document.createElement("img");
+      img.src = node.toDataURL("image/png");
+      const w = node.style.width || (node.clientWidth ? `${node.clientWidth}px` : "");
+      const h = node.style.height || (node.clientHeight ? `${node.clientHeight}px` : "");
+      if (w) img.style.width = w;
+      if (h) img.style.height = h;
+      return img;
+    } catch {
+      return node.cloneNode(true);
+    }
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return node.cloneNode(true);
+  const clone = node.cloneNode(false);
+  for (const child of node.childNodes) clone.appendChild(snapshotNode(child));
+  return clone;
+}
+
+/**
+ * Render every tab in turn and snapshot its panes into an off-screen report,
+ * then hand it to the browser's print dialog ("Save as PDF" → one file with
+ * all tabs). The live view is rebuilt afterwards, so the on-screen tab is
+ * unchanged.
+ */
+async function exportReportPdf() {
+  const replay = state.replay;
+  if (!replay) return;
+
+  const btn = $<HTMLButtonElement>("#export-pdf");
+  if (btn.disabled) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t.exportGenerating;
+
+  // Snapshot the interactive state so we can restore the on-screen view.
+  const saved = {
+    mode: state.mode,
+    selectedPlayers: new Set(state.selectedPlayers),
+    selectedMonster: state.selectedMonster,
+    byPlayerCompareRange: state.byPlayerCompareRange,
+    selectedMobSkillTarget: state.selectedMobSkillTarget,
+  };
+
+  const root = document.createElement("div");
+  root.id = "report-root";
+
+  const header = document.createElement("div");
+  header.className = "report-header";
+  header.innerHTML = `
+    <h1>${escape(t.exportReportTitle)}</h1>
+    <p class="muted small">${escape(t.exportReportGeneratedAt(new Date().toLocaleString(locale)))}</p>`;
+  root.appendChild(header);
+  // The session card is plain HTML — clone it verbatim at the top.
+  const summaryClone = $("#summary").cloneNode(true) as HTMLElement;
+  summaryClone.removeAttribute("id");
+  summaryClone.hidden = false;
+  root.appendChild(summaryClone);
+
+  const tabs: { mode: Mode; title: string }[] = [
+    { mode: "stats", title: t.modeStats },
+    { mode: "byPlayer", title: t.modeByPlayer },
+    { mode: "byMonster", title: t.modeByMonster },
+    { mode: "dpsAnalysis", title: t.modeDpsAnalysis },
+  ];
+
+  try {
+    for (const { mode, title } of tabs) {
+      // Render the tab at its top level (no drill-down selection).
+      state.mode = mode;
+      state.selectedPlayers.clear();
+      state.selectedMonster = null;
+      state.byPlayerCompareRange = null;
+      state.selectedMobSkillTarget = null;
+      rerender();
+      // Let charts paint and the character sprite load before snapshotting.
+      // (The sprite's <img src> is set asynchronously after an off-screen
+      // preload, so a bounded wait here is what lets it land in the report.)
+      await delay();
+      await waitForImages($("#explorer"), 3000);
+
+      const section = document.createElement("section");
+      section.className = "print-tab";
+      const h2 = document.createElement("h2");
+      h2.className = "print-tab-title";
+      h2.textContent = title;
+      section.appendChild(h2);
+      for (const id of EXPLORER_PANE_IDS) {
+        const pane = document.getElementById(id);
+        if (!pane || !pane.firstChild) continue;
+        for (const child of pane.childNodes) section.appendChild(snapshotNode(child));
+      }
+      root.appendChild(section);
+    }
+  } finally {
+    // Restore the on-screen view regardless of what happened above.
+    state.mode = saved.mode;
+    state.selectedPlayers = saved.selectedPlayers;
+    state.selectedMonster = saved.selectedMonster;
+    state.byPlayerCompareRange = saved.byPlayerCompareRange;
+    state.selectedMobSkillTarget = saved.selectedMobSkillTarget;
+    rerender();
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+
+  document.body.appendChild(root);
+  await waitForImages(root);
+
+  // Suggest a sensible PDF filename (browsers seed it from document.title).
+  const prevTitle = document.title;
+  document.title = reportBaseName();
+  document.body.classList.add("printing-report");
+
+  const cleanup = () => {
+    root.remove();
+    document.body.classList.remove("printing-report");
+    document.title = prevTitle;
+  };
+  window.addEventListener("afterprint", cleanup, { once: true });
+  window.print();
 }
 
 const VALID_MODES: ReadonlySet<Mode> = new Set([

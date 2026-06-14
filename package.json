@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "firebase": "^12.12.1",
-    "uplot": "^1.6.30"
+    "uplot": "^1.6.30",
+    "write-excel-file": "^4.1.1"
   }
 }

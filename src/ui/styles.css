@@ -695,6 +695,41 @@ main > section {
   color: white;
 }
 
+.explorer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.export-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.export-btn {
+  font: inherit;
+  font-size: 0.85rem;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.export-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.export-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .breadcrumb {
   display: flex;
   flex-wrap: wrap;
@@ -1383,4 +1418,66 @@ td.num, th.num {
   border-radius: 6px;
   max-height: 360px;
   overflow: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   PDF export — an off-screen #report-root holds every tab's snapshot. It is
+   hidden on screen; @media print swaps the page for it (only while the
+   `printing-report` class is set, so a plain Ctrl+P still prints normally).
+--------------------------------------------------------------------------- */
+#report-root {
+  display: none;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.report-header {
+  margin-bottom: 1rem;
+}
+
+.report-header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.3rem;
+}
+
+.print-tab-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 0.25rem;
+}
+
+@media print {
+  body.printing-report > *:not(#report-root) {
+    display: none !important;
+  }
+
+  body.printing-report #report-root {
+    display: block !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* New page per tab; keep the report's own tables un-scrolled and intact. */
+  body.printing-report .print-tab {
+    break-before: page;
+  }
+
+  body.printing-report .print-tab:first-of-type {
+    break-before: auto;
+  }
+
+  body.printing-report .stats-card,
+  body.printing-report .table-wrap {
+    break-inside: avoid;
+  }
+
+  body.printing-report .table-wrap {
+    max-height: none;
+    overflow: visible;
+  }
+
+  @page {
+    margin: 12mm;
+  }
 }

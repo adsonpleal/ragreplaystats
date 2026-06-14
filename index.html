@@ -220,11 +220,17 @@
       <section id="summary" hidden></section>
 
       <section id="explorer" hidden>
-        <div class="mode-toggle" role="tablist">
-          <button type="button" class="mode-btn active" data-mode="stats" role="tab"></button>
-          <button type="button" class="mode-btn" data-mode="byPlayer" role="tab"></button>
-          <button type="button" class="mode-btn" data-mode="byMonster" role="tab"></button>
-          <button type="button" class="mode-btn" data-mode="dpsAnalysis" role="tab"></button>
+        <div class="explorer-toolbar">
+          <div class="mode-toggle" role="tablist">
+            <button type="button" class="mode-btn active" data-mode="stats" role="tab"></button>
+            <button type="button" class="mode-btn" data-mode="byPlayer" role="tab"></button>
+            <button type="button" class="mode-btn" data-mode="byMonster" role="tab"></button>
+            <button type="button" class="mode-btn" data-mode="dpsAnalysis" role="tab"></button>
+          </div>
+          <div class="export-controls">
+            <button type="button" id="export-pdf" class="export-btn"></button>
+            <button type="button" id="export-xlsx" class="export-btn"></button>
+          </div>
         </div>
 
         <nav id="breadcrumb" class="breadcrumb" hidden></nav>

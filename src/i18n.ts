@@ -82,6 +82,27 @@ export const t = {
   linkCopied: "Link copiado!",
   shareReady: (url: string) => `Pronto para compartilhar: ${url}`,
 
+  // Export (PDF / Excel)
+  exportPdf: "Baixar PDF",
+  exportXlsx: "Baixar Excel",
+  exportGenerating: "Gerando…",
+  exportReportTitle: "Relatório RagnaRecap",
+  exportReportGeneratedAt: (when: string) => `Gerado em ${when}`,
+  exportXlsxFieldCol: "Campo",
+  exportXlsxValueCol: "Valor",
+  exportXlsxItemCol: "Item",
+  exportXlsxQuantityCol: "Quantidade",
+  exportXlsxUsesCol: "Usos",
+  // Worksheet tab names (Excel caps these at 31 chars, so keep them short).
+  exportSheetSession: "Sessão",
+  exportSheetSummary: "Resumo",
+  exportSheetByPlayer: "Por jogador",
+  exportSheetByMonster: "Por monstro",
+  exportSheetSkills: "Habilidades",
+  exportSheetKills: "Abates",
+  exportSheetConsumed: "Itens consumidos",
+  exportSheetLoot: "Itens recebidos",
+
   // Mode toggle
   modeByPlayer: "Por jogador",
   modeByMonster: "Por monstro",
