@@ -16,7 +16,7 @@ UI is in **Brazilian Portuguese**. The decoder is server-agnostic but the bundle
 
 ## Assets
 
-The equipment **character viewer** (Estatísticas → Equipamento) renders the player's sprite — gear included — from [ragassets](https://github.com/adsonpleal/ragassets), a fast caching HTTP gateway that serves Ragnarok Online sprites as images/APNG on top of [zrenderer](https://github.com/zhad3/zrenderer) by [zhad3](https://github.com/zhad3), which does the actual rendering. Images come from the public instance at `https://ragassets.duckdns.org` (configurable via `RAGASSETS_BASE` in `src/ui/character-viewer.ts`). Equipped gear maps to zrenderer view ids via each item's `ClassNum`, extracted into `public/db/item.json` by `tools/build-db.mjs`.
+The equipment **character viewer** (Estatísticas → Equipamento) renders the player's sprite — gear included — from [ragassets](https://github.com/adsonpleal/ragassets), a fast caching HTTP gateway that serves Ragnarok Online sprites as images/APNG on top of [zrenderer](https://github.com/zhad3/zrenderer) by [zhad3](https://github.com/zhad3), which does the actual rendering. Images come from the public instance at `https://assets.latam-tools.com.br` (configurable via `RAGASSETS_BASE` in `src/ui/character-viewer.ts`). Equipped gear maps to zrenderer view ids via each item's `ClassNum`, extracted into `public/db/item.json` by `tools/build-db.mjs`.
 
 ## Run
 
