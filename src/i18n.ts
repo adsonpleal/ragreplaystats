@@ -283,6 +283,7 @@ export const t = {
   equipGroupEquip: "Equipamento",
   equipGroupEspecial: "Especial",
   equipCardsTitle: "Cartas e Encantamentos",
+  equipOptionsTitle: "Bônus Aleatórios",
   slotHeadTop: "Topo",
   slotHeadMid: "Meio",
   slotHeadLow: "Baixo",

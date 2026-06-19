@@ -3,6 +3,7 @@ import {
   getItemView,
   getMonsterHp,
   getMonsterName,
+  getRandomOptionText,
   getSkillName,
 } from "../divine-pride.js";
 
@@ -20,6 +21,12 @@ export type ReferenceDb = {
    * unknown. Feeds the character viewer's headgear/garment/weapon/shield params.
    */
   resolveItemView(id: number): number | null;
+  /**
+   * Human-readable text for a random option ("Bônus Aleatório"), e.g. id 19 +
+   * value 7 → "ATQM +7". Returns `null` for unknown ids (or before the option
+   * DB loads) so callers can show a raw fallback.
+   */
+  resolveRandomOption(id: number, value: number): string | null;
   /**
    * Distinct pt-BR PC class names, sorted alphabetically. Derived from
    * `PC_JOB_IDS` (a curated whitelist of player-character job ids) mapped
@@ -93,6 +100,7 @@ export async function loadReferenceDb(base = "./db"): Promise<ReferenceDb> {
     resolveJob: (id: number) => job[String(id)] ?? `job#${id}`,
     resolveItem: (id: number) => getItemName(id) ?? `item#${id}`,
     resolveItemView: (id: number) => getItemView(id),
+    resolveRandomOption: (id: number, value: number) => getRandomOptionText(id, value),
     pcClassNames: () => cachedPcClassNames,
     pcClassIconId: (name: string) => cachedClassIcons.get(name),
   };

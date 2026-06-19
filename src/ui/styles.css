@@ -1009,6 +1009,15 @@ a.equip-popover-card-row:hover {
   display: none;
 }
 
+/* Random options ("Bônus Aleatórios") — plain text lines, tinted like the
+   in-client blue bonus text, no icon/link. */
+.equip-popover-option-row {
+  display: block;
+  font-size: 0.82rem;
+  margin: 0.1rem 0;
+  color: var(--accent);
+}
+
 .equip-pager {
   display: flex;
   align-items: center;

@@ -67,6 +67,8 @@ const STATE_LIST: ReadonlyArray<{ type: number; label: string }> = [
 export type EquippedSlot = { slotOrder: number; itemId: number };
 
 type Gear = { headgear: number[]; garment: number | null; weapon: number | null; shield: number | null };
+/** Hair style + palette colors for the local player (0 = default/standard). */
+type Look = { hairStyle: number; hairColor: number; clothesColor: number };
 
 function deriveGear(
   rows: ReadonlyArray<EquippedSlot>,
@@ -103,6 +105,7 @@ function deriveGear(
 function buildUrl(
   jobView: number,
   sex: 0 | 1,
+  look: Look,
   gear: Gear,
   stateType: number,
   bodyDir: number,
@@ -111,7 +114,11 @@ function buildUrl(
   const p = new URLSearchParams();
   p.set("job", String(jobView));
   p.set("gender", sex === 0 ? "female" : "male");
-  p.set("head", String(DEFAULT_HEAD));
+  p.set("head", String(look.hairStyle || DEFAULT_HEAD));
+  // Palette indices for hair / clothes color. 0 = standard palette → omit so the
+  // gateway uses its default. Verified the gateway applies headPalette/bodyPalette.
+  if (look.hairColor) p.set("headPalette", String(look.hairColor));
+  if (look.clothesColor) p.set("bodyPalette", String(look.clothesColor));
   if (gear.headgear.length) p.set("headgear", gear.headgear.join(","));
   if (gear.garment != null) p.set("garment", String(gear.garment));
   if (gear.weapon != null) p.set("weapon", String(gear.weapon));
@@ -132,15 +139,25 @@ function buildUrl(
 export function CharacterViewer({
   jobView,
   sex: sexProp,
+  hairStyle = 0,
+  hairColor = 0,
+  clothesColor = 0,
   resolveItemView,
   rows,
 }: {
   jobView: number;
   sex?: number;
+  hairStyle?: number;
+  hairColor?: number;
+  clothesColor?: number;
   resolveItemView: (id: number) => number | null;
   rows: ReadonlyArray<EquippedSlot>;
 }) {
   const sex: 0 | 1 = resolveSex(jobView, sexProp);
+  const look: Look = useMemo(
+    () => ({ hairStyle, hairColor, clothesColor }),
+    [hairStyle, hairColor, clothesColor],
+  );
   const [bodyDir, setBodyDir] = useState(0);
   const [headDirIdx, setHeadDirIdx] = useState(0);
   const [stateType, setStateType] = useState(1); // walk, per requirements
@@ -152,8 +169,8 @@ export function CharacterViewer({
   const headAllowed = HEAD_ROTATE_STATES.has(stateType);
   const headDir = HEAD_DIRS[headAllowed ? headDirIdx : 0];
   const url = useMemo(
-    () => buildUrl(jobView, sex, gear, stateType, bodyDir, headDir),
-    [jobView, sex, gear, stateType, bodyDir, headDir],
+    () => buildUrl(jobView, sex, look, gear, stateType, bodyDir, headDir),
+    [jobView, sex, look, gear, stateType, bodyDir, headDir],
   );
 
   // Preload off-screen, then swap once decoded — avoids a blank flash and reuses

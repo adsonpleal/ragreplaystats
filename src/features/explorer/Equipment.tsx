@@ -94,6 +94,16 @@ function EquipCard({
             ))}
           </>
         )}
+        {row.options.length > 0 && (
+          <>
+            <span className="equip-popover-section">{t.equipOptionsTitle}</span>
+            {row.options.map((opt, i) => (
+              <span key={i} className="equip-popover-option-row">
+                {db?.resolveRandomOption(opt.id, opt.value) ?? `#${opt.id}: ${opt.value}`}
+              </span>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
@@ -190,6 +200,9 @@ export function Equipment({ replay }: { replay: Replay }) {
             <CharacterViewer
               jobView={player.view}
               sex={player.sex}
+              hairStyle={player.hairStyle}
+              hairColor={player.hairColor}
+              clothesColor={player.clothesColor}
               resolveItemView={resolveItemView}
               rows={page.rows}
             />

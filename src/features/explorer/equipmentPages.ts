@@ -1,6 +1,6 @@
 import type { ReferenceDb } from "../../db/loader";
 import { t } from "../../i18n";
-import type { Replay } from "../../rrf/types";
+import type { RandomOption, Replay } from "../../rrf/types";
 import { resolveItemName } from "./resolvers";
 
 /**
@@ -46,6 +46,8 @@ export type EquippedRow = {
   itemName: string;
   refine: number;
   cards: number[];
+  /** Random options ("Bônus Aleatórios") worn on this item. */
+  options: RandomOption[];
 };
 
 export type EquipPage = {
@@ -83,6 +85,7 @@ export function buildEquipmentPages(replay: Replay, db: ReferenceDb | null): Equ
     itemId: number,
     refine: number,
     cards: number[],
+    options: RandomOption[],
   ): EquippedRow => ({
     slotOrder: order,
     slotLabel: label,
@@ -90,12 +93,20 @@ export function buildEquipmentPages(replay: Replay, db: ReferenceDb | null): Equ
     itemName: resolveItemName(db, itemId),
     refine,
     cards: cards.filter((c) => c > 0),
+    options,
   });
 
   const worn = new Map<number, EquippedRow>();
-  const wear = (mask: number, itemId: number, refine: number, cards: number[]): number[] => {
+  const wear = (
+    mask: number,
+    itemId: number,
+    refine: number,
+    cards: number[],
+    options: RandomOption[],
+  ): number[] => {
     const slots = occupiedEquipSlots(mask);
-    for (const { order, label } of slots) worn.set(order, rowFor(order, label, itemId, refine, cards));
+    for (const { order, label } of slots)
+      worn.set(order, rowFor(order, label, itemId, refine, cards, options));
     return slots.map((s) => s.order);
   };
   const takeOff = (mask: number): number[] => {
@@ -106,7 +117,7 @@ export function buildEquipmentPages(replay: Replay, db: ReferenceDb | null): Equ
 
   for (const inv of replay.initialInventory.values()) {
     if (!inv.equipped || !inv.itemId) continue;
-    wear(inv.equipped, inv.itemId, inv.refine, inv.cards);
+    wear(inv.equipped, inv.itemId, inv.refine, inv.cards, inv.options);
   }
   const snapshot = () => [...worn.values()].sort((a, b) => a.slotOrder - b.slotOrder);
 
@@ -120,7 +131,9 @@ export function buildEquipmentPages(replay: Replay, db: ReferenceDb | null): Equ
     let last = start;
     while (i < changes.length && changes[i].time - last <= EQUIP_PAGE_GROUP_MS) {
       const c = changes[i];
-      const orders = c.equipped ? wear(c.location, c.itemId, c.refine, c.cards) : takeOff(c.location);
+      const orders = c.equipped
+        ? wear(c.location, c.itemId, c.refine, c.cards, c.options)
+        : takeOff(c.location);
       for (const order of orders) changedSlots.add(order);
       last = c.time;
       i++;

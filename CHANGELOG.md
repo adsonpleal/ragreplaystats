@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-06-19
+
+- Bônus Aleatórios dos equipamentos agora são importados do replay e exibidos no popover de cada item, com os nomes em português vindos do cliente do jogo (ex.: "ATQM +7", "Conjuração variável -8%", "Precisão +9").
+- Visualizador de personagem: o sexo passa a ser detectado corretamente (antes saía sempre masculino), e o sprite usa o penteado, a cor de cabelo e a cor de roupa reais do personagem em vez dos padrões.
+
 ## 2026-06-14
 
 - Botões "Baixar PDF" e "Baixar Excel" na barra das abas. O PDF gera um relatório com **todas as abas** (Estatísticas, Por jogador, Por monstro e Análise de DPS) em um único documento — incluindo os gráficos e o sprite do personagem — via a opção "Salvar como PDF" da impressão do navegador. O Excel (.xlsx) exporta os números das tabelas em uma **planilha com várias abas** (Sessão, Resumo, Por jogador, Por monstro, Habilidades, Abates e Itens), com cabeçalhos em negrito, primeira linha fixada, números formatados com separador de milhar e colunas dimensionadas.

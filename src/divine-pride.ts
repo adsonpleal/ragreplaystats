@@ -15,6 +15,8 @@ import type { Replay } from "./rrf/types.js";
 type ItemEntry = { name: string; view?: number };
 type MonsterEntry = { name: string; hp: number; level: number };
 type SkillEntry = { name: string };
+// Random-option id -> display template ("ATQM +%d"). Stored as a bare string.
+type RandomOptEntry = string;
 
 // vite is configured with `base: "./"`, so relative URLs resolve against
 // the current page (works on dev http://localhost:5173/ and on Firebase
@@ -25,10 +27,12 @@ const DB_BASE = "./db";
 let items: Map<number, ItemEntry> | null = null;
 let monsters: Map<number, MonsterEntry> | null = null;
 let skills: Map<number, SkillEntry> | null = null;
+let randomOpts: Map<number, RandomOptEntry> | null = null;
 
 let itemsP: Promise<void> | null = null;
 let monstersP: Promise<void> | null = null;
 let skillsP: Promise<void> | null = null;
+let randomOptsP: Promise<void> | null = null;
 
 async function loadKind<T>(
   fileName: string,
@@ -62,14 +66,20 @@ function loadSkills(): Promise<void> {
   if (!skillsP) skillsP = loadKind<SkillEntry>("skill.json").then((m) => { skills = m; });
   return skillsP;
 }
+function loadRandomOpts(): Promise<void> {
+  if (randomOpts) return Promise.resolve();
+  if (!randomOptsP)
+    randomOptsP = loadKind<RandomOptEntry>("randomopt.json").then((m) => { randomOpts = m; });
+  return randomOptsP;
+}
 
 /**
- * Loads every kind's static JSON in parallel. Resolves once all three are
+ * Loads every kind's static JSON in parallel. Resolves once all of them are
  * in memory (or have failed and been recorded as empty maps). Cheap on
  * repeat — already-loaded kinds short-circuit immediately.
  */
 export async function prefetchReplay(_replay: Replay): Promise<void> {
-  await Promise.all([loadItems(), loadMonsters(), loadSkills()]);
+  await Promise.all([loadItems(), loadMonsters(), loadSkills(), loadRandomOpts()]);
 }
 
 export function getItemName(id: number): string | null {
@@ -96,4 +106,16 @@ export function getMonsterHp(id: number): number {
 
 export function getSkillName(id: number): string | null {
   return skills?.get(id)?.name ?? null;
+}
+
+/**
+ * Format a random option ("Bônus Aleatório") for display: fills the client's
+ * template with the stored value (`%d` → value, `%%` → literal `%`), e.g.
+ * id 19 + value 7 → "ATQM +7". Returns `null` until randomopt.json loads or for
+ * unknown ids, so the caller can fall back to a raw `id:value` label.
+ */
+export function getRandomOptionText(id: number, value: number): string | null {
+  const tmpl = randomOpts?.get(id);
+  if (!tmpl) return null;
+  return tmpl.replace(/%d/g, String(value)).replace(/%%/g, "%");
 }

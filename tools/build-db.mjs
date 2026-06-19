@@ -45,6 +45,13 @@ const WANTED_FILES = [
   "data/luafiles514/lua files/skillinfoz/skillid.lua",
   "data/luafiles514/lua files/skillinfoz/skillinfolist_ptbr.lub",
   "data/luafiles514/lua files/skillinfoz/skillinfolist_ptbr.lua",
+  // Random-option (Bônus Aleatório) name templates, PT-BR. enumvar defines the
+  // RDMOPTID enum the table is keyed by; the _ptbr table maps id -> a display
+  // template like "ATQM +%d" / "Conjuração variável -%d%%".
+  "data/luafiles514/lua files/datainfo/enumvar.lub",
+  "data/luafiles514/lua files/datainfo/enumvar.lua",
+  "data/luafiles514/lua files/datainfo/addrandomoptionnametable_ptbr.lub",
+  "data/luafiles514/lua files/datainfo/addrandomoptionnametable_ptbr.lua",
 ];
 
 // kRO-default JT name → numeric id, used as a fallback when the server's own
@@ -159,10 +166,14 @@ if (Object.keys(item).length) writeJson(`${outDir}/item.json`, item);
 const skill = parseSkillNames(fileMap);
 if (Object.keys(skill).length) writeJson(`${outDir}/skill.json`, skill);
 
+const randomOpt = parseRandomOptNames(fileMap);
+if (Object.keys(randomOpt).length) writeJson(`${outDir}/randomopt.json`, randomOpt);
+
 console.log(`\nDone:`);
-console.log(`  job.json   — ${Object.keys(job).length} entries`);
-console.log(`  item.json  — ${Object.keys(item).length} entries`);
-console.log(`  skill.json — ${Object.keys(skill).length} entries`);
+console.log(`  job.json       — ${Object.keys(job).length} entries`);
+console.log(`  item.json      — ${Object.keys(item).length} entries`);
+console.log(`  skill.json     — ${Object.keys(skill).length} entries`);
+console.log(`  randomopt.json — ${Object.keys(randomOpt).length} entries`);
 } // end main()
 
 // ---------------------------------------------------------------------------
@@ -887,6 +898,43 @@ function parseSkillNames(map) {
       if (typeof id !== "number" || !(entry instanceof LuaTable)) continue;
       const name = decodeClientString(entry.get("SkillName"));
       if (name) out[String(id)] = { name };
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Random-option names — execute the client's Lua tables through the VM:
+//   enumvar.lub                       defines EnumVAR (const -> numeric opt id)
+//   addrandomoptionnametable_ptbr.lub builds NameTable_VAR keyed by numeric id,
+//                                     each value a display template ("ATQM +%d").
+// The replay's item records carry (id, value) pairs; the UI fills the template
+// at runtime. We only persist id -> template here.
+// ---------------------------------------------------------------------------
+
+function parseRandomOptNames(map) {
+  const enumvar =
+    map.get("data/luafiles514/lua files/datainfo/enumvar.lub") ??
+    map.get("data/luafiles514/lua files/datainfo/enumvar.lua");
+  const nameTable =
+    map.get("data/luafiles514/lua files/datainfo/addrandomoptionnametable_ptbr.lub") ??
+    map.get("data/luafiles514/lua files/datainfo/addrandomoptionnametable_ptbr.lua");
+  if (!nameTable) return {};
+  const g = new LuaTable();
+  // enumvar runs first so any const references in the name table resolve; it's
+  // optional because the PT-BR table is keyed by literal ids in practice.
+  if (enumvar) {
+    try { runChunkInto(enumvar, g); } catch (err) { console.warn(`! enumvar: ${err.message}`); }
+  }
+  try { runChunkInto(nameTable, g); } catch (err) { console.warn(`! randomoption table: ${err.message}`); return {}; }
+
+  const tbl = g.get("NameTable_VAR");
+  const out = {};
+  if (tbl instanceof LuaTable) {
+    for (const [id, val] of tbl.map) {
+      if (typeof id !== "number") continue;
+      const name = decodeClientString(val);
+      if (name) out[String(Math.round(id))] = name;
     }
   }
   return out;

@@ -21,6 +21,7 @@ import type {
   MapChange,
   MobHpUpdate,
   ParamChangeEvent,
+  RandomOption,
   Replay,
   SkillCast,
   SkillUse,
@@ -127,6 +128,9 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
       firstSeenMs: 0,
       lastHp: 0,
       sex: session.sex === 0 || session.sex === 1 ? session.sex : undefined,
+      hairStyle: session.hairStyle || undefined,
+      hairColor: session.hairColor || undefined,
+      clothesColor: session.clothesColor || undefined,
     });
   }
   const damage: DamageEvent[] = [];
@@ -327,6 +331,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
             equipped: 0,
             refine: ev.refine,
             cards: [0, 0, 0, 0],
+            options: [],
           });
         }
         itemAdds.push(ev);
@@ -345,6 +350,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
           equipped: 0,
           refine: 0,
           cards: [0, 0, 0, 0],
+          options: [],
         });
         // For a successful use, also emit a synthetic delete event so the
         // consumables panel counts it. Stackable consumables only fire
@@ -380,6 +386,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
           itemId: inv?.itemId ?? 0,
           refine: inv?.refine ?? 0,
           cards: inv ? inv.cards.filter((c) => c > 0) : [],
+          options: inv?.options ?? [],
         });
         break;
       }
@@ -473,10 +480,15 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
   let aid = 0;
   let job = 0;
   let baseLevel = 0;
-  // Sex byte from the session/char snapshot. Chunk 1098 is the trailing 1-byte
-  // field of the serialized CHARACTER_INFO (0 = female, 1 = male). Used only as a
-  // fallback — a spawn packet's documented sex overrides it when present.
+  // Sprite sex of the recording character — see the chunk 1095 note below.
   let sex = -1;
+  // Appearance of the recording character, for the paper-doll viewer. The local
+  // player never self-spawns, so (unlike other entities) the look isn't in any
+  // spawn packet — it lives in the Session container: hair style (1060), hair
+  // color (1064), clothes color (1063). 0 = default/standard palette.
+  let hairStyle = 0;
+  let hairColor = 0;
+  let clothesColor = 0;
 
   const replayData = containers.find(
     (c): c is GenericContainer =>
@@ -499,10 +511,20 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
     aid = readU32ChunkById(sessionContainer, 1010) ?? 0;
     job = readU32ChunkById(sessionContainer, 1014) ?? 0;
     baseLevel = readU32ChunkById(sessionContainer, 1016) ?? 0;
-    sex = readU8ChunkById(sessionContainer, 1098) ?? -1;
+    // Sprite sex of the recording character lives in chunk 1095, stored
+    // *inverted* vs the RO wire convention used everywhere else here (spawn
+    // packets + the viewer): chunk 1095 is 1=female / 0=male, our `sex` is
+    // 0=female / 1=male — so flip it. Verified on the user's replay folder plus
+    // a confirmed male/female pair. (The old code read chunk 1098, a constant 1
+    // for every character, so it always returned "male".)
+    const sexFlag = readU32ChunkById(sessionContainer, 1095);
+    sex = sexFlag === 1 ? 0 : sexFlag === 0 ? 1 : -1;
+    hairStyle = readU32ChunkById(sessionContainer, 1060) ?? 0;
+    hairColor = readU32ChunkById(sessionContainer, 1064) ?? 0;
+    clothesColor = readU32ChunkById(sessionContainer, 1063) ?? 0;
   }
 
-  return { player, map, aid, job, baseLevel, recordedAt, sex };
+  return { player, map, aid, job, baseLevel, recordedAt, sex, hairStyle, hairColor, clothesColor };
 }
 
 /**
@@ -520,14 +542,44 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
  *   +104 nameid i32
  *   +134 refine u8
  *
- * Random options / enchants are NOT in this layout on the Latam server —
- * the TLV stream ends at tag 0x011a (the trailing 4-byte field is a counter
- * that varies but doesn't decode as the rAthena `ItemOptions` triple). If a
- * future server's snapshots carry them, append the offsets here.
+ * Random options ("Bônus Aleatórios") DO live in the newer 221-byte record,
+ * carried by the TLV tag 0x012d (u16 tag @184, u32 len=25 @186, value @190).
+ * The value is the rAthena `ItemOptions` array: 5 × { id u16, value i16,
+ * param u8 }. Empty slots have id 0. The older 172-byte record ends the TLV
+ * stream before this tag, so it has none — `readRandomOptions` validates the
+ * tag/length and degrades to an empty list when absent.
  */
 /** Known EQUIPITEM_INFO record sizes, newest first. */
 const ITEM_RECORD_SIZES = [221, 172] as const;
 const NAMEID_OFFSET = 104;
+/** Value-bytes offset of the 0x012d random-options TLV field (221-byte record). */
+const OPTIONS_OFFSET = 190;
+const OPTIONS_TAG = 0x012d;
+const MAX_OPTIONS = 5;
+
+/**
+ * Read the 5-slot random-options array from an item record. Returns `[]` for
+ * records that don't carry the 0x012d field (older 172-byte layout), guarded
+ * by re-checking the tag + length so an unexpected layout fails closed.
+ */
+function readRandomOptions(
+  view: DataView,
+  base: number,
+  recordSize: number,
+): RandomOption[] {
+  if (recordSize < OPTIONS_OFFSET + MAX_OPTIONS * 5) return [];
+  const tag = view.getUint16(base + OPTIONS_OFFSET - 6, true);
+  const len = view.getUint32(base + OPTIONS_OFFSET - 4, true);
+  if (tag !== OPTIONS_TAG || len !== MAX_OPTIONS * 5) return [];
+  const out: RandomOption[] = [];
+  for (let i = 0; i < MAX_OPTIONS; i++) {
+    const o = base + OPTIONS_OFFSET + i * 5;
+    const id = view.getUint16(o, true);
+    if (id === 0) continue; // empty slot
+    out.push({ id, value: view.getInt16(o + 2, true), param: view.getUint8(o + 4) });
+  }
+  return out;
+}
 
 /**
  * Pick the record stride for an Items-container chunk. A chunk is a tight
@@ -626,6 +678,7 @@ function readItemsContainer(
           equipped,
           refine,
           cards: [card0, card1, card2, card3],
+          options: readRandomOptions(view, p, RECORD),
         });
       }
       p += RECORD;
@@ -642,13 +695,4 @@ function readU32ChunkById(
   if (!ch || ch.data.byteLength < 4) return null;
   const view = new DataView(ch.data.buffer, ch.data.byteOffset, 4);
   return view.getUint32(0, true);
-}
-
-function readU8ChunkById(
-  container: GenericContainer,
-  chunkId: number,
-): number | null {
-  const ch = container.chunks.find((c) => c.id === chunkId);
-  if (!ch || ch.data.byteLength < 1) return null;
-  return ch.data[0];
 }
