@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-06-25
+
+- Visualizador de personagem: correção do sexo, que voltava a sair sempre masculino. Personagens femininas agora aparecem corretamente. (O sexo é lido do contêiner ReplayData, já que a mesma conta pode ter personagens dos dois sexos e o jogador local nunca aparece em pacotes de spawn.)
+
 ## 2026-06-19
 
 - Bônus Aleatórios dos equipamentos agora são importados do replay e exibidos no popover de cada item, com os nomes em português vindos do cliente do jogo (ex.: "ATQM +7", "Conjuração variável -8%", "Precisão +9").
