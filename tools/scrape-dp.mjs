@@ -44,9 +44,31 @@ const KINDS = {
   efst:    { path: "efst",    extraParams: "",           needsAuth: true  },
 };
 
+// Only dp-monster.json is consumed at runtime (src/divine-pride.ts) — item and
+// skill names come from the client GRF (item.json / skill.json via build-db.mjs),
+// so a default run scrapes monsters only. item/skill/efst remain available for
+// ad-hoc reference via an explicit `--kinds=...`.
+const DEFAULT_KINDS = ["monster"];
+
+// DP no longer honors Accept-Language for the database pages — site language is
+// driven by the `lang` cookie its language-switcher sets (see /bundles/divinepride:
+// `$.cookie("lang", t, …)`). Without `lang=pt` the listings come back in English
+// ("Red Potion" instead of "Poção Vermelha"), so pin it. Note: only ITEM names
+// are translated in DP's pt locale right now — monster/skill names fall back to
+// English regardless, so for those kinds we merge additively over the committed
+// pt-BR names instead of overwriting them (see ENGLISH_ONLY_KINDS / the write loop).
+const SITE_LANG_COOKIE = "lang=pt";
+
+// Kinds DP no longer localizes to pt (only items are translated now). For these
+// we never overwrite an existing pt name — see the write loop below.
+const ENGLISH_ONLY_KINDS = new Set(["monster", "skill"]);
+
 const args = parseArgs(process.argv.slice(2));
-const onlyKinds = args.kinds ? args.kinds.split(",") : Object.keys(KINDS);
-const cookie = process.env.DP_COOKIE ?? "";
+const onlyKinds = args.kinds ? args.kinds.split(",") : DEFAULT_KINDS;
+// Merge the site-language cookie with the optional auth cookie (.ASPXAUTH for efst).
+const cookie = [SITE_LANG_COOKIE, process.env.DP_COOKIE]
+  .filter(Boolean)
+  .join("; ");
 
 if (args["self-test"]) {
   await selfTest();
@@ -61,16 +83,29 @@ for (const kind of onlyKinds) {
     console.error(`unknown kind: ${kind}`);
     process.exit(1);
   }
-  if (cfg.needsAuth && !cookie) {
+  if (cfg.needsAuth && !process.env.DP_COOKIE) {
     console.warn(`[skip] ${kind}: needs DP_COOKIE — skipping`);
     continue;
   }
   console.log(`[start] ${kind}`);
   const data = await scrapeKind(kind, cfg);
   const outPath = resolve(OUT_DIR, `dp-${kind}.json`);
+  // DP's pt locale currently only translates ITEM names; monster and skill
+  // names come back in English regardless of the `lang` cookie. The committed
+  // dp-monster/dp-skill files hold real pt-BR names from when DP still served
+  // them, so for those kinds we merge additively — keep every existing name and
+  // only add ids we didn't have — rather than clobbering pt with English.
+  // (dp-monster.json is the one file the app actually reads; see src/divine-pride.ts.)
+  let out = data;
+  if (ENGLISH_ONLY_KINDS.has(kind)) {
+    const existing = readExisting(outPath);
+    const added = Object.keys(data).filter((id) => !(id in existing)).length;
+    out = { ...data, ...existing }; // existing (pt) wins; new ids from `data` fill gaps
+    console.log(`  ${kind}: pt-only locale — kept ${Object.keys(existing).length} existing name(s), added ${added} new id(s)`);
+  }
   // Compact JSON (no pretty-print) keeps the bundled file small.
-  writeFileSync(outPath, JSON.stringify(data));
-  console.log(`[done]  ${kind}: ${Object.keys(data).length} entries → ${outPath}`);
+  writeFileSync(outPath, JSON.stringify(out));
+  console.log(`[done]  ${kind}: ${Object.keys(out).length} entries → ${outPath}`);
 }
 
 if (onlyKinds.includes("monster") && !args["skip-harvest"]) {
@@ -254,9 +289,28 @@ async function fetchPage(kind, page, cfg) {
     "User-Agent": USER_AGENT,
   };
   if (cookie) headers.Cookie = cookie;
-  const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  return res.text();
+  // DP intermittently 500s on individual listing pages. Without a retry a
+  // single hiccup aborts the whole multi-hundred-page run, so back off and
+  // retry transient errors (5xx / network) before giving up.
+  const MAX_ATTEMPTS = 4;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, { headers });
+      if (res.ok) return res.text();
+      // 4xx is permanent — don't waste retries on it.
+      if (res.status < 500) throw new Error(`${url}: HTTP ${res.status}`);
+      lastErr = new Error(`${url}: HTTP ${res.status}`);
+    } catch (e) {
+      lastErr = e;
+    }
+    if (attempt < MAX_ATTEMPTS) {
+      const backoff = 500 * 2 ** (attempt - 1); // 0.5s, 1s, 2s
+      console.warn(`  retry ${attempt}/${MAX_ATTEMPTS - 1} after ${lastErr.message}`);
+      await sleep(backoff);
+    }
+  }
+  throw lastErr;
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +420,16 @@ function decodeEntities(s) {
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
+}
+
+// Load an existing dp-{kind}.json into a plain object, or {} if absent/corrupt.
+function readExisting(path) {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return {};
+  }
 }
 
 // ---------------------------------------------------------------------------
