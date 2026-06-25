@@ -4,6 +4,8 @@ All notable user-facing changes to RagnaRecap. Newest first.
 
 ## 2026-06-25
 
+- Leaderboard de MVPs: agora considera **todos** os replays compartilhados, não só os 300 mais recentes. Antes, conforme novos replays eram enviados, recordes antigos saíam silenciosamente da lista; agora o ranking reflete a base inteira.
+- Leaderboard de MVPs: nomes das classes 4 corrigidos para os nomes atuais em português, iguais aos do projeto irmão (Visuais Latam): Magus (antes Arquimágico), Executor (antes Assassino), Falcão do Vento (antes Patrulheiro), Mandraque (antes Ladino) e Maestro (antes Poeta). Replays antigos também são normalizados para os novos nomes no filtro.
 - Visualizador de personagem: correção do sexo, que voltava a sair sempre masculino. Personagens femininas agora aparecem corretamente. (O sexo é lido do contêiner ReplayData, já que a mesma conta pode ter personagens dos dois sexos e o jogador local nunca aparece em pacotes de spawn.)
 
 ## 2026-06-19

@@ -205,23 +205,39 @@ export async function fetchReplay(id: string): Promise<FetchedReplay | null> {
 }
 
 /**
- * Bulk fetch of recent replay summaries via Firestore REST's `runQuery`
- * with a `select` projection — drops the `bytes` blob (by far the largest
- * field) so a few hundred docs is a small payload. The client holds the
- * whole list and does case-insensitive substring filtering locally without
- * per-keystroke round trips. The regular Firebase JS SDK has no field
- * projection, hence the REST detour. Reads are public per firestore.rules,
+ * Page size for the bulk fetch below. One round trip covers the whole
+ * collection until it grows past this; beyond that we page with a cursor.
+ */
+const REPLAY_PAGE_SIZE = 1000;
+/** Safety ceiling so a runaway collection can't loop unbounded (50k docs). */
+const REPLAY_MAX_PAGES = 50;
+
+/**
+ * Bulk fetch of **all** replay summaries via Firestore REST's `runQuery` with a
+ * `select` projection — drops the `bytes` blob (by far the largest field) so the
+ * payload stays small. The client holds the whole list: the home view paginates
+ * /filters it locally, and the cross-replay leaderboard aggregates across it.
+ *
+ * It must return the entire collection, not a recent slice — the leaderboard's
+ * top-N is all-time, so capping the fetch would silently drop records once the
+ * collection outgrew the cap (and it has: hundreds of docs). We page with a
+ * `(uploadedAt, __name__)` cursor; the `__name__` tiebreaker keeps paging stable
+ * across docs that share an `uploadedAt` ms. Results stay uploadedAt-descending,
+ * which the home "recent" list relies on. The regular Firebase JS SDK has no
+ * field projection, hence the REST detour. Reads are public per firestore.rules,
  * so the API key alone is enough; no auth token needed.
  */
-export async function listRecentReplays(
-  maxItems = 300,
-): Promise<ReplayListItem[]> {
+export async function listRecentReplays(): Promise<ReplayListItem[]> {
   const url =
     `https://firestore.googleapis.com/v1/projects/` +
     `${firebaseConfig.projectId}/databases/(default)/documents:runQuery` +
     `?key=${firebaseConfig.apiKey}`;
-  const body = {
-    structuredQuery: {
+  const out: ReplayListItem[] = [];
+  // Cursor onto the last doc of the previous page: [uploadedAt, doc path].
+  let cursor: [string, string] | null = null;
+
+  for (let page = 0; page < REPLAY_MAX_PAGES; page++) {
+    const structuredQuery: Record<string, unknown> = {
       from: [{ collectionId: COLLECTION }],
       select: {
         fields: [
@@ -243,24 +259,40 @@ export async function listRecentReplays(
       },
       orderBy: [
         { field: { fieldPath: "uploadedAt" }, direction: "DESCENDING" },
+        { field: { fieldPath: "__name__" }, direction: "DESCENDING" },
       ],
-      limit: maxItems,
-    },
-  };
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`Firestore runQuery failed: ${res.status}`);
+      limit: REPLAY_PAGE_SIZE,
+    };
+    if (cursor) {
+      // `before: false` => start strictly *after* the cursor (startAfter).
+      structuredQuery.startAt = {
+        before: false,
+        values: [{ timestampValue: cursor[0] }, { referenceValue: cursor[1] }],
+      };
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ structuredQuery }),
+    });
+    if (!res.ok) {
+      throw new Error(`Firestore runQuery failed: ${res.status}`);
+    }
+    const rows = (await res.json()) as Array<{
+      document?: { name: string; fields?: Record<string, unknown> };
+    }>;
+    const docs = rows.map((r) => r.document).filter((d): d is NonNullable<typeof d> => !!d);
+    for (const d of docs) out.push(parseRestSummary(d));
+
+    if (docs.length < REPLAY_PAGE_SIZE) break;
+    const last = docs[docs.length - 1];
+    const ts = (last.fields?.uploadedAt as { timestampValue?: string } | undefined)?.timestampValue;
+    // Without a usable cursor we can't page deterministically — stop rather
+    // than risk an infinite loop or duplicated rows.
+    if (!ts) break;
+    cursor = [ts, last.name];
   }
-  const rows = (await res.json()) as Array<{
-    document?: { name: string; fields?: Record<string, unknown> };
-  }>;
-  return rows
-    .filter((r) => r.document)
-    .map((r) => parseRestSummary(r.document!));
+  return out;
 }
 
 function parseRestSummary(doc: {
@@ -299,6 +331,22 @@ const MVP_NAME_PARSE_CAP = 80;
 const MVP_PLAYER_NAME_PARSE_CAP = 80;
 const MVP_CLASS_PARSE_CAP = 60;
 
+/**
+ * Records uploaded before the 4th-job rename carry the old class label the
+ * client's pcjobnamegender.lub used (e.g. "Arquimágico"). The job DB now resolves
+ * those ids to the corrected pt-BR names (matching the leaderboard dropdown and
+ * the sibling latam-visuais project), so normalize legacy stored labels on read
+ * — otherwise old records would never match the class filter and would sit
+ * unreachable under "(Sem classe)" / "all classes" only.
+ */
+const LEGACY_CLASS_RENAMES: Record<string, string> = {
+  Arquimágico: "Magus",
+  Assassino: "Executor",
+  Ladino: "Mandraque",
+  Patrulheiro: "Falcão do Vento",
+  Poeta: "Maestro",
+};
+
 function restMvpRecords(v: unknown): MvpRecord[] {
   if (!v || typeof v !== "object") return [];
   const arr = (v as { arrayValue?: { values?: unknown[] } }).arrayValue?.values;
@@ -313,7 +361,7 @@ function restMvpRecords(v: unknown): MvpRecord[] {
       name: (restStr(f.name) ?? "").slice(0, MVP_NAME_PARSE_CAP),
       playerAid: restNum(f.playerAid) ?? 0,
       playerName: (restStr(f.playerName) ?? "").slice(0, MVP_PLAYER_NAME_PARSE_CAP),
-      class: (restStr(f.class) ?? "").slice(0, MVP_CLASS_PARSE_CAP),
+      class: normalizeClass((restStr(f.class) ?? "").slice(0, MVP_CLASS_PARSE_CAP)),
       totalDamage: restNum(f.totalDamage) ?? 0,
       highestHit: restNum(f.highestHit) ?? 0,
       combatSpanMs: restNum(f.combatSpanMs) ?? 0,
@@ -321,6 +369,10 @@ function restMvpRecords(v: unknown): MvpRecord[] {
     });
   }
   return out;
+}
+
+function normalizeClass(cls: string): string {
+  return LEGACY_CLASS_RENAMES[cls] ?? cls;
 }
 
 function restStr(v: unknown): string | null {

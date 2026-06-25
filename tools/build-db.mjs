@@ -97,6 +97,20 @@ const PLAYER_JT_IDS = {
   JT_CHICKEN: 4045, JT_CHICKEN2: 4046,
 };
 
+// 4th-job display names, pinned from bROWiki's "Classe 4" column. The client's
+// pcjobnamegender.lub predates the renames (it still says "Arquimágico",
+// "Assassino", "Poeta", "Patrulheiro", "Ladino") so we override those few with
+// the authoritative pt-BR names — kept in sync with the sibling project
+// latam-visuais (tools/build-db.mjs NAME_OVERRIDE). Names that already match the
+// lub aren't listed; only the renamed ones are.
+const JOB_NAME_OVERRIDE = {
+  JT_ARCH_MAGE: "Magus",
+  JT_SHADOW_CROSS: "Executor",
+  JT_ABYSS_CHASER: "Mandraque",
+  JT_WINDHAWK: "Falcão do Vento",
+  JT_TROUBADOUR: "Maestro",
+};
+
 // All work runs inside main() invoked at the very bottom of the file, so every
 // module-level const (including the DES tables) is initialized before any
 // extraction touches it.
@@ -784,6 +798,7 @@ function parseJobNames(map) {
   }
 
   function labelFor(jt) {
+    if (JOB_NAME_OVERRIDE[jt]) return JOB_NAME_OVERRIDE[jt];
     if (jtToLabel.has(jt)) return jtToLabel.get(jt);
     if (jt.endsWith("_H") || jt.endsWith("_B")) {
       const base = jt.slice(0, -2);
