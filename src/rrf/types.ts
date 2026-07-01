@@ -37,6 +37,10 @@ export type Entity = {
   headMidView?: number;
   headLowView?: number;
   robeView?: number;
+  /** OPTION/effectState bitmask from the spawn packet — carries mount flags
+   *  (Peco, Mado Gear, Dragon, Warg). Undefined for entities we never saw a
+   *  spawn packet for. */
+  option?: number;
 };
 
 /**

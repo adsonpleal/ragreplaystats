@@ -27,6 +27,10 @@ export type PlayerLook = {
   garment: number | null;
   weapon: number | null;
   shield: number | null;
+  /** Mado Gear body, when the player is riding one: 0 = robot, 2 = suit; null =
+   *  not on a Mado Gear. The gateway's `madogearType` composites the mech body.
+   *  (Peco mounts come through `jobView`; dragon/warg have no gateway param.) */
+  madogear?: 0 | 2 | null;
 };
 
 /** Build the /image URL for one specific frame of a player sprite. Used by the
@@ -69,6 +73,7 @@ function playerParams(look: PlayerLook): URLSearchParams {
   if (look.garment != null) p.set("garment", String(look.garment));
   if (look.weapon != null) p.set("weapon", String(look.weapon));
   if (look.shield != null) p.set("shield", String(look.shield));
+  if (look.madogear != null) p.set("madogearType", String(look.madogear));
   return p;
 }
 

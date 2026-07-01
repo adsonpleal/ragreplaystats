@@ -33,6 +33,9 @@ const SLOT = {
 const GENDER_LOCKED_FEMALE = new Set([20, 4021, 4043, 4069, 4076, 4105, 4212]);
 const GENDER_LOCKED_MALE = new Set([19, 4020, 4042, 4068, 4075, 4104, 4211]);
 
+// OPTION bit for riding a Mado Gear (Mechanic) in the spawn packet's effectState.
+const OPTION_MADOGEAR = 0x20000000;
+
 function resolveSex(jobView: number, reported?: number): 0 | 1 {
   if (GENDER_LOCKED_FEMALE.has(jobView)) return 0;
   if (GENDER_LOCKED_MALE.has(jobView)) return 1;
@@ -127,5 +130,9 @@ export function lookFromEntity(entity: Entity, db: ReferenceDb | null): PlayerLo
     garment: entity.robeView || null,
     weapon,
     shield,
+    // Mado Gear is the only mount the gateway can composite (madogearType).
+    // Peco riders arrive as a mounted job id in `jobView` (renders as-is);
+    // dragon/warg have no gateway param, so they fall back to the base sprite.
+    madogear: (entity.option ?? 0) & OPTION_MADOGEAR ? 0 : null,
   };
 }

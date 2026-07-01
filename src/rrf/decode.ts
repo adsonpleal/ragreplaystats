@@ -290,6 +290,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
           e.headMidView = ep.look.headMid;
           e.headLowView = ep.look.headLow;
           e.robeView = ep.look.robe;
+          e.option = ep.option;
         }
         // Spawn position → synthetic fix-pos so the map viewer can place the
         // entity at its initial cell before any walk lands. A walking spawn

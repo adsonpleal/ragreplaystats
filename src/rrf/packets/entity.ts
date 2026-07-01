@@ -13,6 +13,9 @@ export type EntityPacket = {
   hp: number;
   /** 0 = female, 1 = male, -1 = unknown (not in this packet variant). */
   sex: number;
+  /** The OPTION/effectState bitmask (mounts, cloaking, falcon, etc.). 0 when
+   *  the layout doesn't carry it. Used to detect mounts for the map viewer. */
+  option: number;
   /** Position decoded from the spawn's PosDir / MoveData (idle = stationary
    *  cell, walking = current step's source). Null when the layout has no
    *  position field. */
@@ -137,20 +140,42 @@ export function decodeWalking(reader: ByteReader): EntityPacket {
  *   objType u8   @ 4
  *   AID u32      @ 5
  *   view i16     @ 19
+ *   appearance block @ 21 (head/weapon/shield/accessories/palettes/robe — same
+ *                        fields as the full spawn, so remote players present
+ *                        only at recording start still get their gear)
+ *   sex u8       @ 58
  *   PosDir (3)   @ 59   (recording-start cell for entities that never moved
  *                        after spawning — without this dummies/NPCs stay
  *                        invisible in the map viewer)
  *   name var     @ 69   (UTF-8 / cp949, fills the remaining bytes)
+ *
+ * The block between view@19 and PosDir@59 (both verified anchors) holds exactly
+ * the standard appearance fields + guild/sex, so the offsets are deterministic
+ * (they don't depend on objType or name length).
  */
 export function decodeInitialSpawn0857(reader: ByteReader): EntityPacket {
-  const pktLen = reader.u16();
-  const objectType = reader.u8();
-  const aid = reader.u32();
-  reader.skip(19 - 9); // jump to view
-  const view = reader.i16();
-  reader.skip(59 - 21); // jump to PosDir
-  const pos = readPosDir(reader.bytes(3));
-  reader.skip(69 - 62); // jump to name
+  const pktLen = reader.u16(); // pos 4
+  const objectType = reader.u8(); // pos 5
+  const aid = reader.u32(); // pos 9
+  reader.skip(2 + 2 + 2); // speed/bodyState/healthState (no GID here) -> pos 15
+  const option = reader.u32(); // effectState/OPTION bitmask -> pos 19
+  const view = reader.i16(); // pos 21
+  // Appearance — identical layout to readEntity (weapon/shield 4-byte).
+  const head = reader.u16(); // pos 23
+  const weapon = reader.u32(); // pos 27
+  const shield = reader.u32(); // pos 31
+  const accessory = reader.u16(); // headLow, pos 33
+  const accessory2 = reader.u16(); // headTop, pos 35
+  const accessory3 = reader.u16(); // headMid, pos 37
+  const headpalette = reader.u16(); // hairColor, pos 39
+  const bodypalette = reader.u16(); // clothesColor, pos 41
+  reader.skip(2); // headDir -> pos 43
+  const robe = reader.u16(); // garment, pos 45
+  reader.skip(4 + 2 + 2 + 4); // GUID, GEmblemVer, honor, virtue -> pos 57
+  reader.skip(1); // isPKModeON -> pos 58
+  const sex = reader.u8(); // pos 59
+  const pos = readPosDir(reader.bytes(3)); // pos 62
+  reader.skip(69 - 62); // xSize/ySize/state -> jump to name @69
   const remaining = pktLen - 69;
   const name = remaining > 0 ? readEntityName(reader.bytes(Math.max(0, remaining))) : "";
 
@@ -164,10 +189,21 @@ export function decodeInitialSpawn0857(reader: ByteReader): EntityPacket {
     level: 0,
     maxHp: 0,
     hp: 0,
-    sex: -1, // 0x0857 snapshot has no sex field
+    sex,
+    option,
     pos,
     walk: null,
-    look: null, // stripped snapshot: no appearance fields
+    look: {
+      hairStyle: head,
+      hairColor: headpalette,
+      clothesColor: bodypalette,
+      weapon,
+      shield,
+      headTop: accessory2,
+      headMid: accessory3,
+      headLow: accessory,
+      robe,
+    },
   };
 }
 
@@ -182,7 +218,8 @@ function readEntity(
   const objectType = reader.u8();
   const aid = reader.u32();
   const gid = reader.u32();
-  reader.skip(2 + 2 + 2 + 4); // speed, bodyState, healthState, effectState
+  reader.skip(2 + 2 + 2); // speed, bodyState, healthState
+  const option = reader.u32(); // effectState — the OPTION bitmask (mounts/cloak/etc.)
   const job = reader.i16();
   // Appearance block — all client sprite VIEW/look ids. Byte sizes are exactly
   // the old skips (weapon/shield are 4-byte here), so `sex`/`pos` below still
@@ -242,6 +279,7 @@ function readEntity(
     maxHp,
     hp,
     sex,
+    option,
     pos,
     walk,
     look: {
