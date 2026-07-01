@@ -38,14 +38,16 @@ const HORIZONTAL_SPREAD = 4;
 const ARC_HEIGHT = 5;
 const BASE_LIFT = 2;
 
-// Multi-hit skills (roBrowser style): each hit spawns its own number, cascading
-// diagonally and staggered in time, then a single "combo" total in yellow that
-// sums every hit and lingers above the target.
+// Multi-hit skills, matching the RO client: each hit spawns its own white
+// number that rises STRAIGHT UP the target's vertical line (staggered in time,
+// so successive hits stack — older ones higher + smaller + fading), and a
+// single yellow "combo" total that pins right above the monster and sums the
+// hits. No horizontal fan — every number shares the same vertical path.
 const HIT_STAGGER_MS = 110; // gap between successive hits of the same skill
-const CASCADE_SPACING = 1.1; // world units each later hit shifts right…
-const CASCADE_RISE = 0.7; //  …and up, so the hits fan out instead of stacking
+const HIT_RISE_WORLD = 4; // how far a hit number climbs over its life
+const COMBO_ABOVE_WORLD = 6.5; // yellow total's height above the target anchor…
 const COMBO_LIFE_MS = 2300; // the yellow total lingers longer than a single hit
-const COMBO_COLOR = "#e6e626"; // roBrowser combo yellow rgb(0.9,0.9,0.15)
+const COMBO_COLOR = "#e6e626"; // RO combo yellow rgb(0.9,0.9,0.15)
 
 const TEXT_CANVAS_W = 128;
 const TEXT_CANVAS_H = 48;
@@ -91,9 +93,10 @@ function comboSpec(total: number): TextSpec {
 type SpawnOpts = {
   /** Vertical tier for close-together separate hits (single-hit stacking). */
   stackLevel?: number;
-  /** Index of this hit within a multi-hit cascade (0-based); fans it out. */
-  cascade?: number;
-  /** This float is the yellow combo total — holds fixed above the target. */
+  /** This float is one hit of a multi-hit skill — rises straight up the
+   *  target's vertical line (no horizontal drift) so successive hits stack. */
+  column?: boolean;
+  /** This float is the yellow combo total — pins right above the monster. */
   combo?: boolean;
 };
 
@@ -125,8 +128,8 @@ class Float {
   bornAtMs = 0;
   lifeMs = LIFETIME_MS;
   liftOffsetWorld = 0; // extra rise when hits stack on the same target
-  cascade = 0; // multi-hit index — fans the number out diagonally
-  combo = false; // the yellow total, held fixed above the target
+  column = false; // multi-hit hit — rises straight up the target's vertical line
+  combo = false; // the yellow total, pinned above the target
   active = false;
   private readonly worldW: number;
   private readonly worldH: number;
@@ -166,7 +169,7 @@ class Float {
     this.bornAtMs = bornAtMs;
     this.lifeMs = spec.lifeMs;
     this.liftOffsetWorld = (opts.stackLevel ?? 0) * 2.2;
-    this.cascade = opts.cascade ?? 0;
+    this.column = opts.column ?? false;
     this.combo = opts.combo ?? false;
     this.active = true;
     this.mesh.visible = false; // shown on the first update once bornAtMs passes
@@ -195,48 +198,49 @@ class Float {
     this.right.set(1, 0, 0).applyQuaternion(camera.quaternion);
     this.toCam.copy(camera.position).sub(this.anchor).normalize();
 
-    // Combo total: hold full-size and centred above the target, then fade out in
-    // the last 30% — it reads as a stable "sum" rather than a flying hit number.
+    // Combo total: pin it right above the monster (a fixed height above the
+    // anchor) and hold full-size, then fade in the last 30% — a stable "sum"
+    // sitting over the sprite, above the rising hit numbers.
     if (this.combo) {
       const alpha = perc < 0.7 ? 1 : Math.max(0, (1 - perc) / 0.3);
       (this.mesh.material as MeshBasicMaterial).opacity = alpha;
-      this.mesh.scale.set(1.1, 1.1, 1);
+      this.mesh.scale.set(1.15, 1.15, 1);
       this.mesh.position
         .copy(this.anchor)
-        .addScaledVector(this.up, BASE_LIFT + 8 + perc * 1.5)
+        .addScaledVector(this.up, COMBO_ABOVE_WORLD + perc * 0.6)
         .addScaledVector(this.toCam, 1);
       return;
     }
 
-    // Motion. Two paths, ported from Damage.js's per-type branches:
-    //  • DAMAGE  — arcs right (+X) and back (-Y in RO space, which is our
-    //              camera-right axis), and vertically follows an offset sine
-    //              (peaks at ~1/3 lifetime, then dips) so the number lofts and
-    //              falls like a thrown coin.
-    //  • MISS    — no horizontal drift, just a linear rise.
+    // Multi-hit hit: rise STRAIGHT UP the target's vertical line (no horizontal
+    // drift), shrinking + fading. Because the hits are staggered in time they
+    // stack — the older one is higher/smaller/fainter, matching the client.
+    if (this.column) {
+      (this.mesh.material as MeshBasicMaterial).opacity = 1 - perc;
+      const scale = Math.max(0.45, 1 - perc * 0.5);
+      this.mesh.scale.set(scale, scale, 1);
+      this.mesh.position
+        .copy(this.anchor)
+        .addScaledVector(this.up, BASE_LIFT + perc * HIT_RISE_WORLD)
+        .addScaledVector(this.toCam, 1);
+      return;
+    }
+
+    // Single hit (auto-attack / one-shot skill). Damage arc from Damage.js:
+    //   posZ = base + 2 + sin(-π/2 + π*(0.5 + perc*1.5)) * 5   (lofts then dips)
+    //   posX = base + perc*4                                   (slight drift right)
+    // MISS just rises linearly, no drift.
     const isMiss = this.lifeMs === MISS_LIFETIME_MS;
-    // Fade + shrink. roBrowser: color[3] = 1 - perc; size = (1 - perc) * 4.
-    // Cap the shrink so the last visible tick isn't a pinprick — clamp to 0.35.
     const alpha = 1 - perc;
     const scale = isMiss ? 0.6 : Math.max(0.35, 1 - perc * 0.65);
     (this.mesh.material as MeshBasicMaterial).opacity = alpha;
     this.mesh.scale.set(scale, scale, 1);
-
-    // Damage arc from Damage.js:
-    //   posZ = base + 2 + sin(-π/2 + π*(0.5 + perc*1.5)) * 5
-    //   posX = base + perc*4     (drift right)
-    //   posY = base - perc*4     (drift back / away)
-    // In our scene the "back" axis is camera-toCam, so we push along it. Each
-    // cascading hit adds a fixed diagonal offset (right + up) so a multi-hit
-    // skill's numbers fan out instead of landing on top of each other.
     const arc = Math.sin(-Math.PI / 2 + Math.PI * (0.5 + perc * 1.5)) * ARC_HEIGHT;
     const liftUp = isMiss ? BASE_LIFT + perc * 7 : BASE_LIFT + arc;
-    const cascadeRight = this.cascade * CASCADE_SPACING;
-    const cascadeUp = this.cascade * CASCADE_RISE;
     this.mesh.position
       .copy(this.anchor)
-      .addScaledVector(this.up, liftUp + this.liftOffsetWorld + cascadeUp)
-      .addScaledVector(this.right, cascadeRight + (isMiss ? 0 : perc * HORIZONTAL_SPREAD))
+      .addScaledVector(this.up, liftUp + this.liftOffsetWorld)
+      .addScaledVector(this.right, isMiss ? 0 : perc * HORIZONTAL_SPREAD)
       .addScaledVector(this.toCam, isMiss ? 1 : 1 + perc * HORIZONTAL_SPREAD * 0.5);
   }
 
@@ -280,7 +284,8 @@ export class DamageTextLayer {
     free.spawn(targetPos, specFor(hit, damage, fromPlayer), nowMs, { stackLevel: this.nextStackLevel(targetAid, nowMs) });
   }
 
-  /** Fan out one number per hit (each ≈ total/count), then the yellow sum. */
+  /** One rising white number per hit (each ≈ total/count) on the target's
+   *  vertical line, then the yellow sum pinned above the monster. */
   private spawnMultiHit(
     targetPos: Vector3,
     total: number,
@@ -291,12 +296,12 @@ export class DamageTextLayer {
   ): void {
     const perHit = Math.max(1, Math.floor(total / count));
     // Individual hits keep the source's colour (crit stays yellow); only the
-    // combo total below is forced to the combo yellow.
+    // combo total above is forced to the combo yellow.
     const hitType: HitType = hit === "critical" ? "critical" : "normal";
     for (let i = 0; i < count; i++) {
       const free = this.pool.find((f) => !f.active);
       if (!free) break;
-      free.spawn(targetPos, specFor(hitType, perHit, fromPlayer), nowMs + i * HIT_STAGGER_MS, { cascade: i });
+      free.spawn(targetPos, specFor(hitType, perHit, fromPlayer), nowMs + i * HIT_STAGGER_MS, { column: true });
     }
     const comboFloat = this.pool.find((f) => !f.active);
     if (comboFloat) comboFloat.spawn(targetPos, comboSpec(total), nowMs + count * HIT_STAGGER_MS, { combo: true });
