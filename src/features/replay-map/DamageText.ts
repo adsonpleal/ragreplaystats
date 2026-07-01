@@ -39,15 +39,20 @@ const ARC_HEIGHT = 5;
 const BASE_LIFT = 2;
 
 // Multi-hit skills, matching the RO client: each hit spawns its own white
-// number that rises STRAIGHT UP the target's vertical line (staggered in time,
-// so successive hits stack — older ones higher + smaller + fading). Above them
-// a small yellow RUNNING TOTAL pins over the monster: it starts at the first
-// hit's value and grows — in value and size — as each subsequent hit lands. No
-// horizontal fan — every number shares the same vertical path.
-const HIT_STAGGER_MS = 700; // gap between hits — wide so the numbers don't pile up
+// number that flies up the target in a gentle OPEN ARCH (rising while curving
+// out to one side), staggered a beat apart so successive hits fan open — older
+// ones higher, smaller and fading. Above them a small yellow RUNNING TOTAL pins
+// over the monster: it starts at the first hit's value and grows — in value and
+// size — as each subsequent hit lands. Timing is quick, matching the client:
+// the hits pop ≈180ms apart and each clears in ≈600ms (not the lazy 1.5s of a
+// single auto-attack number).
+const HIT_STAGGER_MS = 180; // gap between hits — tight, like the client's rapid combo
+const HIT_LIFETIME_MS = 600; // a single hit number's life — quick pop-and-fade
 const COLUMN_BASE_WORLD = 0.8; // where a hit number starts (low, on the monster body)
-const HIT_RISE_WORLD = 3.5; // how far a hit number climbs over its life (kept low
-//                             so the stack stays on the monster, not floating up)
+const HIT_RISE_WORLD = 2.2; // how far a hit number climbs over its life — tops out
+//                            just below the yellow total, never colliding with it
+const HIT_SPREAD_WORLD = 2.6; // how far a hit number curves out sideways (the arch's
+//                              width); consecutive hits alternate side to open a fan
 const COMBO_ABOVE_WORLD = 3.6; // yellow total's height above the target anchor —
 //                               just over the monster's head, clear of the hits
 const COMBO_FONT_PX = 24; // yellow total glyphs — smaller than the white hits (26)
@@ -103,9 +108,12 @@ function runningTotalSpec(perHit: number, count: number): TextSpec {
 type SpawnOpts = {
   /** Vertical tier for close-together separate hits (single-hit stacking). */
   stackLevel?: number;
-  /** This float is one hit of a multi-hit skill — rises straight up the
-   *  target's vertical line (no horizontal drift) so successive hits stack. */
+  /** This float is one hit of a multi-hit skill — flies up in an open arch,
+   *  curving out to the side given by `columnDir` so successive hits fan. */
   column?: boolean;
+  /** Which way this hit's arch curves: +1 right, -1 left. Consecutive hits
+   *  alternate so the combo opens into a fan rather than a single line. */
+  columnDir?: number;
   /** This float is the yellow running total pinned above the monster: it counts
    *  up `perHit` for each hit that has landed (by the stagger clock) and grows
    *  in size as it goes. */
@@ -140,7 +148,8 @@ class Float {
   bornAtMs = 0;
   lifeMs = LIFETIME_MS;
   liftOffsetWorld = 0; // extra rise when hits stack on the same target
-  column = false; // multi-hit hit — rises straight up the target's vertical line
+  column = false; // multi-hit hit — flies up the target in an open arch
+  private columnDir = 1; // which way this hit's arch curves (+1 right, -1 left)
   private runningTotal: { perHit: number; count: number } | null = null; // yellow total
   private baseSpec: TextSpec | null = null; // kept so the running total can redraw
   private lastLanded = -1; // hits counted into the running total so far
@@ -184,6 +193,7 @@ class Float {
     this.lifeMs = spec.lifeMs;
     this.liftOffsetWorld = (opts.stackLevel ?? 0) * 2.2;
     this.column = opts.column ?? false;
+    this.columnDir = opts.columnDir ?? 1;
     this.runningTotal = opts.runningTotal ?? null;
     this.baseSpec = this.runningTotal ? spec : null;
     this.lastLanded = -1;
@@ -238,16 +248,24 @@ class Float {
       return;
     }
 
-    // Multi-hit hit: rise STRAIGHT UP the target's vertical line (no horizontal
-    // drift). Because the hits are staggered, they stack — the older one sits
-    // higher, smaller and fainter as it climbs and fades, matching the client.
+    // Multi-hit hit: fly up in an open arch. The vertical rise leads early
+    // (sin ramps fast off zero) while the sideways curve comes in later
+    // (1 - cos ramps up toward the end), so the path shoots up then leans out
+    // to `columnDir` — a fountain arch, not a rigid vertical line. Consecutive
+    // hits alternate side, opening the combo into a fan. Starts large and
+    // bright, shrinks as it climbs, holds until the last 40% then fades.
     if (this.column) {
-      (this.mesh.material as MeshBasicMaterial).opacity = 1 - perc;
+      const q = perc * Math.PI * 0.5;
+      const rise = COLUMN_BASE_WORLD + HIT_RISE_WORLD * Math.sin(q);
+      const side = this.columnDir * HIT_SPREAD_WORLD * (1 - Math.cos(q));
+      const alpha = perc < 0.6 ? 1 : Math.max(0, (1 - perc) / 0.4);
+      (this.mesh.material as MeshBasicMaterial).opacity = alpha;
       const scale = Math.max(0.5, 1 - perc * 0.5);
       this.mesh.scale.set(scale, scale, 1);
       this.mesh.position
         .copy(this.anchor)
-        .addScaledVector(this.up, COLUMN_BASE_WORLD + perc * HIT_RISE_WORLD)
+        .addScaledVector(this.up, rise)
+        .addScaledVector(this.right, side)
         .addScaledVector(this.toCam, 1);
       return;
     }
@@ -327,7 +345,10 @@ export class DamageTextLayer {
     for (let i = 0; i < count; i++) {
       const free = this.pool.find((f) => !f.active);
       if (!free) break;
-      free.spawn(targetPos, specFor(hitType, perHit, fromPlayer), nowMs + i * HIT_STAGGER_MS, { column: true });
+      // Quick pop-and-fade life (not the lazy single-hit 1.5s), arch curving to
+      // an alternating side so the combo fans open.
+      const spec = { ...specFor(hitType, perHit, fromPlayer), lifeMs: HIT_LIFETIME_MS };
+      free.spawn(targetPos, spec, nowMs + i * HIT_STAGGER_MS, { column: true, columnDir: i % 2 === 0 ? 1 : -1 });
     }
     // The yellow running total appears up front (with the first hit) showing
     // that first hit's value, then counts up + grows as each hit lands beneath
