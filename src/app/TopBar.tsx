@@ -34,6 +34,15 @@ export function TopBar() {
               {t.suggestionsNav}
             </Link>
           )}
+          <a
+            className="topnav-link"
+            href="https://discord.gg/S4uEwGqK"
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t.discordTitle}
+          >
+            {t.discordLink}
+          </a>
         </nav>
       </div>
       <p className="muted" id="tagline">

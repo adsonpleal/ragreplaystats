@@ -2,6 +2,8 @@ export const t = {
   // Header
   appTagline:
     "Solte um replay .rrf do Ragnarok Online abaixo. A análise roda no seu navegador; o arquivo é guardado em nuvem para você compartilhar o link.",
+  discordLink: "Discord",
+  discordTitle: "Entre no servidor do Discord",
   dropPrompt: "Solte um arquivo <code>.rrf</code> aqui, ou",
   browse: "escolha um",
   dropShareLabel: "Enviar este replay para o servidor",
