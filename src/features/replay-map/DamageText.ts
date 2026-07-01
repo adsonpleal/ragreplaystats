@@ -61,8 +61,21 @@ const COMBO_GROW_TO = 1; //      …grown to this by the last hit
 const COMBO_LINGER_MS = 1200; // how long the total holds after the last hit
 const COMBO_COLOR = "#e6e626"; // RO combo yellow rgb(0.9,0.9,0.15)
 
+// Critical hits get the client's spiky red starburst drawn behind the digits.
+// The RO client renders this in code (there's no sprite for it in the GRF — the
+// only damage-number asset is the white digit font data\sprite\이팩트\숫자.spr),
+// so we draw it ourselves into the number canvas, behind the yellow glyphs.
+const CRIT_STAR_POINTS = 8; // spikes — matches the client's 8-point burst
+const CRIT_STAR_FILL = "#bb3a1c"; // brick-red body
+const CRIT_STAR_EDGE = "#5c1808"; // darker rim so it reads over any ground
+const CRIT_STAR_INNER = 0.5; // inner/outer radius ratio (how deep the spikes cut)
+
 const TEXT_CANVAS_W = 128;
-const TEXT_CANVAS_H = 48;
+// Tall enough to fit the critical starburst's top/bottom points around the
+// digits. Glyph world-size is (fontPx / canvasH) * worldH = fontPx * const, so
+// it's independent of this height — a taller canvas only gives the star room,
+// it does NOT change how big any number renders.
+const TEXT_CANVAS_H = 72;
 
 /** Damage → display string with the K/M collapse. Multi-hit count is appended
  *  as "×N" to preserve the info without breaking the abbreviation. */
@@ -79,6 +92,8 @@ type TextSpec = {
   outline: string;
   fontPx: number;
   lifeMs: number;
+  /** Draw the red critical starburst behind the digits (crit hits only). */
+  star?: boolean;
 };
 
 function specFor(hit: HitType, damage: number, fromPlayer: boolean): TextSpec {
@@ -87,7 +102,7 @@ function specFor(hit: HitType, damage: number, fromPlayer: boolean): TextSpec {
   }
   const label = formatDamage(damage);
   if (hit === "critical") {
-    return { text: label, color: COMBO_COLOR, outline: "#000", fontPx: 28, lifeMs: LIFETIME_MS };
+    return { text: label, color: COMBO_COLOR, outline: "#000", fontPx: 28, lifeMs: LIFETIME_MS, star: true };
   }
   // roBrowser: outgoing damage is white, damage TO a PC is red. In replays we
   // don't always know the target kind cheaply, so approximate with "did the
@@ -117,9 +132,35 @@ type SpawnOpts = {
   runningTotal?: { perHit: number; count: number };
 };
 
+/** Trace a `points`-pointed star centred at (cx,cy). Separate x/y radii so the
+ *  burst can be wider than tall to hug a multi-digit number, like the client. */
+function starPath(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  points: number,
+  innerRatio: number,
+): void {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    // Start at the top point (-π/2) and alternate outer/inner vertices.
+    const ang = -Math.PI / 2 + (Math.PI / points) * i;
+    const k = i % 2 === 0 ? 1 : innerRatio;
+    const x = cx + Math.cos(ang) * rx * k;
+    const y = cy + Math.sin(ang) * ry * k;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
 function drawText(canvas: HTMLCanvasElement, spec: TextSpec): void {
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
   // Galmuri11 — same crisp pixel font the latamvisuais UI uses. Bitmap
   // glyphs match the client's damage.spr blocky look far better than any
   // TTF sans. Falls back to Impact/Arial Black if the woff2 hasn't loaded
@@ -127,14 +168,31 @@ function drawText(canvas: HTMLCanvasElement, spec: TextSpec): void {
   ctx.font = `${spec.fontPx}px Galmuri11, Impact, "Arial Black", sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+  // Critical: spiky red starburst behind the glyphs. Size it off the measured
+  // text so it hugs the number — a bit past the digits horizontally, a touch
+  // taller than the font — and clamp to the canvas so the points never clip.
+  if (spec.star) {
+    const textW = ctx.measureText(spec.text).width;
+    // Taller than the glyphs, a little wider than the number. rx is floored at
+    // ry so a short value never gets a skinny portrait star.
+    const ry = Math.min(cy - 1, spec.fontPx * 1.25);
+    const rx = Math.min(cx - 1, Math.max(textW / 2 + spec.fontPx * 0.5, ry));
+    starPath(ctx, cx, cy, rx, ry, CRIT_STAR_POINTS, CRIT_STAR_INNER);
+    ctx.fillStyle = CRIT_STAR_FILL;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = CRIT_STAR_EDGE;
+    ctx.stroke();
+  }
   // Thick outline first, fill on top — the client uses a heavy black outline so
   // the number stays readable over any ground colour.
   ctx.lineWidth = 6;
   ctx.lineJoin = "round";
   ctx.strokeStyle = spec.outline;
-  ctx.strokeText(spec.text, canvas.width / 2, canvas.height / 2);
+  ctx.strokeText(spec.text, cx, cy);
   ctx.fillStyle = spec.color;
-  ctx.fillText(spec.text, canvas.width / 2, canvas.height / 2);
+  ctx.fillText(spec.text, cx, cy);
 }
 
 class Float {
@@ -342,8 +400,9 @@ export class DamageTextLayer {
       if (!free) break;
       // Quick pop-and-fade life (not the lazy single-hit 1.5s). Every hit rides
       // the SAME open arch — staggered in time so they trail up the one path,
-      // not fanned out to opposite sides.
-      const spec = { ...specFor(hitType, perHit, fromPlayer), lifeMs: HIT_LIFETIME_MS };
+      // not fanned out to opposite sides. No per-hit starburst — the small
+      // rising numbers would turn into a cluttered mess of stars.
+      const spec = { ...specFor(hitType, perHit, fromPlayer), lifeMs: HIT_LIFETIME_MS, star: false };
       free.spawn(targetPos, spec, nowMs + i * HIT_STAGGER_MS, { column: true });
     }
     // The yellow running total appears up front (with the first hit) showing
