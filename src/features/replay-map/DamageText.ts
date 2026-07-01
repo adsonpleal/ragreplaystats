@@ -108,12 +108,9 @@ function runningTotalSpec(perHit: number, count: number): TextSpec {
 type SpawnOpts = {
   /** Vertical tier for close-together separate hits (single-hit stacking). */
   stackLevel?: number;
-  /** This float is one hit of a multi-hit skill — flies up in an open arch,
-   *  curving out to the side given by `columnDir` so successive hits fan. */
+  /** This float is one hit of a multi-hit skill — flies up the one open arch
+   *  (curving out to the same side) so staggered hits trail the same path. */
   column?: boolean;
-  /** Which way this hit's arch curves: +1 right, -1 left. Consecutive hits
-   *  alternate so the combo opens into a fan rather than a single line. */
-  columnDir?: number;
   /** This float is the yellow running total pinned above the monster: it counts
    *  up `perHit` for each hit that has landed (by the stagger clock) and grows
    *  in size as it goes. */
@@ -149,7 +146,6 @@ class Float {
   lifeMs = LIFETIME_MS;
   liftOffsetWorld = 0; // extra rise when hits stack on the same target
   column = false; // multi-hit hit — flies up the target in an open arch
-  private columnDir = 1; // which way this hit's arch curves (+1 right, -1 left)
   private runningTotal: { perHit: number; count: number } | null = null; // yellow total
   private baseSpec: TextSpec | null = null; // kept so the running total can redraw
   private lastLanded = -1; // hits counted into the running total so far
@@ -193,7 +189,6 @@ class Float {
     this.lifeMs = spec.lifeMs;
     this.liftOffsetWorld = (opts.stackLevel ?? 0) * 2.2;
     this.column = opts.column ?? false;
-    this.columnDir = opts.columnDir ?? 1;
     this.runningTotal = opts.runningTotal ?? null;
     this.baseSpec = this.runningTotal ? spec : null;
     this.lastLanded = -1;
@@ -251,13 +246,13 @@ class Float {
     // Multi-hit hit: fly up in an open arch. The vertical rise leads early
     // (sin ramps fast off zero) while the sideways curve comes in later
     // (1 - cos ramps up toward the end), so the path shoots up then leans out
-    // to `columnDir` — a fountain arch, not a rigid vertical line. Consecutive
-    // hits alternate side, opening the combo into a fan. Starts large and
+    // to one side — a fountain arch, not a rigid vertical line. Every hit rides
+    // this same path, staggered in time so they trail up it. Starts large and
     // bright, shrinks as it climbs, holds until the last 40% then fades.
     if (this.column) {
       const q = perc * Math.PI * 0.5;
       const rise = COLUMN_BASE_WORLD + HIT_RISE_WORLD * Math.sin(q);
-      const side = this.columnDir * HIT_SPREAD_WORLD * (1 - Math.cos(q));
+      const side = HIT_SPREAD_WORLD * (1 - Math.cos(q));
       const alpha = perc < 0.6 ? 1 : Math.max(0, (1 - perc) / 0.4);
       (this.mesh.material as MeshBasicMaterial).opacity = alpha;
       const scale = Math.max(0.5, 1 - perc * 0.5);
@@ -345,10 +340,11 @@ export class DamageTextLayer {
     for (let i = 0; i < count; i++) {
       const free = this.pool.find((f) => !f.active);
       if (!free) break;
-      // Quick pop-and-fade life (not the lazy single-hit 1.5s), arch curving to
-      // an alternating side so the combo fans open.
+      // Quick pop-and-fade life (not the lazy single-hit 1.5s). Every hit rides
+      // the SAME open arch — staggered in time so they trail up the one path,
+      // not fanned out to opposite sides.
       const spec = { ...specFor(hitType, perHit, fromPlayer), lifeMs: HIT_LIFETIME_MS };
-      free.spawn(targetPos, spec, nowMs + i * HIT_STAGGER_MS, { column: true, columnDir: i % 2 === 0 ? 1 : -1 });
+      free.spawn(targetPos, spec, nowMs + i * HIT_STAGGER_MS, { column: true });
     }
     // The yellow running total appears up front (with the first hit) showing
     // that first hit's value, then counts up + grows as each hit lands beneath
