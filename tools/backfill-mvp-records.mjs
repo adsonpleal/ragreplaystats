@@ -65,13 +65,14 @@ const decode = await bundleModule("src/rrf/decode.ts");
 const aggregate = await bundleModule("src/aggregate/index.ts");
 
 // ---------------------------------------------------------------------------
-// Load the bundled DP monster name DB so resolveMob() produces real names.
+// Load the bundled monster name DB so resolveMob() produces real names.
+// (Built by tools/build-monsters.mjs from ragassets' mobs.json.)
 // ---------------------------------------------------------------------------
 
-const dpRaw = await readFile(resolve("public/db/dp-monster.json"), "utf8");
-const dpDb = JSON.parse(dpRaw);
+const monRaw = await readFile(resolve("public/db/monster.json"), "utf8");
+const monDb = JSON.parse(monRaw);
 function resolveMob(view) {
-  const entry = dpDb[String(view)];
+  const entry = monDb[String(view)];
   return entry?.name || `mob#${view}`;
 }
 

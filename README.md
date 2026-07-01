@@ -10,8 +10,8 @@ UI is in **Brazilian Portuguese**. The decoder is server-agnostic but the bundle
 
 - Vanilla TypeScript + Vite, single bundled SPA.
 - `uplot` for time-series charts.
-- A 230-line custom GRF reader + Lua 5.1 bytecode constant-pool walker (`tools/build-db.mjs`) that produces `public/db/job.json` from a client GRF.
-- [Divine Pride API](https://www.divine-pride.net/api) for skill / monster / item / status names (server `latamRO`, `Accept-Language: pt-BR`). Lookups are cached to `localStorage`, so repeat visits are instant.
+- A 230-line custom GRF reader + Lua 5.1 bytecode constant-pool walker (`tools/build-db.mjs`) that produces `public/db/{job,item,skill,randomopt}.json` from a client GRF.
+- Monster names + HP/level come from the sibling project [ragassets](https://github.com/adsonpleal/ragassets)' `mobs.json`, extracted into `public/db/monster.json` by `tools/build-monsters.mjs`. All names ship bundled and offline — nothing queries divine-pride.net at runtime.
 - Firebase Firestore (free Spark tier) holds the uploaded `.rrf` bytes (≤1 MiB / doc). Lazy-loaded — the SDK isn't fetched unless the user shares or opens a shared link.
 
 ## Assets
@@ -29,6 +29,9 @@ npm run build    # static output in dist/
 node tools/build-db.mjs --grf /path/to/data.grf
 # or, faster, against a pre-extracted folder:
 node tools/build-db.mjs --dir ~/Downloads/Ragnarok-extracted
+
+# Refresh monster names/HP/level from ragassets' mobs.json (no GRF needed):
+npm run build:monsters
 ```
 
 The `tools/build-db.mjs` script also supports `--list <file.grf>` (print contents), `--dump <file.grf>::<inner-path>` (extract one file to stdout), and `--extract <dir> [--match <regex>]` (full GRF extraction).
@@ -119,10 +122,13 @@ Mnemonics follow the rAthena / Hercules convention. Some IDs are used differentl
 
 ## Reference data
 
+All reference data ships bundled under `public/db/` — nothing is fetched from a third-party API at runtime.
+
 | Source | Contents |
 |--------|----------|
-| Divine Pride API (`/Item/`, `/Monster/`, `/Skill/`, `/Buff/`) with `server=latamRO` and `Accept-Language: pt-BR` | Item, monster, skill, and status-effect names. Fetched the first time an id appears in any replay you load, then cached in `localStorage`. |
-| `public/db/job.json` (built by `tools/build-db.mjs` from the client GRF) | Player-class display names. Divine Pride doesn't expose a server-localized job endpoint, so the GRF's `pcjobnamegender.lub` is still the only source for strings like "Sentinela Trans". |
+| `public/db/{item,skill,randomopt}.json` (built by `tools/build-db.mjs` from the client GRF) | Item names + `ClassNum` view ids, skill names, and random-option templates — all pt-BR, straight from the client's Lua data tables. |
+| `public/db/monster.json` (built by `tools/build-monsters.mjs` from [ragassets](https://github.com/adsonpleal/ragassets)' `mobs.json`) | Monster names + HP + level, keyed by mob id. ragassets is the source of truth for mob names; this replaces the old Divine Pride scrape. |
+| `public/db/job.json` (built by `tools/build-db.mjs` from the client GRF) | Player-class display names. The GRF's `pcjobnamegender.lub` is the only source for strings like "Sentinela Trans". |
 
 The build tool reads `pcjobnamegender.lub` (display) + `admin/pcidentity.lub` (server-side `JT_X → ID`). The `pcidentity.lub` is critical — Latam server uses non-standard IDs (e.g. `JT_RANGER_H = 4062`, where kRO standard says `JT_MINSTREL = 4062`).
 

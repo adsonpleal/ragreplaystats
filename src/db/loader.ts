@@ -5,7 +5,7 @@ import {
   getMonsterName,
   getRandomOptionText,
   getSkillName,
-} from "../divine-pride.js";
+} from "../names.js";
 
 export type JobInfo = string;
 

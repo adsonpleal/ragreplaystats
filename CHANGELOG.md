@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-06-26
+
+- Nomes dos monstros corrigidos: agora vêm do projeto irmão [ragassets](https://github.com/adsonpleal/ragassets) (`mobs.json`), que passa a ser a fonte oficial dos nomes em português, junto com HP e nível de cada monstro. Substitui a antiga raspagem do Divine Pride — nenhum dado de monstro é mais buscado em divine-pride.net.
+
 ## 2026-06-25
 
 - Leaderboard de MVPs: agora considera **todos** os replays compartilhados, não só os 300 mais recentes. Antes, conforme novos replays eram enviados, recordes antigos saíam silenciosamente da lista; agora o ranking reflete a base inteira.

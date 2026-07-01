@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { prefetchReplay } from "../divine-pride";
+import { prefetchReplay } from "../names";
 import type { ReferenceDb } from "../db/loader";
 import { fetchReplay, uploadReplay } from "../firebase";
 import { invalidate as invalidateSummariesCache } from "../replay-summaries";
@@ -24,7 +24,7 @@ export type AppState = {
   db: ReferenceDb | null;
   /**
    * Bumped whenever name data lands (reference DB load, or per-replay
-   * divine-pride prefetch). The resolver closures are stable but start
+   * name prefetch). The resolver closures are stable but start
    * returning real names instead of `mob#123` fallbacks once their maps
    * load — components read this so they re-render and re-resolve.
    */
@@ -45,6 +45,8 @@ export type AppState = {
   status: string;
 
   setDb: (db: ReferenceDb) => void;
+  /** Force name-dependent views to re-resolve (e.g. after a name map loads). */
+  bumpNames: () => void;
   loadReplayFromBytes: (
     buf: ArrayBuffer,
     fileName: string,
@@ -96,6 +98,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   status: "",
 
   setDb: (db) => set((s) => ({ db, namesVersion: s.namesVersion + 1 })),
+
+  bumpNames: () => set((s) => ({ namesVersion: s.namesVersion + 1 })),
 
   loadReplayFromBytes: (buf, fileName, shareId) => {
     const t0 = performance.now();

@@ -14,8 +14,18 @@ export type LeaderboardRow = {
   recordedAt: Date | null;
 };
 
-/** Distinct MVP species across all records, labelled by their dominant name. */
-export function collectMvpOptions(items: ReplayListItem[]): MvpOption[] {
+/**
+ * Distinct MVP species across all records, labelled by their best name.
+ *
+ * `resolveName` (the live monster DB) wins when it knows the view, because the
+ * `name` frozen into each record at upload time can be a stale English / Korean
+ * / `[PH]` fallback from an older name source. We fall back to the dominant
+ * stored name, then `mob#<view>`.
+ */
+export function collectMvpOptions(
+  items: ReplayListItem[],
+  resolveName?: ((view: number) => string) | null,
+): MvpOption[] {
   const byView = new Map<number, Map<string, number>>();
   for (const it of items) {
     for (const r of it.mvpRecords) {
@@ -29,13 +39,21 @@ export function collectMvpOptions(items: ReplayListItem[]): MvpOption[] {
   }
   const out: MvpOption[] = [];
   for (const [view, names] of byView) {
-    let topName = `mob#${view}`;
-    let topCount = -1;
-    for (const [n, c] of names) {
-      if (c > topCount && n) {
-        topName = n;
-        topCount = c;
+    let topName = resolveName ? resolveName(view) : `mob#${view}`;
+    // `resolveName` returns `mob#<id>` for ids the DB doesn't know — in that
+    // case prefer the dominant stored name before giving up. Skip empties and
+    // `[PH] Monster Name` placeholders (an unreleased-mob stub the old source
+    // served): those are never a real name, so `mob#<view>` is more honest.
+    if (!topName || topName.startsWith("mob#")) {
+      let best = `mob#${view}`;
+      let topCount = -1;
+      for (const [n, c] of names) {
+        if (n && !n.startsWith("[PH]") && c > topCount) {
+          best = n;
+          topCount = c;
+        }
       }
+      topName = best;
     }
     out.push({ view, name: topName });
   }

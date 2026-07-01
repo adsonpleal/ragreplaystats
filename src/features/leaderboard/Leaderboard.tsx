@@ -4,6 +4,7 @@ import { locale, t } from "../../i18n";
 import { type Column, DataTable } from "../../ui/DataTable";
 import { useReplaySummaries } from "../../hooks/useReplaySummaries";
 import { useAppStore } from "../../store/useAppStore";
+import { ensureMonsterNames } from "../../names";
 import { type ComboboxItem, Combobox } from "./Combobox";
 import {
   anyClasslessRecord,
@@ -63,11 +64,31 @@ function MetricTable({ rows, metric }: { rows: LeaderboardRow[]; metric: "highes
 export function Leaderboard() {
   const { items, loading, error } = useReplaySummaries();
   const db = useAppStore((s) => s.db);
+  const namesVersion = useAppStore((s) => s.namesVersion);
+  const bumpNames = useAppStore((s) => s.bumpNames);
   const [selectedView, setSelectedView] = useState<number | null>(null);
   // null = all classes; "" = the "(Sem classe)" bucket; else an exact class.
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
 
-  const mvpOptions = useMemo(() => collectMvpOptions(items), [items]);
+  // The leaderboard resolves MVP names from the live monster DB, but never
+  // opens a replay (which is what normally triggers the name-map load), so
+  // pull the monster map in directly and re-resolve once it lands.
+  useEffect(() => {
+    let cancelled = false;
+    void ensureMonsterNames().then(() => {
+      if (!cancelled) bumpNames();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bumpNames]);
+
+  // Prefer current DB names over the (possibly stale) names frozen into each
+  // record at upload time. `namesVersion` bumps when the map loads → re-resolve.
+  const mvpOptions = useMemo(
+    () => collectMvpOptions(items, db ? (v: number) => db.resolveMob(v) : null),
+    [items, db, namesVersion],
+  );
 
   // Default-select the first MVP option once data lands.
   useEffect(() => {

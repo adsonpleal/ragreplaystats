@@ -112,8 +112,8 @@ function EquipCard({
 /** The "Equipamento" card: paged worn-gear grid (Equip / viewer / Especial). */
 export function Equipment({ replay }: { replay: Replay }) {
   const db = useAppStore((s) => s.db);
-  // `db` is a stable reference once loaded; the divine-pride item/skill/mob
-  // names land later and only bump `namesVersion`. Depend on it so the resolved
+  // `db` is a stable reference once loaded; the item/skill/mob names land later
+  // and only bump `namesVersion`. Depend on it so the resolved
   // item names (captured into the pages here) refresh once that data arrives.
   const namesVersion = useAppStore((s) => s.namesVersion);
   const pages = useMemo(() => buildEquipmentPages(replay, db), [replay, db, namesVersion]);

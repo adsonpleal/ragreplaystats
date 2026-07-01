@@ -4,8 +4,9 @@
 //   job.json    player-class names  (pcjobnamegender + pcidentity; classes only)
 //   item.json   item names + slots  (System/iteminfo_new.lub, via the Lua VM)
 //   skill.json  skill names         (skillid.lub + skillinfolist_ptbr.lub, VM)
-// Plus on-demand icon extraction (--icons). Monster names are not in the client
-// (they're server-side) and come from Divine Pride — see src/divine-pride.ts.
+// Plus on-demand icon extraction (--icons). Monster names/HP/level are not in
+// the client (they're server-side); they come from ragassets' mobs.json — see
+// tools/build-monsters.mjs and src/names.ts.
 //
 // The reader handles GRF 0x101/0x103/0x200 and the 0x300 "Event Horizon" fork,
 // including the custom DES encryption used by many texture entries.
