@@ -24,6 +24,19 @@ export type Entity = {
   hairStyle?: number;
   hairColor?: number;
   clothesColor?: number;
+  /**
+   * Other-player worn gear as client sprite VIEW/look ids straight from the
+   * spawn packet (0/undefined = none). The map viewer's billboard hands these
+   * to the ragassets URL builder directly — no item→view lookup, unlike the
+   * local player whose gear is derived from the inventory snapshot. Absent for
+   * mobs/NPCs and the local player.
+   */
+  weaponView?: number;
+  shieldView?: number;
+  headTopView?: number;
+  headMidView?: number;
+  headLowView?: number;
+  robeView?: number;
 };
 
 /**

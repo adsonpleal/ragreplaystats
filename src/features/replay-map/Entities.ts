@@ -28,11 +28,18 @@ import {
   type PlayerLook,
 } from "../../sim/ragassets";
 import { attackActionType } from "../../ui/weapon-action";
+import { lookFromEntity } from "./playerState";
 import type { World } from "../../sim/render/scene";
+import type { ReferenceDb } from "../../db/loader";
 import type { Entity, FixPosEvent, MoveEvent } from "../../rrf/types";
 
 const ATTACK_HOLD_MS = 600; // attack pose displays for this long after a damage event
 const HURT_HOLD_MS = 250; // brief flash; long enough to register, short enough to keep walking feeling fluid
+
+// NPC sprite view ids that are invisible in the client — warp portals and the
+// "hidden" script-trigger NPCs. They have no real sprite, so rendering them via
+// the bare-sprite path would show a broken/placeholder frame. Skip them.
+const INVISIBLE_NPC_VIEWS = new Set([45, 46, 111, 139, 722, 811, 2337]);
 
 type Pose = "idle" | "walk" | "attack" | "hurt" | "casting" | "dead";
 
@@ -105,7 +112,7 @@ class Actor {
       src.kind === "player"
         ? attackActionType(src.look!.jobView, src.look!.weapon, src.look!.sex)
         : SPRITE_ATTACK1;
-    const metrics = src.kind === "mob" ? MOB_SPRITE : undefined;
+    const metrics = src.kind === "player" ? undefined : MOB_SPRITE;
     this.billboard = new Character(scene, metrics);
     this.billboard.setVisible(false);
     void this.probeFrames();
@@ -303,6 +310,7 @@ export class EntityTable {
     private readonly replay: { entities: Map<number, Entity>; groundUnits: Set<number> },
     private readonly playerAid: number,
     private readonly playerLook: PlayerLook,
+    private readonly db: ReferenceDb | null,
   ) {}
 
   /** Returns the actor for `aid`, creating it on first reference if we know
@@ -314,22 +322,34 @@ export class EntityTable {
     if (this.replay.groundUnits.has(aid)) return null;
     const entity = this.replay.entities.get(aid);
     if (!entity) return null;
-    const isPlayer = aid === this.playerAid;
-    // Only render PCs and mobs in v1; NPCs are static and uninteresting for
-    // damage playback (npc.kind === 'npc' covers warpers/shops).
-    if (!isPlayer && entity.kind !== "mob" && entity.kind !== "pc") return null;
+    const source = this.sourceFor(aid, entity);
+    if (!source) return null;
     const spawn = this.lastFix.get(aid) ?? near ?? this.world.spawn;
-    a = new Actor(
-      this.scene,
-      this.world,
-      isPlayer
-        ? { kind: "player", look: this.playerLook }
-        : { kind: "mob", view: entity.view || 0 },
-      spawn,
-    );
+    a = new Actor(this.scene, this.world, source, spawn);
     a.visible = this.lastFix.has(aid); // hide until we know its real position
     this.actors.set(aid, a);
     return a;
+  }
+
+  /** Decide how to render an entity, or null to skip it. The local player and
+   *  remote PCs render as full player sprites (gear/hair/colors); the local
+   *  player's look comes from the session + inventory, a remote player's from
+   *  the appearance the spawn packet carried. Mobs and NPCs render as bare
+   *  sprites; invisible NPCs (warps/triggers) and other object types are
+   *  skipped. */
+  private sourceFor(aid: number, entity: Entity): ActorSource | null {
+    if (aid === this.playerAid) return { kind: "player", look: this.playerLook };
+    switch (entity.kind) {
+      case "pc":
+        return { kind: "player", look: lookFromEntity(entity, this.db) };
+      case "mob":
+        return { kind: "mob", view: entity.view || 0 };
+      case "npc":
+        if (!entity.view || INVISIBLE_NPC_VIEWS.has(entity.view)) return null;
+        return { kind: "mob", view: entity.view };
+      default:
+        return null; // pets/homun/merc/elem not rendered in v1
+    }
   }
 
   /** Apply a fix-pos / spawn-position event. */

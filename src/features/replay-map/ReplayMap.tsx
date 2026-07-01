@@ -395,7 +395,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         const buildRuntime = () => {
           entities?.dispose();
           damageLayer?.dispose();
-          entities = new EntityTable(engine.scene, world!, replay, playerAid, playerLook);
+          entities = new EntityTable(engine.scene, world!, replay, playerAid, playerLook, db);
           damageLayer = new DamageTextLayer(engine.scene);
           damageCursor = new EventCursor(events.damage);
           killCursor = new EventCursor(events.kills);

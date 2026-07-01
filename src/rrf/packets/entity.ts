@@ -20,6 +20,24 @@ export type EntityPacket = {
   /** Walking path from the spawn's MoveData (0x0915 / 0x09fd only): the entity
    *  is already mid-step from `from` to `to`. */
   walk: { from: { gx: number; gy: number }; to: { gx: number; gy: number } } | null;
+  /** Appearance carried by the full spawn packets (0x09fe/0x09ff/0x0915). These
+   *  are the client's sprite VIEW/look ids — hairstyle, palettes, weapon/shield
+   *  looks, headgear accessory ids, robe — ready to hand straight to the
+   *  ragassets URL builder for other players (no item→view lookup needed).
+   *  Null for the stripped 0x0857 snapshot, which doesn't carry them. */
+  look: EntityLook | null;
+};
+
+export type EntityLook = {
+  hairStyle: number;
+  hairColor: number; // headpalette
+  clothesColor: number; // bodypalette
+  weapon: number;
+  shield: number;
+  headTop: number;
+  headMid: number;
+  headLow: number;
+  robe: number;
 };
 
 function classifyObjectType(t: number): EntityKind {
@@ -149,6 +167,7 @@ export function decodeInitialSpawn0857(reader: ByteReader): EntityPacket {
     sex: -1, // 0x0857 snapshot has no sex field
     pos,
     walk: null,
+    look: null, // stripped snapshot: no appearance fields
   };
 }
 
@@ -165,13 +184,21 @@ function readEntity(
   const gid = reader.u32();
   reader.skip(2 + 2 + 2 + 4); // speed, bodyState, healthState, effectState
   const job = reader.i16();
-  reader.skip(2); // head
-  reader.skip(4 + 4); // weapon, shield
-  reader.skip(2); // accessory
+  // Appearance block — all client sprite VIEW/look ids. Byte sizes are exactly
+  // the old skips (weapon/shield are 4-byte here), so `sex`/`pos` below still
+  // land where they did before. head=hairstyle, accessory=headLow,
+  // accessory2=headTop, accessory3=headMid, headpalette/bodypalette=colors.
+  const head = reader.u16();
+  const weapon = reader.u32();
+  const shield = reader.u32();
+  const accessory = reader.u16();
   if (hasMoveStart) reader.skip(4); // moveStartTime
-  reader.skip(2 + 2); // accessory2, accessory3
-  reader.skip(2 + 2 + 2); // headpalette, bodypalette, headDir
-  reader.skip(2); // robe
+  const accessory2 = reader.u16();
+  const accessory3 = reader.u16();
+  const headpalette = reader.u16();
+  const bodypalette = reader.u16();
+  reader.skip(2); // headDir
+  const robe = reader.u16();
   reader.skip(4); // GUID
   reader.skip(2 + 2 + 4); // GEmblemVer, honor, virtue
   reader.skip(1); // isPKModeON
@@ -217,5 +244,16 @@ function readEntity(
     sex,
     pos,
     walk,
+    look: {
+      hairStyle: head,
+      hairColor: headpalette,
+      clothesColor: bodypalette,
+      weapon,
+      shield,
+      headTop: accessory2,
+      headMid: accessory3,
+      headLow: accessory,
+      robe,
+    },
   };
 }

@@ -92,3 +92,40 @@ export function lookAtStart(replay: Replay, player: Entity, db: ReferenceDb | nu
     shield,
   };
 }
+
+/**
+ * Build the look for a REMOTE player from the appearance the spawn packet
+ * carried (see Entity.weaponView etc.). The fields are a MIX of id spaces, a
+ * known RO spawn-packet quirk verified against the gateway:
+ *   - weapon / shield  → item ids (nameid); resolve to a sprite view like the
+ *     local player's inventory gear does.
+ *   - headgear / robe  → already accessory / robe VIEW ids; feed verbatim.
+ * Falls back to sensible defaults (0/none) for anything the spawn omitted.
+ */
+export function lookFromEntity(entity: Entity, db: ReferenceDb | null): PlayerLook {
+  const jobView = entity.view || 0;
+  const sex = resolveSex(jobView, entity.sex);
+  // Headgear slots (top/mid/low) → deduped list of the non-empty accessory
+  // views, matching the paper-doll's top-first order.
+  const headgear: number[] = [];
+  for (const v of [entity.headTopView, entity.headMidView, entity.headLowView]) {
+    if (v && !headgear.includes(v)) headgear.push(v);
+  }
+  const weaponItem = entity.weaponView || 0;
+  const shieldItem = entity.shieldView || 0;
+  const weapon = weaponItem ? (db?.resolveItemView(weaponItem) ?? null) : null;
+  // A two-handed weapon reports the same item in the shield slot — don't draw twice.
+  const shield =
+    shieldItem && shieldItem !== weaponItem ? (db?.resolveItemView(shieldItem) ?? null) : null;
+  return {
+    jobView,
+    sex,
+    hairStyle: entity.hairStyle ?? 0,
+    hairColor: entity.hairColor ?? 0,
+    clothesColor: entity.clothesColor ?? 0,
+    headgear: headgear.slice(0, 3),
+    garment: entity.robeView || null,
+    weapon,
+    shield,
+  };
+}

@@ -258,6 +258,20 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         // Documented sex field (spawn packets only); authoritative over the
         // session-snapshot fallback used to seed the local player.
         if (ep.sex === 0 || ep.sex === 1) e.sex = ep.sex;
+        // Appearance for remote players — the spawn packet's view/look ids feed
+        // the map viewer's billboard directly. Only stamp for PCs (mob/NPC
+        // spawns reuse the struct but leave these zeroed/garbage).
+        if (ep.look && e.kind === "pc") {
+          e.hairStyle = ep.look.hairStyle;
+          e.hairColor = ep.look.hairColor;
+          e.clothesColor = ep.look.clothesColor;
+          e.weaponView = ep.look.weapon;
+          e.shieldView = ep.look.shield;
+          e.headTopView = ep.look.headTop;
+          e.headMidView = ep.look.headMid;
+          e.headLowView = ep.look.headLow;
+          e.robeView = ep.look.robe;
+        }
         // Spawn position → synthetic fix-pos so the map viewer can place the
         // entity at its initial cell before any walk lands. A walking spawn
         // also queues the in-flight step as a move event.
