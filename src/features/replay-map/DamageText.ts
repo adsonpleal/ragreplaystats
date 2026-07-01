@@ -8,14 +8,11 @@
 // pool is queried by "first free" each spawn so the render loop drops on the
 // floor rather than blocking when a busy frame overshoots the pool size.
 //
-// K/M abbreviation: kRO 2020+ / high-rate servers collapse big damage into K or
-// M (e.g. 1_500_000 → "1500K"). The exact thresholds aren't public — private
-// servers pick their own — so we go with what the LATAM 4th-job scale
-// actually produces:
-//    < 1_000                    →  as-is  (42)
-//    1_000 .. 999_999_999       →  "Nk"   (1500K)  (floor N/1000, no decimals)
-//    ≥ 1_000_000_000            →  "Nm"   (2M)     (floor N/1_000_000)
-// (Adjustable via the DAMAGE_* constants below.)
+// Damage abbreviation: only collapse into "K" once the number reaches 1000K
+// (i.e. ≥ 1_000_000); below that the full number is shown. Per user request —
+// keeps mid-range hits readable as exact values and only shortens the huge ones.
+//    < 1_000_000     →  full number  (5_254_→ shown; 999_999 → "999999")
+//    ≥ 1_000_000     →  "NK"         (1_500_000 → "1500K", floor N/1000)
 
 import {
   CanvasTexture,
@@ -41,18 +38,25 @@ const HORIZONTAL_SPREAD = 4;
 const ARC_HEIGHT = 5;
 const BASE_LIFT = 2;
 
+// Multi-hit skills (roBrowser style): each hit spawns its own number, cascading
+// diagonally and staggered in time, then a single "combo" total in yellow that
+// sums every hit and lingers above the target.
+const HIT_STAGGER_MS = 110; // gap between successive hits of the same skill
+const CASCADE_SPACING = 1.1; // world units each later hit shifts right…
+const CASCADE_RISE = 0.7; //  …and up, so the hits fan out instead of stacking
+const COMBO_LIFE_MS = 2300; // the yellow total lingers longer than a single hit
+const COMBO_COLOR = "#e6e626"; // roBrowser combo yellow rgb(0.9,0.9,0.15)
+
 const TEXT_CANVAS_W = 128;
 const TEXT_CANVAS_H = 48;
 
 /** Damage → display string with the K/M collapse. Multi-hit count is appended
  *  as "×N" to preserve the info without breaking the abbreviation. */
-const K_THRESHOLD = 1_000;
-const M_THRESHOLD = 1_000_000_000;
+const K_THRESHOLD = 1_000_000; // 1000K — only abbreviate at/above this
 
 function formatDamage(n: number): string {
   if (n < K_THRESHOLD) return String(n);
-  if (n < M_THRESHOLD) return `${Math.floor(n / 1_000)}K`;
-  return `${Math.floor(n / 1_000_000)}M`;
+  return `${Math.floor(n / 1_000)}K`;
 }
 
 type TextSpec = {
@@ -69,8 +73,7 @@ function specFor(hit: HitType, damage: number, fromPlayer: boolean): TextSpec {
   }
   const label = formatDamage(damage);
   if (hit === "critical") {
-    // Combo yellow from roBrowser: rgb(0.9, 0.9, 0.15). Same used for crits.
-    return { text: label, color: "#e6e626", outline: "#000", fontPx: 28, lifeMs: LIFETIME_MS };
+    return { text: label, color: COMBO_COLOR, outline: "#000", fontPx: 28, lifeMs: LIFETIME_MS };
   }
   // roBrowser: outgoing damage is white, damage TO a PC is red. In replays we
   // don't always know the target kind cheaply, so approximate with "did the
@@ -78,6 +81,21 @@ function specFor(hit: HitType, damage: number, fromPlayer: boolean): TextSpec {
   const color = fromPlayer ? "#ffffff" : "#ff4040";
   return { text: label, color, outline: "#000", fontPx: 26, lifeMs: LIFETIME_MS };
 }
+
+/** The yellow "combo" total shown after a multi-hit skill — the sum of all hits. */
+function comboSpec(total: number): TextSpec {
+  return { text: formatDamage(total), color: COMBO_COLOR, outline: "#000", fontPx: 30, lifeMs: COMBO_LIFE_MS };
+}
+
+/** Per-spawn placement options for a Float. */
+type SpawnOpts = {
+  /** Vertical tier for close-together separate hits (single-hit stacking). */
+  stackLevel?: number;
+  /** Index of this hit within a multi-hit cascade (0-based); fans it out. */
+  cascade?: number;
+  /** This float is the yellow combo total — holds fixed above the target. */
+  combo?: boolean;
+};
 
 function drawText(canvas: HTMLCanvasElement, spec: TextSpec): void {
   const ctx = canvas.getContext("2d")!;
@@ -107,6 +125,8 @@ class Float {
   bornAtMs = 0;
   lifeMs = LIFETIME_MS;
   liftOffsetWorld = 0; // extra rise when hits stack on the same target
+  cascade = 0; // multi-hit index — fans the number out diagonally
+  combo = false; // the yellow total, held fixed above the target
   active = false;
   private readonly worldW: number;
   private readonly worldH: number;
@@ -137,27 +157,56 @@ class Float {
     scene.add(this.mesh);
   }
 
-  spawn(at: Vector3, spec: TextSpec, nowMs: number, stackLevel: number): void {
+  /** `bornAtMs` may be in the future (staggered multi-hit) — the float stays
+   *  hidden but reserved until the render clock reaches it. */
+  spawn(at: Vector3, spec: TextSpec, bornAtMs: number, opts: SpawnOpts = {}): void {
     drawText(this.canvas, spec);
     this.texture.needsUpdate = true;
     this.anchor.copy(at);
-    this.bornAtMs = nowMs;
+    this.bornAtMs = bornAtMs;
     this.lifeMs = spec.lifeMs;
-    this.liftOffsetWorld = stackLevel * 2.2;
+    this.liftOffsetWorld = (opts.stackLevel ?? 0) * 2.2;
+    this.cascade = opts.cascade ?? 0;
+    this.combo = opts.combo ?? false;
     this.active = true;
-    this.mesh.visible = true;
+    this.mesh.visible = false; // shown on the first update once bornAtMs passes
   }
 
   update(nowMs: number, camera: PerspectiveCamera): void {
     if (!this.active) return;
     const age = nowMs - this.bornAtMs;
+    if (age < 0) {
+      // Scheduled but not started yet (a later hit in a cascade).
+      this.mesh.visible = false;
+      return;
+    }
     if (age >= this.lifeMs) {
       this.active = false;
       this.mesh.visible = false;
       return;
     }
+    this.mesh.visible = true;
     // roBrowser's `perc`: age / delay. Normalised 0..1 over the lifetime.
     const perc = age / this.lifeMs;
+
+    // Camera-facing billboard + local axes (shared by every motion mode).
+    this.mesh.quaternion.copy(camera.quaternion);
+    this.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    this.right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    this.toCam.copy(camera.position).sub(this.anchor).normalize();
+
+    // Combo total: hold full-size and centred above the target, then fade out in
+    // the last 30% — it reads as a stable "sum" rather than a flying hit number.
+    if (this.combo) {
+      const alpha = perc < 0.7 ? 1 : Math.max(0, (1 - perc) / 0.3);
+      (this.mesh.material as MeshBasicMaterial).opacity = alpha;
+      this.mesh.scale.set(1.1, 1.1, 1);
+      this.mesh.position
+        .copy(this.anchor)
+        .addScaledVector(this.up, BASE_LIFT + 8 + perc * 1.5)
+        .addScaledVector(this.toCam, 1);
+      return;
+    }
 
     // Motion. Two paths, ported from Damage.js's per-type branches:
     //  • DAMAGE  — arcs right (+X) and back (-Y in RO space, which is our
@@ -173,29 +222,21 @@ class Float {
     (this.mesh.material as MeshBasicMaterial).opacity = alpha;
     this.mesh.scale.set(scale, scale, 1);
 
-    // Face the camera fully (billboard) and derive axis vectors so the drift
-    // stays in the sprite's local frame no matter how the camera is rotated.
-    this.mesh.quaternion.copy(camera.quaternion);
-    this.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
-    this.right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-    this.toCam.copy(camera.position).sub(this.anchor).normalize();
-
     // Damage arc from Damage.js:
     //   posZ = base + 2 + sin(-π/2 + π*(0.5 + perc*1.5)) * 5
     //   posX = base + perc*4     (drift right)
     //   posY = base - perc*4     (drift back / away)
-    // In our scene the "back" axis is camera-toCam, so we push along it.
+    // In our scene the "back" axis is camera-toCam, so we push along it. Each
+    // cascading hit adds a fixed diagonal offset (right + up) so a multi-hit
+    // skill's numbers fan out instead of landing on top of each other.
     const arc = Math.sin(-Math.PI / 2 + Math.PI * (0.5 + perc * 1.5)) * ARC_HEIGHT;
     const liftUp = isMiss ? BASE_LIFT + perc * 7 : BASE_LIFT + arc;
-
-    // Anchor tight to the target's ground point. The +2 in liftUp already puts
-    // the number just above the feet; adding more (was +8) shoved it far above
-    // the sprite's head. Small extra offset stacks with liftOffsetWorld so
-    // multi-hit numbers still tier upward.
+    const cascadeRight = this.cascade * CASCADE_SPACING;
+    const cascadeUp = this.cascade * CASCADE_RISE;
     this.mesh.position
       .copy(this.anchor)
-      .addScaledVector(this.up, liftUp + this.liftOffsetWorld)
-      .addScaledVector(this.right, isMiss ? 0 : perc * HORIZONTAL_SPREAD)
+      .addScaledVector(this.up, liftUp + this.liftOffsetWorld + cascadeUp)
+      .addScaledVector(this.right, cascadeRight + (isMiss ? 0 : perc * HORIZONTAL_SPREAD))
       .addScaledVector(this.toCam, isMiss ? 1 : 1 + perc * HORIZONTAL_SPREAD * 0.5);
   }
 
@@ -227,22 +268,52 @@ export class DamageTextLayer {
     nowMs: number,
     count = 1,
   ): void {
+    // Multi-hit skills (like the client): one number per hit, cascading and
+    // staggered, then a yellow combo total that sums them. A miss is never a
+    // multi-hit.
+    if (count > 1 && hit !== "miss") {
+      this.spawnMultiHit(targetPos, damage, hit, fromPlayer, nowMs, count);
+      return;
+    }
     const free = this.pool.find((f) => !f.active);
     if (!free) return;
-    const spec = specFor(hit, damage, fromPlayer);
-    if (count > 1) spec.text = `${spec.text}×${count}`;
+    free.spawn(targetPos, specFor(hit, damage, fromPlayer), nowMs, { stackLevel: this.nextStackLevel(targetAid, nowMs) });
+  }
+
+  /** Fan out one number per hit (each ≈ total/count), then the yellow sum. */
+  private spawnMultiHit(
+    targetPos: Vector3,
+    total: number,
+    hit: HitType,
+    fromPlayer: boolean,
+    nowMs: number,
+    count: number,
+  ): void {
+    const perHit = Math.max(1, Math.floor(total / count));
+    // Individual hits keep the source's colour (crit stays yellow); only the
+    // combo total below is forced to the combo yellow.
+    const hitType: HitType = hit === "critical" ? "critical" : "normal";
+    for (let i = 0; i < count; i++) {
+      const free = this.pool.find((f) => !f.active);
+      if (!free) break;
+      free.spawn(targetPos, specFor(hitType, perHit, fromPlayer), nowMs + i * HIT_STAGGER_MS, { cascade: i });
+    }
+    const comboFloat = this.pool.find((f) => !f.active);
+    if (comboFloat) comboFloat.spawn(targetPos, comboSpec(total), nowMs + count * HIT_STAGGER_MS, { combo: true });
+  }
+
+  /** Vertical tier for separate single hits landing on the same target within a
+   *  short window, so they don't overlap into a blob. */
+  private nextStackLevel(targetAid: number, nowMs: number): number {
     const stack = this.stacks.get(targetAid);
-    let level = 0;
     const STACK_WINDOW_MS = 250;
     if (stack && nowMs - stack.lastMs < STACK_WINDOW_MS) {
       stack.count += 1;
       stack.lastMs = nowMs;
-      level = stack.count;
-    } else {
-      this.stacks.set(targetAid, { count: 0, lastMs: nowMs });
-      level = 0;
+      return stack.count;
     }
-    free.spawn(targetPos, spec, nowMs, level);
+    this.stacks.set(targetAid, { count: 0, lastMs: nowMs });
+    return 0;
   }
 
   update(nowMs: number, camera: PerspectiveCamera): void {

@@ -13,6 +13,11 @@ import { statusIconUrl } from "../../sim/ragassets";
 
 const HP_MAX_WIDTH_PX = 42;
 const CAST_BAR_WIDTH_PX = 60;
+/** How long a skill-name label lingers after a cast starts. The name stays
+ *  readable for a beat instead of vanishing the instant the (often short) cast
+ *  bar fills; a longer cast keeps its name up for the whole cast. A new cast on
+ *  the same actor replaces the label immediately regardless of this. */
+const CAST_NAME_HOLD_MS = 4000;
 
 export class HoverTooltip {
   readonly el: HTMLDivElement;
@@ -389,7 +394,9 @@ class CastName {
       this.el.textContent = text;
       this.lastText = text;
     }
-    this.expiresAtMs = nowMs + Math.max(200, castMs);
+    // Linger at least CAST_NAME_HOLD_MS (or the whole cast if it's longer), so
+    // short/instant casts don't flash the name for a single frame.
+    this.expiresAtMs = nowMs + Math.max(castMs, CAST_NAME_HOLD_MS);
     this.active = true;
   }
 
