@@ -1668,11 +1668,11 @@ td.num, th.num {
   position: absolute;
   top: 0;
   left: 0;
-  /* Pin directly below the character's foot pixel; JS sets translate3d(x, y)
-     + translate(-50%, 0) so the widget centres horizontally on the projected
-     foot. margin-top keeps the bars a hair off the ground line, and the row
-     gap gives each vital breathing room instead of stacking flush. */
-  margin-top: 10px;
+  /* JS projects a point just below the boots (scales with zoom) and sets
+     translate3d(x, y) + translate(-50%, 0) to centre the widget there. Only a
+     tiny fixed gap remains — the zoom-dependent boot clearance is handled in
+     world space, so this margin stays small at every zoom. */
+  margin-top: 4px;
   pointer-events: none;
   z-index: 9;
   display: flex;

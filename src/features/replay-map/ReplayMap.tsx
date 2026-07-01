@@ -26,12 +26,20 @@ import { EventCursor, Timeline } from "./Timeline";
 import { CastBarLayer, CastNameLayer, HoverTooltip, VitalBars, projectToScreen } from "./HudOverlay";
 import { lookAtStart } from "./playerState";
 import { SP_HP, SP_MAXHP, SP_SP, SP_MAXSP } from "../../aggregate";
+import { UNITS_PER_PX } from "../../sim/sprite";
 
 // rAthena SP_AP / SP_MAXAP for 4th-job replays. Not surfaced from aggregate/
 // because AP isn't yet used elsewhere; kept local so a downstream refactor
 // there won't force churn in the map viewer.
 const SP_AP = 219;
 const SP_MAXAP = 220;
+
+// World-space drop below the character's ground anchor to clear the drawn
+// boots when pinning the HP/SP/AP bars. ~18 sprite pixels — the boots' visible
+// overhang below the ground-contact anchor. In world units it scales with zoom
+// like the sprite, so the bars stay just under the feet at every zoom (a fixed
+// screen-pixel margin can't, since the overhang grows as you zoom in).
+const FEET_BELOW_ANCHOR_WORLD = 18 * UNITS_PER_PX;
 
 type Phase = "loading" | "ready" | "error";
 
@@ -205,6 +213,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     const charWorldTmp = new Vector3();
     const targetWorldTmp = new Vector3();
     const castWorldTmp = new Vector3();
+    const camUpTmp = new Vector3();
+    const feetTmp = new Vector3();
     const screenXY = { x: 0, y: 0 };
     // Throttled React update so the scrubber/time text don't re-render every
     // frame. Declared *before* engine.start so the immediate first frame can
@@ -264,16 +274,26 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       const pos = entities.worldPosOf(playerAid, charWorldTmp);
       if (pos) engine.cam.setTarget(pos);
 
-      // HUD: HP/SP/AP bars pinned to the player's projected foot point (the
-      // sprite's anchor IS the visible foot bottom for idle/walk — the canvas
-      // padding below is only used by the dead pose). CSS margin-top puts the
-      // bars just below the boots without the widget scaling with zoom.
+      // HUD: HP/SP/AP bars pinned just below the sprite's BOOTS. The walker's
+      // anchor is the ground-contact cell, but the drawn boots extend a little
+      // below that on screen — and that overhang grows with zoom, so a fixed
+      // CSS margin can't clear it (at max zoom the bars ended up over the
+      // sprite). Project a point offset below the anchor along camera-up by a
+      // small sprite-relative amount (FEET_BELOW_ANCHOR_WORLD): the offset
+      // scales with zoom exactly like the sprite, so the bars sit right under
+      // the boots at every zoom. A tiny CSS margin adds the final gap.
       const wrapW = wrap.clientWidth;
       const wrapH = wrap.clientHeight;
-      if (pos && projectToScreen(pos, engine.cam.camera, wrapW, wrapH, screenXY)) {
-        vitalBars.setVisible(true);
-        vitalBars.setScreenXY(screenXY.x, screenXY.y);
-        vitalBars.setValues(vitals.hp, vitals.maxHp, vitals.sp, vitals.maxSp, vitals.ap, vitals.maxAp);
+      if (pos) {
+        camUpTmp.set(0, 1, 0).applyQuaternion(engine.cam.camera.quaternion);
+        feetTmp.copy(pos).addScaledVector(camUpTmp, -FEET_BELOW_ANCHOR_WORLD);
+        if (projectToScreen(feetTmp, engine.cam.camera, wrapW, wrapH, screenXY)) {
+          vitalBars.setVisible(true);
+          vitalBars.setScreenXY(screenXY.x, screenXY.y);
+          vitalBars.setValues(vitals.hp, vitals.maxHp, vitals.sp, vitals.maxSp, vitals.ap, vitals.maxAp);
+        } else {
+          vitalBars.setVisible(false);
+        }
       } else {
         vitalBars.setVisible(false);
       }

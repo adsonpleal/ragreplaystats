@@ -27,6 +27,7 @@ import {
   playerFrameUrl,
   type PlayerLook,
 } from "../../sim/ragassets";
+import { attackActionType } from "../../ui/weapon-action";
 import type { World } from "../../sim/render/scene";
 import type { Entity, FixPosEvent, MoveEvent } from "../../rrf/types";
 
@@ -34,10 +35,6 @@ const ATTACK_HOLD_MS = 600; // attack pose displays for this long after a damage
 const HURT_HOLD_MS = 250; // brief flash; long enough to register, short enough to keep walking feeling fluid
 
 type Pose = "idle" | "walk" | "attack" | "hurt" | "casting" | "dead";
-
-/** All poses we can render — used to warm frame counts up front. */
-const PLAYER_ACTIONS = [SPRITE_IDLE, SPRITE_WALK, SPRITE_ATTACK1, SPRITE_CASTING, SPRITE_HURT, SPRITE_DEAD];
-const MOB_ACTIONS = [SPRITE_IDLE, SPRITE_WALK, SPRITE_ATTACK1, SPRITE_DEAD];
 
 interface ActorSource {
   kind: "player" | "mob";
@@ -89,6 +86,13 @@ class Actor {
    *  RO's behaviour where the character raises their arms mid-animation and
    *  waits for the cast bar. Null while not casting. */
   private castHoldFrame: number | null = null;
+  /** Animation type used for the "attack" pose. A player's attack motion
+   *  depends on their equipped weapon — a bow uses ATTACK3, a dagger ATTACK1,
+   *  etc. (weapon-action.ts maps job+weapon → 5/10/11). Using the wrong motion
+   *  renders the unarmed swing AND drops the weapon sprite (ragassets only
+   *  composites the weapon on the motion that weapon actually animates on).
+   *  Mobs always use ATTACK1. */
+  private readonly attackAction: number;
 
   constructor(
     scene: Scene,
@@ -97,6 +101,10 @@ class Actor {
     spawn: { gx: number; gy: number },
   ) {
     this.walker = new Walker(world.gat, world.cellSize, spawn);
+    this.attackAction =
+      src.kind === "player"
+        ? attackActionType(src.look!.jobView, src.look!.weapon, src.look!.sex)
+        : SPRITE_ATTACK1;
     const metrics = src.kind === "mob" ? MOB_SPRITE : undefined;
     this.billboard = new Character(scene, metrics);
     this.billboard.setVisible(false);
@@ -104,7 +112,12 @@ class Actor {
   }
 
   private async probeFrames(): Promise<void> {
-    const actions = this.src.kind === "player" ? PLAYER_ACTIONS : MOB_ACTIONS;
+    // Player poses: idle/walk/cast/hurt/dead plus the weapon-specific attack
+    // motion. Mobs: idle/walk/attack/dead.
+    const actions =
+      this.src.kind === "player"
+        ? [SPRITE_IDLE, SPRITE_WALK, this.attackAction, SPRITE_CASTING, SPRITE_HURT, SPRITE_DEAD]
+        : [SPRITE_IDLE, SPRITE_WALK, SPRITE_ATTACK1, SPRITE_DEAD];
     const probeUrl = (a: number) =>
       this.src.kind === "player"
         ? playerFrameProbeUrl(this.src.look!, a)
@@ -179,9 +192,17 @@ class Actor {
     camDir: number,
     camera: PerspectiveCamera,
   ): void {
-    // Expire held poses.
-    if (this.pose === "attack" || this.pose === "hurt" || this.pose === "casting") {
-      if (nowMs >= this.poseUntil) this.pose = this.walker.moving ? "walk" : "idle";
+    // Expire held poses. Casting flows into attack (the RO client plays the
+    // strike animation right after the cast bar fills — the "release" of the
+    // raised arms), so a completed cast transitions to attack for
+    // ATTACK_HOLD_MS instead of falling straight to idle. If a damage event
+    // then arrives it retargets the swing via triggerAttack; if the skill
+    // deals no damage the attack still plays out and expires on its own.
+    if (this.pose === "casting" && nowMs >= this.poseUntil) {
+      this.pose = "attack";
+      this.poseUntil = nowMs + ATTACK_HOLD_MS;
+    } else if ((this.pose === "attack" || this.pose === "hurt") && nowMs >= this.poseUntil) {
+      this.pose = this.walker.moving ? "walk" : "idle";
     }
     // Walk pose follows the walker's moving flag, unless a held pose overrides.
     if (!this.dead && this.pose !== "attack" && this.pose !== "hurt" && this.pose !== "casting") {
@@ -195,7 +216,7 @@ class Actor {
     }
     this.billboard.setVisible(true);
 
-    const action = poseToAction(this.pose);
+    const action = this.pose === "attack" ? this.attackAction : poseToAction(this.pose);
     const dir = (camDir + this.walker.dir) % 8;
     this.ensureFrames(action, dir);
     this.aClock += dtSec;
@@ -251,18 +272,19 @@ class Actor {
   }
 }
 
+// "attack" is resolved to the actor's weapon-specific attackAction at the call
+// site (a bow attacks on ATTACK3, a dagger on ATTACK1), so it never reaches here.
 function poseToAction(pose: Pose): number {
   switch (pose) {
     case "walk":
       return SPRITE_WALK;
-    case "attack":
-      return SPRITE_ATTACK1;
     case "hurt":
       return SPRITE_HURT;
     case "casting":
       return SPRITE_CASTING;
     case "dead":
       return SPRITE_DEAD;
+    case "attack":
     case "idle":
     default:
       return SPRITE_IDLE;
