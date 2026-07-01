@@ -82,6 +82,16 @@ export const t = {
   linkCopied: "Link copiado!",
   shareReady: (url: string) => `Pronto para compartilhar: ${url}`,
 
+  // Replay map viewer (3D overlay)
+  replayMapButton: "Assistir replay (BETA)",
+  replayMapLoading: "Carregando mapa…",
+  replayMapError: "Falha ao carregar o mapa.",
+  replayMapClose: "Fechar",
+  replayMapPlay: "Reproduzir",
+  replayMapPause: "Pausar",
+  replayMapRestart: "Recomeçar",
+  replayMapSpeedLabel: "Velocidade",
+
   // Export (PDF / Excel)
   exportPdf: "Baixar PDF",
   exportXlsx: "Baixar Excel",

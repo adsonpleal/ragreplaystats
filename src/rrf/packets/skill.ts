@@ -33,6 +33,25 @@ export function decodeSkillCast(reader: ByteReader, time: number): SkillCast {
 }
 
 /**
+ * 0x07fb — ZC_USESKILL_ACK2 (newer cast-start packet, PACKETVER >= 20080910).
+ * Modern clients (kRO 2020+ and the LATAM branch we target) emit this instead
+ * of 0x013e for skills with a cast bar. Payload after pkt id is the 0x013e
+ * layout + a trailing `disposable` byte we don't need:
+ *   srcAID u32, targetID u32, x i16, y i16, skillId u16, property i32,
+ *   delayTime u32, disposable u8
+ */
+export function decodeSkillCast07fb(reader: ByteReader, time: number): SkillCast {
+  const source = reader.u32();
+  const target = reader.u32();
+  reader.skip(2 + 2); // x, y
+  const skillId = reader.u16();
+  reader.skip(4); // property (element)
+  const castMs = reader.u32();
+  // trailing disposable u8 — unused
+  return { time, source, target, skillId, castMs };
+}
+
+/**
  * 0x09ca — ZC_SKILL_ENTRY5 (ground-skill unit placed). Used by skills like
  * Onda Psíquica, Storm Gust, Comet, etc. that drop a "skill unit" entity on
  * the map; subsequent damage events list that unit's AID as the source

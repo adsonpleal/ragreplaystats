@@ -15,11 +15,13 @@ import type {
   Entity,
   EntityKind,
   EquipChangeEvent,
+  FixPosEvent,
   InventoryRecord,
   ItemAddEvent,
   ItemDeleteEvent,
   MapChange,
   MobHpUpdate,
+  MoveEvent,
   ParamChangeEvent,
   RandomOption,
   Replay,
@@ -145,6 +147,15 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   const paramChanges: ParamChangeEvent[] = [];
   const statusEvents: StatusEvent[] = [];
   const chats: ChatEvent[] = [];
+  const moves: MoveEvent[] = [];
+  const positions: FixPosEvent[] = [];
+  // Seed the local player's recording-start cell from the ReplayData container.
+  // The client never self-spawns via an entity packet, so without this the map
+  // viewer would have nothing to place the player on at t=0 (recordings that
+  // start mid-map — no 0x0091 either — leave the player invisible).
+  if (session.aid && (session.gx || session.gy)) {
+    positions.push({ time: 0, aid: session.aid, gx: session.gx, gy: session.gy });
+  }
   const knownPacketIdSet = new Set<number>();
   // Map from ground-skill-unit AID → caster AID. Skills like Onda Psíquica
   // (Psychic Wave), Storm Gust, Comet, etc. spawn a "skill unit" entity that
@@ -247,8 +258,26 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         // Documented sex field (spawn packets only); authoritative over the
         // session-snapshot fallback used to seed the local player.
         if (ep.sex === 0 || ep.sex === 1) e.sex = ep.sex;
+        // Spawn position → synthetic fix-pos so the map viewer can place the
+        // entity at its initial cell before any walk lands. A walking spawn
+        // also queues the in-flight step as a move event.
+        if (ep.pos) positions.push({ time, aid: ep.aid, gx: ep.pos.gx, gy: ep.pos.gy });
+        if (ep.walk) moves.push({ time, aid: ep.aid, from: ep.walk.from, to: ep.walk.to, startTime: 0 });
         break;
       }
+      case "moveOther":
+        moves.push(decoded.data);
+        break;
+      case "moveSelfRaw": {
+        if (session.aid) {
+          const m = decoded.data;
+          moves.push({ time: m.time, aid: session.aid, from: m.from, to: m.to, startTime: m.startTime });
+        }
+        break;
+      }
+      case "fixPos":
+        positions.push(decoded.data);
+        break;
       case "vanish":
         if (decoded.data.kind === 1) kills.push(decoded.data);
         break;
@@ -300,9 +329,18 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
       case "chat":
         chats.push(decoded.data);
         break;
-      case "mapChange":
-        mapChanges.push(decoded.data);
+      case "mapChange": {
+        const mc = decoded.data;
+        mapChanges.push(mc);
+        // The local player never self-spawns via an entity packet; the map-load
+        // packet's (x,y) is the canonical source for their cell, so stamp it as
+        // a synthetic position event so the map viewer can place them and
+        // follow the camera there.
+        if (session.aid && (mc.gx || mc.gy)) {
+          positions.push({ time, aid: session.aid, gx: mc.gx, gy: mc.gy });
+        }
         break;
+      }
       case "itemDelete": {
         const ev = decoded.data;
         const inv = inventory.get(ev.slot);
@@ -438,6 +476,8 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     skillUses: dedupedSkillUses,
     mobHp,
     mapChanges,
+    moves,
+    positions,
     initialInventory,
     itemDeletes,
     itemAdds,
@@ -489,6 +529,9 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
   let hairStyle = 0;
   let hairColor = 0;
   let clothesColor = 0;
+  // Local player's recording-start cell (from ReplayData chunks 967 / 968).
+  let gx = 0;
+  let gy = 0;
 
   const replayData = containers.find(
     (c): c is GenericContainer =>
@@ -511,6 +554,14 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
     // regardless of sex → it always returned "male".)
     const sexFlag = readU32ChunkById(replayData, 963);
     sex = sexFlag === 0 ? 0 : sexFlag === 1 ? 1 : -1;
+    // Local player's recording-start cell — chunks 967 (gx) and 968 (gy).
+    // Verified across replays: for a recording where the player walked, the
+    // first 0x0087 self-move's `from` cell matches these values exactly. The
+    // local player never self-spawns via an entity packet, and 0x0091 only
+    // fires on map transitions, so this is often the only source for the
+    // player's initial cell (recordings that start mid-map).
+    gx = readU32ChunkById(replayData, 967) ?? 0;
+    gy = readU32ChunkById(replayData, 968) ?? 0;
   }
 
   const sessionContainer = containers.find(
@@ -526,7 +577,7 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
     clothesColor = readU32ChunkById(sessionContainer, 1063) ?? 0;
   }
 
-  return { player, map, aid, job, baseLevel, recordedAt, sex, hairStyle, hairColor, clothesColor };
+  return { player, map, aid, job, baseLevel, recordedAt, sex, hairStyle, hairColor, clothesColor, gx, gy };
 }
 
 /**

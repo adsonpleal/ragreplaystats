@@ -1,0 +1,9 @@
+Galmuri11 — a pixel/bitmap font by the Galmuri Project (Eunbin Jeong / Dalgona).
+
+Source:  https://github.com/quiple/galmuri
+License: SIL Open Font License 1.1 — https://github.com/quiple/galmuri/blob/main/OFL.txt
+
+The bundled "galmuri11-latin.woff2" is a Latin-only subset of Galmuri11, produced
+with fontTools (pyftsubset). The SIL OFL permits subsetting and redistribution
+under the same license; this notice is provided per OFL clauses 1–2. Galmuri is
+not sold and is not bundled as a standalone font product.

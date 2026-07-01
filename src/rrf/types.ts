@@ -87,6 +87,30 @@ export type MobHpUpdate = {
 export type MapChange = {
   time: number;
   map: string;
+  /** Local player's cell after the map change (from the packet). 0,0 when the
+   *  recording's variant of the packet doesn't carry coords. */
+  gx: number;
+  gy: number;
+};
+
+/** A walk command observed for an entity: the server told it to walk from
+ *  `from` to `to`, starting at the server clock `startTime`. We only use
+ *  client-clock `time` for playback; `startTime` is carried for completeness. */
+export type MoveEvent = {
+  time: number;
+  aid: number;
+  from: { gx: number; gy: number };
+  to: { gx: number; gy: number };
+  startTime: number;
+};
+
+/** A forced position snap (spawn position, ZC_STOPMOVE, or post-knockback
+ *  fix-pos). The entity teleports to the cell immediately at `time`. */
+export type FixPosEvent = {
+  time: number;
+  aid: number;
+  gx: number;
+  gy: number;
 };
 
 export type ItemDeleteEvent = {
@@ -195,6 +219,12 @@ export type Replay = {
   skillUses: SkillUse[];
   mobHp: MobHpUpdate[];
   mapChanges: MapChange[];
+  /** Every walk command (0x0086/0x0087 and the spawn's MoveData). Drives the
+   *  map viewer's entity movement playback. */
+  moves: MoveEvent[];
+  /** Every forced position snap (spawn PosDir + 0x0088 fix-pos). Lets the
+   *  viewer place an entity at its initial cell before the first walk lands. */
+  positions: FixPosEvent[];
   initialInventory: Map<number, InventoryRecord>;
   itemDeletes: ItemDeleteEvent[];
   itemAdds: ItemAddEvent[];

@@ -14,12 +14,14 @@ import {
 } from "./damage.js";
 import {
   decodeSkillCast,
+  decodeSkillCast07fb,
   decodeSkillEntry09ca,
   decodeSkillNoDamage011a,
   decodeSkillNoDamage09cb,
   type GroundSkillEntry,
 } from "./skill.js";
 import { decodeMapChange, decodeMobHp, decodeVanish } from "./misc.js";
+import { decodeFixPos, decodeMoveOther, decodeMoveSelf } from "./movement.js";
 import {
   decodeItemAdd,
   decodeItemDelete,
@@ -39,10 +41,12 @@ import { decodeSelfChat } from "./chat.js";
 import type {
   ChatEvent,
   DamageEvent,
+  FixPosEvent,
   ItemAddEvent,
   ItemDeleteEvent,
   MapChange,
   MobHpUpdate,
+  MoveEvent,
   ParamChangeEvent,
   SkillCast,
   SkillUse,
@@ -65,6 +69,7 @@ export const PacketIds = {
   SKILL_NODMG_OLD: 0x011a,
   SKILL_NODMG_NEW: 0x09cb,
   SKILL_CAST: 0x013e,
+  SKILL_CAST_NEW: 0x07fb,
   MAP_CHANGE: 0x0091,
   ITEM_DELETE: 0x07fa,
   ITEM_ADD: 0x0a37,
@@ -78,6 +83,9 @@ export const PacketIds = {
   STATUS_0983: 0x0983,
   GROUND_SKILL_ENTRY: 0x09ca,
   SELF_CHAT: 0x008e,
+  MOVE_OTHER: 0x0086,
+  MOVE_SELF: 0x0087,
+  FIX_POS: 0x0088,
 } as const;
 
 export type DecodedPacket =
@@ -95,7 +103,10 @@ export type DecodedPacket =
   | { type: "paramChange"; data: ParamChangeEvent }
   | { type: "status"; data: StatusEvent }
   | { type: "groundSkillEntry"; data: GroundSkillEntry }
-  | { type: "chat"; data: ChatEvent };
+  | { type: "chat"; data: ChatEvent }
+  | { type: "moveOther"; data: MoveEvent }
+  | { type: "moveSelfRaw"; data: { time: number; startTime: number; from: { gx: number; gy: number }; to: { gx: number; gy: number } } }
+  | { type: "fixPos"; data: FixPosEvent };
 
 export function decodePacket(
   raw: Uint8Array,
@@ -134,6 +145,8 @@ export function decodePacket(
         return { type: "skillUse", data: decodeSkillNoDamage09cb(reader, time) };
       case PacketIds.SKILL_CAST:
         return { type: "skillCast", data: decodeSkillCast(reader, time) };
+      case PacketIds.SKILL_CAST_NEW:
+        return { type: "skillCast", data: decodeSkillCast07fb(reader, time) };
       case PacketIds.MAP_CHANGE:
         return { type: "mapChange", data: decodeMapChange(reader, time) };
       case PacketIds.ITEM_DELETE:
@@ -160,6 +173,18 @@ export function decodePacket(
         return { type: "groundSkillEntry", data: decodeSkillEntry09ca(reader, time) };
       case PacketIds.SELF_CHAT:
         return { type: "chat", data: decodeSelfChat(raw, time) };
+      case PacketIds.MOVE_OTHER:
+        return { type: "moveOther", data: decodeMoveOther(reader, time) };
+      case PacketIds.MOVE_SELF: {
+        // 0x0087 carries no AID — the orchestrator stamps the session player's.
+        const ev = decodeMoveSelf(reader, time, 0);
+        return {
+          type: "moveSelfRaw",
+          data: { time: ev.time, startTime: ev.startTime, from: ev.from, to: ev.to },
+        };
+      }
+      case PacketIds.FIX_POS:
+        return { type: "fixPos", data: decodeFixPos(reader, time) };
       default:
         return null;
     }

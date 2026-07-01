@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "build:db": "node tools/build-db.mjs"
+    "build:db": "node tools/build-db.mjs",
+    "build:monsters": "node tools/build-monsters.mjs"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
@@ -18,10 +19,12 @@
     "vite": "^5.2.11"
   },
   "dependencies": {
+    "@types/three": "^0.185.0",
     "firebase": "^12.12.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
+    "three": "^0.185.0",
     "uplot": "^1.6.30",
     "write-excel-file": "^4.1.1",
     "zustand": "^4.5.4"

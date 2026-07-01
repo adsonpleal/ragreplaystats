@@ -16,9 +16,15 @@ export function decodeMobHp(reader: ByteReader, time: number): MobHpUpdate {
   return { time, aid, hp, maxHp };
 }
 
-/** 0x0091 — ZC_NPCACK_MAPMOVE. mapname[16], x i16, y i16. */
+/**
+ * 0x0091 — ZC_NPCACK_MAPMOVE: the server has placed the client at a cell after
+ * a map change. mapname[16], x i16, y i16. Carries the local player's
+ * authoritative spawn cell — the local player never self-spawns via an entity
+ * packet, so this is often the only position the recording has for them.
+ */
 export function decodeMapChange(reader: ByteReader, time: number): MapChange {
   const map = readKoreanZ(reader.bytes(16));
-  reader.skip(4); // x, y
-  return { time, map };
+  const gx = reader.i16();
+  const gy = reader.i16();
+  return { time, map, gx, gy };
 }

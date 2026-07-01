@@ -1,3 +1,15 @@
+/* Self-hosted bitmap-style pixel font (Galmuri11 by quiple, SIL OFL — the
+   same font the latamvisuais UI uses). Applied to the replay-map overlay's
+   HUD (damage floats, cast labels, hover tooltip, HP bars) so numbers read
+   like the RO client instead of the OS's system font. */
+@font-face {
+  font-family: "Galmuri11";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/galmuri11-latin.woff2") format("woff2");
+}
+
 :root {
   color-scheme: light dark;
   --bg: #fafafa;
@@ -1489,4 +1501,256 @@ td.num, th.num {
   @page {
     margin: 12mm;
   }
+}
+
+/* Replay map viewer — fullscreen 3D overlay launched from ExplorerToolbar.
+   Sits above everything; the canvas fills the viewport and the controls dock
+   along the bottom edge. Close button mirrors the dropzone's close affordance. */
+.replay-map-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: #000;
+  user-select: none;
+  overflow: hidden;
+}
+
+.replay-map-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.replay-map-status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 4px;
+  font: 600 14px system-ui;
+  pointer-events: none;
+}
+
+.replay-map-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.replay-map-close:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.replay-map-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font: 500 13px system-ui;
+}
+
+.replay-map-btn {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.replay-map-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.replay-map-time {
+  font-variant-numeric: tabular-nums;
+  min-width: 90px;
+  text-align: center;
+}
+
+.replay-map-scrub {
+  width: 280px;
+}
+
+.replay-map-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.replay-map-speed select {
+  /* Solid dark background — the translucent-over-translucent-panel version
+     rendered the text nearly invisible over pale page content peeking through. */
+  background: #222;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font: inherit;
+  /* Force dark color-scheme so the native popup menu (rendered by the OS) also
+     uses dark colours — otherwise the options list flashes white on light OSes. */
+  color-scheme: dark;
+}
+
+.replay-map-speed select option {
+  background: #222;
+  color: #fff;
+}
+
+.replay-map-btn--icon {
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.replay-map-btn--icon svg {
+  fill: currentColor;
+}
+
+/* Replay-map HUD overlays (siblings of the WebGL canvas). Positioned by
+   frame-by-frame world→screen projection in HudOverlay.ts; only their
+   transform / display state changes per frame. */
+.replay-map-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Anchor set by JS translate3d to the projected foot pixel; the JS also
+     nudges left 50% of the label's own width so it centres on that pixel.
+     margin-top clears the HP/SP/AP vitals row that sits directly below the
+     feet, so the name never overlaps the bars. */
+  margin-left: 0;
+  margin-top: 10px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font: 12px Galmuri11, monospace;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+  /* transform is set by JS (translate3d); layout-centre via negative left. */
+  z-index: 10;
+}
+
+/* Horizontal centring: wrap the text in an inline-block whose margin equals
+   -50% of its own width. Easiest approach without measuring: use ::before to
+   push the flex child, but for a single text node a CSS variable + `left`
+   works with a translate offset. We use `margin-left: -50%` on the tooltip
+   itself (relative to its border box) — that's not standard, so instead we
+   apply a fixed centring via `translate(-50%, 0)` mixed into the JS-set
+   transform. See HudOverlay.showAt. */
+
+.replay-map-vitals {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Pin directly below the character's foot pixel; JS sets translate3d(x, y)
+     + translate(-50%, 0) so the widget centres horizontally on the projected
+     foot. margin-top keeps the bars a hair off the ground line, and the row
+     gap gives each vital breathing room instead of stacking flush. */
+  margin-top: 10px;
+  pointer-events: none;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.replay-map-vitals-row {
+  width: 42px;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+}
+
+.replay-map-vitals-fill {
+  height: 100%;
+  transition: width 120ms linear;
+}
+
+.replay-map-vitals-hp .replay-map-vitals-fill { background: #4ac541; }
+.replay-map-vitals-sp .replay-map-vitals-fill { background: #4a8fff; }
+.replay-map-vitals-ap .replay-map-vitals-fill { background: #ffb040; }
+
+.replay-map-castbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Sit ABOVE the head — the projected point is the caster's feet, and the
+     sprite is ~110px tall on screen at default zoom. Empirical offset lands
+     just above the head; nudge if the character size ever changes. */
+  margin-top: -120px;
+  width: 60px;
+  height: 6px;
+  /* Dark navy background matching the RO client's cast-bar unfilled colour. */
+  background: #1a1e3a;
+  border: 1px solid #000;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.replay-map-castbar-fill {
+  position: relative;
+  height: 100%;
+  width: 0;
+  /* Solid green fill — the RO cast-bar "progress" colour. */
+  background: #4ac541;
+  transition: width 60ms linear;
+}
+
+
+/* Skill-name banner shown above the cast bar during a cast. Same pixel font
+   and dark backing as the hover tooltip; sits a few px above the cast bar
+   position (which itself sits above the caster's head at margin-top -120px). */
+.replay-map-castname {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Sit above the cast bar with a small breather. Cast bar's top is at
+     margin-top -120px; the rendered name label is ~21px tall (13px text +
+     2px padding × 2 + line-height), so margin-top of -145px puts its bottom
+     at ~-124px and leaves ~4-5px between the label and the bar. */
+  margin-top: -145px;
+  padding: 2px 8px;
+  /* Semi-transparent black so the map shows through and the label doesn't
+     read like a solid pill — matches the RO client's translucent overlay. */
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  /* Force the pixel bitmap font (Galmuri11) via explicit font-family; the
+     shorthand `font:` can be overridden by user-agent styles on some
+     browsers, so we set the parts separately. `font-synthesis: none`
+     prevents faux-bold smearing the crisp bitmap glyphs. */
+  font-family: "Galmuri11", monospace;
+  font-size: 13px;
+  font-weight: 400;
+  font-synthesis: none;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
 }
