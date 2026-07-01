@@ -43,9 +43,11 @@ const BASE_LIFT = 2;
 // so successive hits stack — older ones higher + smaller + fading), and a
 // single yellow "combo" total that pins right above the monster and sums the
 // hits. No horizontal fan — every number shares the same vertical path.
-const HIT_STAGGER_MS = 110; // gap between successive hits of the same skill
-const HIT_RISE_WORLD = 4; // how far a hit number climbs over its life
-const COMBO_ABOVE_WORLD = 6.5; // yellow total's height above the target anchor…
+const HIT_STAGGER_MS = 400; // gap between hits — wide so the numbers don't pile up
+const HIT_RISE_WORLD = 2.5; // how far a hit number climbs over its life (kept low
+//                             so the stack stays on the monster, not floating up)
+const COMBO_ABOVE_WORLD = 4; // yellow total's height above the target anchor —
+//                              just over the monster's head, above the hits
 const COMBO_LIFE_MS = 2300; // the yellow total lingers longer than a single hit
 const COMBO_COLOR = "#e6e626"; // RO combo yellow rgb(0.9,0.9,0.15)
 
@@ -213,11 +215,11 @@ class Float {
     }
 
     // Multi-hit hit: rise STRAIGHT UP the target's vertical line (no horizontal
-    // drift), shrinking + fading. Because the hits are staggered in time they
-    // stack — the older one is higher/smaller/fainter, matching the client.
+    // drift). Because the hits are staggered, they stack — the older one sits
+    // higher, smaller and fainter as it climbs and fades, matching the client.
     if (this.column) {
       (this.mesh.material as MeshBasicMaterial).opacity = 1 - perc;
-      const scale = Math.max(0.45, 1 - perc * 0.5);
+      const scale = Math.max(0.5, 1 - perc * 0.5);
       this.mesh.scale.set(scale, scale, 1);
       this.mesh.position
         .copy(this.anchor)
@@ -303,8 +305,11 @@ export class DamageTextLayer {
       if (!free) break;
       free.spawn(targetPos, specFor(hitType, perHit, fromPlayer), nowMs + i * HIT_STAGGER_MS, { column: true });
     }
+    // The yellow total appears up front (with the first hit) and pins above the
+    // monster, so it's on screen the whole time the hits rise into the stack
+    // below it — rather than popping in only after they've started to fade.
     const comboFloat = this.pool.find((f) => !f.active);
-    if (comboFloat) comboFloat.spawn(targetPos, comboSpec(total), nowMs + count * HIT_STAGGER_MS, { combo: true });
+    if (comboFloat) comboFloat.spawn(targetPos, comboSpec(total), nowMs, { combo: true });
   }
 
   /** Vertical tier for separate single hits landing on the same target within a
