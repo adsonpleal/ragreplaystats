@@ -48,6 +48,13 @@ const FEET_BELOW_ANCHOR_WORLD = 18 * UNITS_PER_PX;
 // labels stay pinned to the head instead of floating off when zoomed out.
 const CAST_ABOVE_ANCHOR_WORLD = 120 * UNITS_PER_PX;
 
+// Extra playback time past the recording's last packet. The recording's
+// duration is the span of its packet stream, so a skill used on the very last
+// frame (like a burst recorded right as it lands) would fire and then the clock
+// would auto-pause instantly — its multi-hit cascade, combo total and attack
+// animation never get time to play out. This tail lets those finish.
+const PLAYBACK_TAIL_MS = 3000;
+
 type Phase = "loading" | "ready" | "error";
 
 const SPEEDS = [0.5, 1, 2, 4] as const;
@@ -101,7 +108,9 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   // Live values surfaced to the controls. Refs avoid re-creating the engine
   // when only the displayed time changes; `tick` updates a state slice each
   // frame so the React scrubber tracks playback.
-  const timelineRef = useRef<Timeline>(new Timeline(Math.max(1, replay.sessionInfo.durationMs)));
+  const timelineRef = useRef<Timeline>(
+    new Timeline(Math.max(1, replay.sessionInfo.durationMs), PLAYBACK_TAIL_MS),
+  );
   // Rebuilds the entity table + cursors from scratch so a rewind past their
   // internal cursor position starts clean (dead mobs alive again, damage floats
   // cleared). Wired by the setup effect once the world lands.
@@ -400,7 +409,9 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       tickSinceUiPush++;
       if (tickSinceUiPush >= 10) {
         tickSinceUiPush = 0;
-        setDisplayedTime(nowMs);
+        // Cap at the real duration so the scrubber/readout sit at 100% while the
+        // playback tail plays trailing animations past the recording's end.
+        setDisplayedTime(Math.min(nowMs, timelineRef.current.duration));
         setIsPlaying(timelineRef.current.isPlaying);
       }
     });
