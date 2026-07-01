@@ -14,6 +14,8 @@ import type { Replay } from "./rrf/types.js";
 type ItemEntry = { name: string; view?: number };
 type MonsterEntry = { name: string; hp: number; level: number };
 type SkillEntry = { name: string };
+// EFST (status-effect) id -> display name, keyed like the status-change packets.
+type StatusEntry = { name: string };
 // Random-option id -> display template ("ATQM +%d"). Stored as a bare string.
 type RandomOptEntry = string;
 
@@ -26,11 +28,13 @@ const DB_BASE = "./db";
 let items: Map<number, ItemEntry> | null = null;
 let monsters: Map<number, MonsterEntry> | null = null;
 let skills: Map<number, SkillEntry> | null = null;
+let statuses: Map<number, StatusEntry> | null = null;
 let randomOpts: Map<number, RandomOptEntry> | null = null;
 
 let itemsP: Promise<void> | null = null;
 let monstersP: Promise<void> | null = null;
 let skillsP: Promise<void> | null = null;
+let statusesP: Promise<void> | null = null;
 let randomOptsP: Promise<void> | null = null;
 
 async function loadKind<T>(
@@ -65,6 +69,11 @@ function loadSkills(): Promise<void> {
   if (!skillsP) skillsP = loadKind<SkillEntry>("skill.json").then((m) => { skills = m; });
   return skillsP;
 }
+function loadStatuses(): Promise<void> {
+  if (statuses) return Promise.resolve();
+  if (!statusesP) statusesP = loadKind<StatusEntry>("status.json").then((m) => { statuses = m; });
+  return statusesP;
+}
 function loadRandomOpts(): Promise<void> {
   if (randomOpts) return Promise.resolve();
   if (!randomOptsP)
@@ -78,7 +87,7 @@ function loadRandomOpts(): Promise<void> {
  * repeat — already-loaded kinds short-circuit immediately.
  */
 export async function prefetchReplay(_replay: Replay): Promise<void> {
-  await Promise.all([loadItems(), loadMonsters(), loadSkills(), loadRandomOpts()]);
+  await Promise.all([loadItems(), loadMonsters(), loadSkills(), loadStatuses(), loadRandomOpts()]);
 }
 
 /**
@@ -113,6 +122,15 @@ export function getMonsterHp(id: number): number {
 
 export function getSkillName(id: number): string | null {
   return skills?.get(id)?.name ?? null;
+}
+
+/**
+ * Display name for a status effect (buff/debuff), keyed by EFST id. `null` until
+ * status.json is built (tools/build-status.mjs) or for ids not in the client's
+ * status table — the caller falls back to a generic label.
+ */
+export function getStatusName(id: number): string | null {
+  return statuses?.get(id)?.name ?? null;
 }
 
 /**

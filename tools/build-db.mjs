@@ -4,6 +4,7 @@
 //   job.json    player-class names  (pcjobnamegender + pcidentity; classes only)
 //   item.json   item names + slots  (System/iteminfo_new.lub, via the Lua VM)
 //   skill.json  skill names         (skillid.lub + skillinfolist_ptbr.lub, VM)
+//   status.json buff/debuff names   (efstids.lub + stateiconinfo.lub, VM)
 // Plus on-demand icon extraction (--icons). Monster names/HP/level are not in
 // the client (they're server-side); they come from ragassets' mobs.json — see
 // tools/build-monsters.mjs and src/names.ts.
@@ -53,6 +54,14 @@ const WANTED_FILES = [
   "data/luafiles514/lua files/datainfo/enumvar.lua",
   "data/luafiles514/lua files/datainfo/addrandomoptionnametable_ptbr.lub",
   "data/luafiles514/lua files/datainfo/addrandomoptionnametable_ptbr.lua",
+  // Status-effect (buff/debuff) names. efstids defines the EFST_* const -> id
+  // enum; stateiconinfo builds StateIconList keyed by [EFST_x] with a `descript`
+  // block whose first line is the tooltip title (the display name). The buff
+  // strip in the map viewer keys these by EFST id (same id the packets carry).
+  "data/luafiles514/lua files/stateicon/efstids.lub",
+  "data/luafiles514/lua files/stateicon/efstids.lua",
+  "data/luafiles514/lua files/stateicon/stateiconinfo.lub",
+  "data/luafiles514/lua files/stateicon/stateiconinfo.lua",
 ];
 
 // kRO-default JT name → numeric id, used as a fallback when the server's own
@@ -184,11 +193,15 @@ if (Object.keys(skill).length) writeJson(`${outDir}/skill.json`, skill);
 const randomOpt = parseRandomOptNames(fileMap);
 if (Object.keys(randomOpt).length) writeJson(`${outDir}/randomopt.json`, randomOpt);
 
+const status = parseStatusNames(fileMap);
+if (Object.keys(status).length) writeJson(`${outDir}/status.json`, status);
+
 console.log(`\nDone:`);
 console.log(`  job.json       — ${Object.keys(job).length} entries`);
 console.log(`  item.json      — ${Object.keys(item).length} entries`);
 console.log(`  skill.json     — ${Object.keys(skill).length} entries`);
 console.log(`  randomopt.json — ${Object.keys(randomOpt).length} entries`);
+console.log(`  status.json    — ${Object.keys(status).length} entries`);
 } // end main()
 
 // ---------------------------------------------------------------------------
@@ -951,6 +964,59 @@ function parseRandomOptNames(map) {
       if (typeof id !== "number") continue;
       const name = decodeClientString(val);
       if (name) out[String(Math.round(id))] = name;
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Status-effect (buff/debuff) names — execute the client's Lua tables:
+//   efstids.lub        defines EFST_* consts (const -> numeric EFST id)
+//   stateiconinfo.lub  builds StateIconList keyed by [EFST_x], each entry a
+//                      table with a `descript` block. descript[1] is the tooltip
+//                      title line: either a plain string or a { "Title", color }
+//                      pair — the first string is the display name.
+// efstids runs first so StateIconList's EFST_* keys resolve to numeric ids
+// (the same ids the status-change packets carry). The map viewer's buff strip
+// keys its ragassets icons + hover names by these ids.
+// ---------------------------------------------------------------------------
+
+function parseStatusNames(map) {
+  const efstIds =
+    map.get("data/luafiles514/lua files/stateicon/efstids.lub") ??
+    map.get("data/luafiles514/lua files/stateicon/efstids.lua");
+  const iconInfo =
+    map.get("data/luafiles514/lua files/stateicon/stateiconinfo.lub") ??
+    map.get("data/luafiles514/lua files/stateicon/stateiconinfo.lua");
+  if (!iconInfo) {
+    console.warn("! stateiconinfo.lub not found in GRF — skipping status.json");
+    return {};
+  }
+  const g = new LuaTable();
+  // efstids runs first so the EFST_* consts used as StateIconList keys resolve.
+  if (efstIds) {
+    try { runChunkInto(efstIds, g); } catch (err) { console.warn(`! efstids: ${err.message}`); }
+  }
+  try { runChunkInto(iconInfo, g); } catch (err) { console.warn(`! stateiconinfo: ${err.message}`); return {}; }
+
+  // Prefer the named global; fall back to the largest number-keyed table.
+  let list = g.get("StateIconList");
+  if (!(list instanceof LuaTable)) {
+    for (const [, v] of g.map) {
+      if (v instanceof LuaTable && (!(list instanceof LuaTable) || v.map.size > list.map.size)) list = v;
+    }
+  }
+  const out = {};
+  if (list instanceof LuaTable) {
+    for (const [id, entry] of list.map) {
+      if (typeof id !== "number" || !(entry instanceof LuaTable)) continue;
+      const descript = entry.get("descript");
+      if (!(descript instanceof LuaTable)) continue;
+      // descript[1] is the title line — a string, or a { text, color } pair.
+      const first = descript.get(1);
+      const title = first instanceof LuaTable ? first.get(1) : first;
+      const name = decodeClientString(title);
+      if (name) out[String(Math.round(id))] = { name };
     }
   }
   return out;

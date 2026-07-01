@@ -5,6 +5,7 @@ import {
   getMonsterName,
   getRandomOptionText,
   getSkillName,
+  getStatusName,
 } from "../names.js";
 
 export type JobInfo = string;
@@ -14,6 +15,11 @@ export type ReferenceDb = {
   resolveMob(id: number): string;
   resolveMobHp(id: number): number;
   resolveSkill(id: number): string;
+  /**
+   * Display name for a status effect (buff/debuff), keyed by EFST id. Falls
+   * back to `Efeito #<id>` until status.json is built or for unknown ids.
+   */
+  resolveStatus(id: number): string;
   resolveJob(id: number): string;
   resolveItem(id: number): string;
   /**
@@ -97,6 +103,7 @@ export async function loadReferenceDb(base = "./db"): Promise<ReferenceDb> {
     resolveMob: (id: number) => getMonsterName(id) ?? `mob#${id}`,
     resolveMobHp: (id: number) => getMonsterHp(id),
     resolveSkill: (id: number) => getSkillName(id) ?? `skill#${id}`,
+    resolveStatus: (id: number) => getStatusName(id) ?? `Efeito #${id}`,
     resolveJob: (id: number) => job[String(id)] ?? `job#${id}`,
     resolveItem: (id: number) => getItemName(id) ?? `item#${id}`,
     resolveItemView: (id: number) => getItemView(id),
