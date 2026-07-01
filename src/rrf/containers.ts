@@ -18,6 +18,15 @@ export const ContainerType = {
    */
   InitialEntities: 15,
   Efst: 17,
+  /**
+   * The active status-effect (buff/debuff) snapshot at recording start — the
+   * persistent buffs the player already had (food, EXP/drop boosts, etc.) that
+   * never generate a status-change packet during the recording. Bracketed by
+   * empty begin/end markers (chunk ids 19000/19001); each data chunk is a
+   * 28-byte record whose first u32 is the EFST id. (Container 17 "Efst" is the
+   * newer slot and is empty in these recordings — the data lives here.)
+   */
+  EfstList: 18,
 } as const;
 
 export type PacketChunk = {

@@ -206,6 +206,25 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     }
   }
 
+  // Persistent buffs active at recording start (food, EXP/drop boosts, etc.)
+  // live in the EfstList container, NOT the packet stream — they never generate
+  // a status-change packet during the recording. Seed each as a synthetic
+  // "on" status event at t=0 for the local player so the buff strip shows them.
+  const efstListContainer = containers.find(
+    (c): c is GenericContainer =>
+      c.kind === "generic" && c.type === ContainerType.EfstList,
+  );
+  if (efstListContainer && session.aid) {
+    for (const chunk of efstListContainer.chunks) {
+      // Each record is 28 bytes; the first u32 (LE) is the EFST id. Empty
+      // begin/end markers (len 0) and any short chunk are skipped.
+      if (chunk.data.length < 4) continue;
+      const efst = chunk.data[0] | (chunk.data[1] << 8) | (chunk.data[2] << 16) | (chunk.data[3] << 24);
+      if (efst <= 0 || efst > 3000) continue; // guard against non-record chunks
+      statusEvents.push({ time: 0, statusId: efst, aid: session.aid, isOn: true, totalMs: 0, leftMs: 0 });
+    }
+  }
+
   const packetStream = containers.find(
     (c): c is PacketStreamContainer => c.kind === "packetStream",
   );
