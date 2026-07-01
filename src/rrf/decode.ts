@@ -471,10 +471,18 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     }
   }
 
-  const durationMs =
-    earliestTime === Number.POSITIVE_INFINITY
-      ? 0
-      : Math.max(0, latestTime - earliestTime);
+  // The recording's true length (ms) is stored in ReplayData chunk 970 — this
+  // is what the in-game replay UI counts down. It runs PAST the last packet
+  // (the recorder keeps rolling a beat after the final action), so the
+  // packet-stream span alone cuts off a skill used on the last frame. Prefer
+  // the stored value; fall back to (and never go below) the packet span.
+  const packetSpanMs =
+    earliestTime === Number.POSITIVE_INFINITY ? 0 : Math.max(0, latestTime - earliestTime);
+  const replayDataContainer = containers.find(
+    (c): c is GenericContainer => c.kind === "generic" && c.type === ContainerType.ReplayData,
+  );
+  const storedDurationMs = replayDataContainer ? (readU32ChunkById(replayDataContainer, 970) ?? 0) : 0;
+  const durationMs = Math.max(packetSpanMs, storedDurationMs);
 
   // The server often broadcasts the same skill-use / cast packet twice
   // (caster's own animation + nearby-observer broadcast that loops back to

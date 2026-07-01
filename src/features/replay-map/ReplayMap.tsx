@@ -48,12 +48,11 @@ const FEET_BELOW_ANCHOR_WORLD = 18 * UNITS_PER_PX;
 // labels stay pinned to the head instead of floating off when zoomed out.
 const CAST_ABOVE_ANCHOR_WORLD = 120 * UNITS_PER_PX;
 
-// Extra playback time past the recording's last packet. The recording's
-// duration is the span of its packet stream, so a skill used on the very last
-// frame (like a burst recorded right as it lands) would fire and then the clock
-// would auto-pause instantly — its multi-hit cascade, combo total and attack
-// animation never get time to play out. This tail lets those finish.
-const PLAYBACK_TAIL_MS = 3000;
+// Small safety margin past the recording's real duration (from ReplayData
+// chunk 970) so a damage float / combo total that outlives the recording's own
+// tail still finishes its fade before the clock auto-pauses. The bulk of the
+// tail comes from the real duration now, so this stays small.
+const PLAYBACK_TAIL_MS = 1500;
 
 type Phase = "loading" | "ready" | "error";
 
@@ -409,9 +408,9 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       tickSinceUiPush++;
       if (tickSinceUiPush >= 10) {
         tickSinceUiPush = 0;
-        // Cap at the real duration so the scrubber/readout sit at 100% while the
-        // playback tail plays trailing animations past the recording's end.
-        setDisplayedTime(Math.min(nowMs, timelineRef.current.duration));
+        // Triggers the throttled re-render that refreshes the scrubber/readout
+        // (which read the timeline clock directly, clamped to the duration).
+        setDisplayedTime(nowMs);
         setIsPlaying(timelineRef.current.isPlaying);
       }
     });
@@ -548,7 +547,10 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   };
 
   const totalMs = replay.sessionInfo.durationMs;
-  const nowMs = timelineRef.current.time;
+  // Clamp to the real duration so the readout + scrubber sit at 0:10 / 100%
+  // during the playback tail (the clock runs past `totalMs` to finish trailing
+  // animations, but the UI shouldn't show more than the recording length).
+  const nowMs = Math.min(timelineRef.current.time, totalMs);
   // Silence the unused-var warning for now; kept for future "at end" UI.
   void displayedTime;
 
