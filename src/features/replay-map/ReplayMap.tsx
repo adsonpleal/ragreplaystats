@@ -41,6 +41,13 @@ const SP_MAXAP = 220;
 // screen-pixel margin can't, since the overhang grows as you zoom in).
 const FEET_BELOW_ANCHOR_WORLD = 18 * UNITS_PER_PX;
 
+// World-space rise above the ground anchor for the cast bar / skill-name labels
+// — ~120 sprite pixels, the head height of a standing sprite (canvas anchorY is
+// 152px up, the body tops out around here). Projecting this point puts the bar
+// just above the head and, being a world offset, it scales with zoom so the
+// labels stay pinned to the head instead of floating off when zoomed out.
+const CAST_ABOVE_ANCHOR_WORLD = 120 * UNITS_PER_PX;
+
 type Phase = "loading" | "ready" | "error";
 
 const SPEEDS = [0.5, 1, 2, 4] as const;
@@ -284,8 +291,12 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       // the boots at every zoom. A tiny CSS margin adds the final gap.
       const wrapW = wrap.clientWidth;
       const wrapH = wrap.clientHeight;
+      // Camera-up in world space — shared by the vitals (offset below the feet)
+      // and the cast bar / skill name (offset above the head). Both offsets are
+      // sprite-relative world distances, so they scale with zoom instead of
+      // floating away when zoomed out.
+      camUpTmp.set(0, 1, 0).applyQuaternion(engine.cam.camera.quaternion);
       if (pos) {
-        camUpTmp.set(0, 1, 0).applyQuaternion(engine.cam.camera.quaternion);
         feetTmp.copy(pos).addScaledVector(camUpTmp, -FEET_BELOW_ANCHOR_WORLD);
         if (projectToScreen(feetTmp, engine.cam.camera, wrapW, wrapH, screenXY)) {
           vitalBars.setVisible(true);
@@ -297,13 +308,16 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       } else {
         vitalBars.setVisible(false);
       }
-      // Cast bars + skill-name labels: same per-frame projection, stacked
-      // above each casting actor's foot point (the CSS margin-top values
-      // place the name higher on the head, the bar just below it).
+      // Cast bar + skill-name labels: project a point a sprite's-height ABOVE
+      // the caster's feet (CAST_ABOVE_ANCHOR_WORLD along camera-up) so the
+      // anchor sits at the head and tracks the sprite as you zoom — a fixed CSS
+      // margin off the feet floated the labels way above the head when zoomed
+      // out. The small remaining CSS margins only stack the name above the bar.
       const projectCaster = (aid: number, out: { x: number; y: number }) => {
         const caster = entities!.worldPosOf(aid, castWorldTmp);
         if (!caster) return false;
-        return projectToScreen(caster, engine.cam.camera, wrapW, wrapH, out);
+        castWorldTmp.addScaledVector(camUpTmp, CAST_ABOVE_ANCHOR_WORLD);
+        return projectToScreen(castWorldTmp, engine.cam.camera, wrapW, wrapH, out);
       };
       castBars.update(nowMs, projectCaster);
       castNames.update(nowMs, projectCaster);

@@ -1708,10 +1708,11 @@ td.num, th.num {
   position: absolute;
   top: 0;
   left: 0;
-  /* Sit ABOVE the head — the projected point is the caster's feet, and the
-     sprite is ~110px tall on screen at default zoom. Empirical offset lands
-     just above the head; nudge if the character size ever changes. */
-  margin-top: -120px;
+  /* The projected anchor is now a head-height world point (ReplayMap's
+     CAST_ABOVE_ANCHOR_WORLD), so it already sits above the head and tracks the
+     sprite as you zoom. No fixed lift needed here — the bar renders right at
+     the anchor. */
+  margin-top: 0;
   width: 60px;
   height: 6px;
   /* Dark navy background matching the RO client's cast-bar unfilled colour. */
@@ -1738,11 +1739,12 @@ td.num, th.num {
   position: absolute;
   top: 0;
   left: 0;
-  /* Sit above the cast bar with a small breather. Cast bar's top is at
-     margin-top -120px; the rendered name label is ~21px tall (13px text +
-     2px padding × 2 + line-height), so margin-top of -145px puts its bottom
-     at ~-124px and leaves ~4-5px between the label and the bar. */
-  margin-top: -145px;
+  /* Stack the name just above the cast bar. Both share the same head-height
+     anchor (the bar renders at margin-top 0), so this is a fixed screen-space
+     lift: the ~21px-tall label (13px text + 2px padding × 2 + line-height)
+     plus ~4px breather sits its bottom just above the bar's top. Fixed rather
+     than zoom-scaled because the labels themselves are fixed-size UI. */
+  margin-top: -25px;
   padding: 2px 8px;
   /* Semi-transparent black so the map shows through and the label doesn't
      read like a solid pill — matches the RO client's translucent overlay. */
