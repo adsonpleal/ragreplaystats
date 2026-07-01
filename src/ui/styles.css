@@ -1646,9 +1646,16 @@ td.num, th.num {
   margin-left: 0;
   margin-top: 10px;
   padding: 2px 8px;
-  background: rgba(0, 0, 0, 0.78);
+  /* Match the skill-name banner (.replay-map-castname): semi-transparent black
+     so the map shows through, and the crisp Galmuri11 bitmap font set part by
+     part (the `font:` shorthand can be overridden by UA styles; font-synthesis
+     stops faux-bold smearing the glyphs). */
+  background: rgba(0, 0, 0, 0.45);
   color: #fff;
-  font: 12px Galmuri11, monospace;
+  font-family: "Galmuri11", monospace;
+  font-size: 13px;
+  font-weight: 400;
+  font-synthesis: none;
   border-radius: 3px;
   pointer-events: none;
   white-space: nowrap;
