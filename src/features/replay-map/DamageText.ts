@@ -40,15 +40,20 @@ const BASE_LIFT = 2;
 
 // Multi-hit skills, matching the RO client: each hit spawns its own white
 // number that rises STRAIGHT UP the target's vertical line (staggered in time,
-// so successive hits stack — older ones higher + smaller + fading), and a
-// single yellow "combo" total that pins right above the monster and sums the
-// hits. No horizontal fan — every number shares the same vertical path.
-const HIT_STAGGER_MS = 400; // gap between hits — wide so the numbers don't pile up
-const HIT_RISE_WORLD = 2.5; // how far a hit number climbs over its life (kept low
+// so successive hits stack — older ones higher + smaller + fading). Above them
+// a small yellow RUNNING TOTAL pins over the monster: it starts at the first
+// hit's value and grows — in value and size — as each subsequent hit lands. No
+// horizontal fan — every number shares the same vertical path.
+const HIT_STAGGER_MS = 700; // gap between hits — wide so the numbers don't pile up
+const COLUMN_BASE_WORLD = 0.8; // where a hit number starts (low, on the monster body)
+const HIT_RISE_WORLD = 3.5; // how far a hit number climbs over its life (kept low
 //                             so the stack stays on the monster, not floating up)
-const COMBO_ABOVE_WORLD = 4; // yellow total's height above the target anchor —
-//                              just over the monster's head, above the hits
-const COMBO_LIFE_MS = 2300; // the yellow total lingers longer than a single hit
+const COMBO_ABOVE_WORLD = 3.6; // yellow total's height above the target anchor —
+//                               just over the monster's head, clear of the hits
+const COMBO_FONT_PX = 24; // yellow total glyphs — smaller than the white hits (26)
+const COMBO_GROW_FROM = 0.55; // running-total scale at the first hit…
+const COMBO_GROW_TO = 1; //      …grown to this by the last hit
+const COMBO_LINGER_MS = 1200; // how long the total holds after the last hit
 const COMBO_COLOR = "#e6e626"; // RO combo yellow rgb(0.9,0.9,0.15)
 
 const TEXT_CANVAS_W = 128;
@@ -86,9 +91,12 @@ function specFor(hit: HitType, damage: number, fromPlayer: boolean): TextSpec {
   return { text: label, color, outline: "#000", fontPx: 26, lifeMs: LIFETIME_MS };
 }
 
-/** The yellow "combo" total shown after a multi-hit skill — the sum of all hits. */
-function comboSpec(total: number): TextSpec {
-  return { text: formatDamage(total), color: COMBO_COLOR, outline: "#000", fontPx: 30, lifeMs: COMBO_LIFE_MS };
+/** The yellow running-total spec — starts showing the first hit's value; the
+ *  Float updates the text as more hits land. Lives long enough to cover all the
+ *  staggered hits plus a linger. */
+function runningTotalSpec(perHit: number, count: number): TextSpec {
+  const lifeMs = (count - 1) * HIT_STAGGER_MS + COMBO_LINGER_MS;
+  return { text: formatDamage(perHit), color: COMBO_COLOR, outline: "#000", fontPx: COMBO_FONT_PX, lifeMs };
 }
 
 /** Per-spawn placement options for a Float. */
@@ -98,8 +106,10 @@ type SpawnOpts = {
   /** This float is one hit of a multi-hit skill — rises straight up the
    *  target's vertical line (no horizontal drift) so successive hits stack. */
   column?: boolean;
-  /** This float is the yellow combo total — pins right above the monster. */
-  combo?: boolean;
+  /** This float is the yellow running total pinned above the monster: it counts
+   *  up `perHit` for each hit that has landed (by the stagger clock) and grows
+   *  in size as it goes. */
+  runningTotal?: { perHit: number; count: number };
 };
 
 function drawText(canvas: HTMLCanvasElement, spec: TextSpec): void {
@@ -131,7 +141,9 @@ class Float {
   lifeMs = LIFETIME_MS;
   liftOffsetWorld = 0; // extra rise when hits stack on the same target
   column = false; // multi-hit hit — rises straight up the target's vertical line
-  combo = false; // the yellow total, pinned above the target
+  private runningTotal: { perHit: number; count: number } | null = null; // yellow total
+  private baseSpec: TextSpec | null = null; // kept so the running total can redraw
+  private lastLanded = -1; // hits counted into the running total so far
   active = false;
   private readonly worldW: number;
   private readonly worldH: number;
@@ -172,7 +184,9 @@ class Float {
     this.lifeMs = spec.lifeMs;
     this.liftOffsetWorld = (opts.stackLevel ?? 0) * 2.2;
     this.column = opts.column ?? false;
-    this.combo = opts.combo ?? false;
+    this.runningTotal = opts.runningTotal ?? null;
+    this.baseSpec = this.runningTotal ? spec : null;
+    this.lastLanded = -1;
     this.active = true;
     this.mesh.visible = false; // shown on the first update once bornAtMs passes
   }
@@ -200,16 +214,26 @@ class Float {
     this.right.set(1, 0, 0).applyQuaternion(camera.quaternion);
     this.toCam.copy(camera.position).sub(this.anchor).normalize();
 
-    // Combo total: pin it right above the monster (a fixed height above the
-    // anchor) and hold full-size, then fade in the last 30% — a stable "sum"
-    // sitting over the sprite, above the rising hit numbers.
-    if (this.combo) {
-      const alpha = perc < 0.7 ? 1 : Math.max(0, (1 - perc) / 0.3);
+    // Running total: pinned just above the monster. It counts up one `perHit`
+    // per hit that has landed by the stagger clock (so it starts at the first
+    // hit's value and grows to the full sum) and scales up as it counts,
+    // starting small. Fades out in the last 25%.
+    if (this.runningTotal && this.baseSpec) {
+      const { perHit, count } = this.runningTotal;
+      const landed = Math.min(count, Math.floor(age / HIT_STAGGER_MS) + 1);
+      if (landed !== this.lastLanded) {
+        this.lastLanded = landed;
+        drawText(this.canvas, { ...this.baseSpec, text: formatDamage(perHit * landed) });
+        this.texture.needsUpdate = true;
+      }
+      const grow =
+        count > 1 ? COMBO_GROW_FROM + (COMBO_GROW_TO - COMBO_GROW_FROM) * ((landed - 1) / (count - 1)) : COMBO_GROW_TO;
+      const alpha = perc < 0.75 ? 1 : Math.max(0, (1 - perc) / 0.25);
       (this.mesh.material as MeshBasicMaterial).opacity = alpha;
-      this.mesh.scale.set(1.15, 1.15, 1);
+      this.mesh.scale.set(grow, grow, 1);
       this.mesh.position
         .copy(this.anchor)
-        .addScaledVector(this.up, COMBO_ABOVE_WORLD + perc * 0.6)
+        .addScaledVector(this.up, COMBO_ABOVE_WORLD)
         .addScaledVector(this.toCam, 1);
       return;
     }
@@ -223,7 +247,7 @@ class Float {
       this.mesh.scale.set(scale, scale, 1);
       this.mesh.position
         .copy(this.anchor)
-        .addScaledVector(this.up, BASE_LIFT + perc * HIT_RISE_WORLD)
+        .addScaledVector(this.up, COLUMN_BASE_WORLD + perc * HIT_RISE_WORLD)
         .addScaledVector(this.toCam, 1);
       return;
     }
@@ -305,11 +329,11 @@ export class DamageTextLayer {
       if (!free) break;
       free.spawn(targetPos, specFor(hitType, perHit, fromPlayer), nowMs + i * HIT_STAGGER_MS, { column: true });
     }
-    // The yellow total appears up front (with the first hit) and pins above the
-    // monster, so it's on screen the whole time the hits rise into the stack
-    // below it — rather than popping in only after they've started to fade.
-    const comboFloat = this.pool.find((f) => !f.active);
-    if (comboFloat) comboFloat.spawn(targetPos, comboSpec(total), nowMs, { combo: true });
+    // The yellow running total appears up front (with the first hit) showing
+    // that first hit's value, then counts up + grows as each hit lands beneath
+    // it, pinned above the monster.
+    const totalFloat = this.pool.find((f) => !f.active);
+    if (totalFloat) totalFloat.spawn(targetPos, runningTotalSpec(perHit, count), nowMs, { runningTotal: { perHit, count } });
   }
 
   /** Vertical tier for separate single hits landing on the same target within a
