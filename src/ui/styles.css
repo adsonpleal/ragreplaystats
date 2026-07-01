@@ -1769,7 +1769,9 @@ td.num, th.num {
    icon re-enables them so it can be hovered for its name. */
 .replay-map-buffs {
   position: absolute;
-  top: 10px;
+  /* Start below the close button (top 12px + 36px tall = 48px) so the first
+     icon never sits under the × control. */
+  top: 56px;
   right: 8px;
   display: flex;
   flex-direction: column;
