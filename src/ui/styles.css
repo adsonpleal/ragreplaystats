@@ -1763,3 +1763,46 @@ td.num, th.num {
   white-space: nowrap;
   z-index: 10;
 }
+
+/* Right-side vertical strip of the local player's active buff/debuff icons,
+   like the RO client's status row. The container ignores pointer events; each
+   icon re-enables them so it can be hovered for its name. */
+.replay-map-buffs {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+  z-index: 11;
+}
+
+.replay-map-buff {
+  width: 30px;
+  height: 30px;
+  /* RO status icons are small pixel-art bitmaps — keep them crisp when scaled. */
+  image-rendering: pixelated;
+  pointer-events: auto;
+  cursor: default;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+
+/* Name shown when an icon is hovered — sits just left of the strip, vertically
+   aligned with the hovered icon (JS sets `top`). Same translucent pixel-font
+   styling as the skill-name / hover labels. */
+.replay-map-buff-label {
+  position: absolute;
+  right: calc(100% + 6px);
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: "Galmuri11", monospace;
+  font-size: 13px;
+  font-weight: 400;
+  font-synthesis: none;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 12;
+}

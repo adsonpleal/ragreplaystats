@@ -9,6 +9,7 @@
 
 import type { PerspectiveCamera } from "three";
 import { Vector3 } from "three";
+import { statusIconUrl } from "../../sim/ragassets";
 
 const HP_MAX_WIDTH_PX = 42;
 const CAST_BAR_WIDTH_PX = 60;
@@ -128,6 +129,73 @@ export class VitalBars {
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** Right-side strip of the local player's active status-effect icons, mirroring
+ *  the RO client's buff row. Each icon is a ragassets PNG keyed by EFST id; an
+ *  EFST with no icon 404s and is dropped (and remembered so we never refetch
+ *  it). Hovering an icon shows the status name just left of the strip. */
+export class BuffBar {
+  readonly el: HTMLDivElement;
+  private readonly label: HTMLDivElement;
+  private readonly icons = new Map<number, HTMLImageElement>();
+  /** EFSTs whose icon 404'd — kept out of the strip so we don't refetch them. */
+  private readonly noIcon = new Set<number>();
+
+  constructor(parent: HTMLElement, private readonly resolveName: (id: number) => string) {
+    this.el = document.createElement("div");
+    this.el.className = "replay-map-buffs";
+    this.label = document.createElement("div");
+    this.label.className = "replay-map-buff-label";
+    this.label.style.display = "none";
+    this.el.appendChild(this.label);
+    parent.appendChild(this.el);
+  }
+
+  /** Reconcile the strip to the currently-active EFST ids (in display order:
+   *  new buffs append at the bottom, matching the client's roughly-chronological
+   *  ordering). Only called when the active set actually changes. */
+  setActive(ids: number[]): void {
+    const active = new Set(ids);
+    for (const [id, img] of this.icons) {
+      if (!active.has(id)) {
+        img.remove();
+        this.icons.delete(id);
+      }
+    }
+    for (const id of ids) {
+      if (this.icons.has(id) || this.noIcon.has(id)) continue;
+      this.addIcon(id);
+    }
+  }
+
+  private addIcon(id: number): void {
+    const img = document.createElement("img");
+    img.className = "replay-map-buff";
+    img.src = statusIconUrl(id);
+    img.draggable = false;
+    // EFST with no icon on the gateway — drop it and remember, so the next
+    // reconcile doesn't try to re-add (and re-404) it every time it's active.
+    img.onerror = () => {
+      this.noIcon.add(id);
+      img.remove();
+      this.icons.delete(id);
+    };
+    img.addEventListener("mouseenter", () => {
+      this.label.textContent = this.resolveName(id);
+      this.label.style.top = `${img.offsetTop}px`;
+      this.label.style.display = "";
+    });
+    img.addEventListener("mouseleave", () => {
+      this.label.style.display = "none";
+    });
+    this.icons.set(id, img);
+    this.el.appendChild(img);
+  }
+
+  dispose(): void {
+    this.el.remove();
+  }
 }
 
 /** DOM cast bar (skill-cast progress) pinned above an actor's projected screen

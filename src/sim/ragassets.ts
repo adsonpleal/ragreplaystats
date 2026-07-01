@@ -72,6 +72,14 @@ function playerParams(look: PlayerLook): URLSearchParams {
   return p;
 }
 
+/** Status-effect (buff/debuff) icon, keyed by the client's EFST id — the same
+ *  id the status-change packets carry. ragassets serves a 32×32 transparent PNG
+ *  per icon'd EFST; ids without an icon 404 (the caller drops those, matching
+ *  the RO client which only shows icon'd statuses). */
+export function statusIconUrl(efstId: number): string {
+  return `${RAGASSETS_BASE}/icons/status/${efstId}.png`;
+}
+
 /** Mob/monster billboard canvas. Sized like the latamvisuais pet canvas — the
  *  largest tameable monster extends ~189px up / 46px down / 114px sideways. */
 export const MOB_SPRITE = { w: 248, h: 256, anchorX: 124, anchorY: 200 } as const;

@@ -23,7 +23,7 @@ import { CursorAnimator } from "../../sim/cursor";
 import { DamageTextLayer } from "./DamageText";
 import { EntityTable } from "./Entities";
 import { EventCursor, Timeline } from "./Timeline";
-import { CastBarLayer, CastNameLayer, HoverTooltip, VitalBars, projectToScreen } from "./HudOverlay";
+import { BuffBar, CastBarLayer, CastNameLayer, HoverTooltip, VitalBars, projectToScreen } from "./HudOverlay";
 import { lookAtStart } from "./playerState";
 import { SP_HP, SP_MAXHP, SP_SP, SP_MAXSP } from "../../aggregate";
 import { UNITS_PER_PX } from "../../sim/sprite";
@@ -93,8 +93,10 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       casts: by(replay.skillCasts),
       uses: by(replay.skillUses),
       params: by(replay.paramChanges),
+      // Local player's status changes only — drives the buff strip.
+      status: by(replay.statusEvents.filter((e) => e.aid === playerAid)),
     };
-  }, [replay]);
+  }, [replay, playerAid]);
 
   // Live values surfaced to the controls. Refs avoid re-creating the engine
   // when only the displayed time changes; `tick` updates a state slice each
@@ -138,6 +140,13 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     let posCursor: EventCursor<typeof events.positions[number]> | null = null;
     let castCursor: EventCursor<typeof events.casts[number]> | null = null;
     let paramCursor: EventCursor<typeof events.params[number]> | null = null;
+    let statusCursor: EventCursor<typeof events.status[number]> | null = null;
+
+    // Local player's active buffs: EFST id → expiry time (ms, recording clock;
+    // Infinity when the status has no timed duration). Rebuilt on restart. The
+    // strip only re-renders when this set changes (`buffsDirty`).
+    const activeBuffs = new Map<number, number>();
+    let buffsDirty = false;
 
     // Player vitals — updated as paramChange events drain. Kept in refs so the
     // per-frame HUD read is O(1) with no React state churn.
@@ -149,6 +158,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     const vitalBars = new VitalBars(wrap);
     const castBars = new CastBarLayer(wrap);
     const castNames = new CastNameLayer(wrap);
+    const buffBar = new BuffBar(wrap, (id) => db?.resolveStatus(id) ?? `Efeito #${id}`);
 
     // Hover state — last cursor position (client coords) + latest hit's aid.
     // Reset to -1 so a still cursor doesn't trigger a hover on first mount.
@@ -261,6 +271,15 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         killCursor!.advanceTo(nowMs, (ev) => {
           entities!.applyVanish(ev.aid, ev.kind);
         });
+        statusCursor!.advanceTo(nowMs, (ev) => {
+          if (ev.isOn) {
+            // leftMs is the remaining duration at this event; 0 = no timer.
+            activeBuffs.set(ev.statusId, ev.leftMs > 0 ? ev.time + ev.leftMs : Infinity);
+          } else {
+            activeBuffs.delete(ev.statusId);
+          }
+          buffsDirty = true;
+        });
         paramCursor!.advanceTo(nowMs, (ev) => {
           const n = Number(ev.value);
           switch (ev.type) {
@@ -276,6 +295,20 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
 
       entities.update(dt, nowMs, engine.cam.direction, engine.cam.camera);
       damageLayer.update(nowMs, engine.cam.camera);
+
+      // Expire timed buffs whose duration ran out with no explicit "off" event
+      // (a buff can lapse silently). Only mutate when something actually drops.
+      for (const [id, expiresAt] of activeBuffs) {
+        if (nowMs > expiresAt) {
+          activeBuffs.delete(id);
+          buffsDirty = true;
+        }
+      }
+      // Reconcile the right-side buff strip only when the active set changed.
+      if (buffsDirty) {
+        buffBar.setActive([...activeBuffs.keys()]);
+        buffsDirty = false;
+      }
 
       // Follow the player.
       const pos = entities.worldPosOf(playerAid, charWorldTmp);
@@ -417,7 +450,10 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           posCursor = new EventCursor(events.positions);
           castCursor = new EventCursor(events.casts);
           paramCursor = new EventCursor(events.params);
+          statusCursor = new EventCursor(events.status);
           vitals.hp = vitals.maxHp = vitals.sp = vitals.maxSp = vitals.ap = vitals.maxAp = 0;
+          activeBuffs.clear();
+          buffsDirty = true; // force one reconcile so a rewind clears the strip
         };
         buildRuntime();
         restartRef.current = () => {
@@ -449,6 +485,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
                 get damageLayer() { return damageLayer; },
                 castNames,
                 castBars,
+                buffBar,
                 timeline: timelineRef.current,
                 get cursors() { return { damageCursor, killCursor, moveCursor, posCursor, castCursor, paramCursor }; },
                 tick(ms: number) {
@@ -479,6 +516,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       vitalBars.dispose();
       castBars.dispose();
       castNames.dispose();
+      buffBar.dispose();
       damageLayer?.dispose();
       entities?.dispose();
       world?.dispose();
