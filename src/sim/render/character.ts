@@ -60,9 +60,7 @@ export class Character {
     this.canvas.width = metrics.w;
     this.canvas.height = metrics.h;
     this.ctx = this.canvas.getContext("2d")!;
-    this.texture = new CanvasTexture(this.canvas);
-    this.texture.colorSpace = SRGBColorSpace;
-    this.texture.magFilter = NearestFilter;
+    this.texture = this.makeTexture();
     const material = new MeshBasicMaterial({
       map: this.texture,
       transparent: true,
@@ -73,6 +71,18 @@ export class Character {
     this.mesh = new Mesh(new PlaneGeometry(worldW, worldH), material);
     this.mesh.renderOrder = 1;
     scene.add(this.mesh);
+  }
+
+  /** A CanvasTexture bound to this billboard's canvas, with the sprite filter +
+   *  colour space. Recreated (not just flagged) whenever the canvas is resized —
+   *  three.js updates an existing texture via texSubImage2D against the old GPU
+   *  allocation, so a grown canvas never uploads; a fresh texture forces the
+   *  full texImage2D re-allocation. */
+  private makeTexture(): CanvasTexture {
+    const t = new CanvasTexture(this.canvas);
+    t.colorSpace = SRGBColorSpace;
+    t.magFilter = NearestFilter;
+    return t;
   }
 
   /** Redraw from the (animating) sprite img, then orient/place the plane.
@@ -110,7 +120,14 @@ export class Character {
     this.anchorOffset = (metrics.anchorY / metrics.h - 0.5) * worldH;
     this.mesh.geometry.dispose();
     this.mesh.geometry = new PlaneGeometry(worldW, worldH);
-    this.texture.needsUpdate = true;
+    // Recreate the texture — resizing the canvas can't grow the existing GPU
+    // texture (three.js would texSubImage2D against the old size), so the mount
+    // sprite never showed even though it was drawn onto the canvas.
+    this.texture.dispose();
+    this.texture = this.makeTexture();
+    const material = this.mesh.material as MeshBasicMaterial;
+    material.map = this.texture;
+    material.needsUpdate = true;
   }
 
   /** Show/hide the billboard — used to keep the previous map's character from
