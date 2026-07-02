@@ -12,7 +12,8 @@ import { Character } from "../../sim/render/character";
 import { Walker } from "../../sim/walker";
 import {
   ACTION_FRAMES,
-  SPRITE_ATTACK1,
+  MOB_ATTACK,
+  MOB_DEAD,
   SPRITE_CASTING,
   SPRITE_DEAD,
   SPRITE_HURT,
@@ -125,7 +126,7 @@ class Actor {
     this.attackAction =
       src.kind === "player"
         ? attackActionType(src.look!.jobView, src.look!.weapon, src.look!.sex)
-        : SPRITE_ATTACK1;
+        : MOB_ATTACK;
     const metrics = src.kind === "player" ? undefined : MOB_SPRITE;
     this.billboard = new Character(scene, metrics);
     this.billboard.setVisible(false);
@@ -138,7 +139,7 @@ class Actor {
     const actions =
       this.src.kind === "player"
         ? [SPRITE_IDLE, SPRITE_WALK, this.attackAction, SPRITE_CASTING, SPRITE_HURT, SPRITE_DEAD]
-        : [SPRITE_IDLE, SPRITE_WALK, SPRITE_ATTACK1, SPRITE_DEAD];
+        : [SPRITE_IDLE, SPRITE_WALK, MOB_ATTACK, MOB_DEAD];
     const probeUrl = (a: number) =>
       this.src.kind === "player"
         ? playerFrameProbeUrl(this.src.look!, a)
@@ -253,7 +254,7 @@ class Actor {
     }
     this.billboard.setVisible(true);
 
-    const action = this.pose === "attack" ? this.attackAction : poseToAction(this.pose);
+    const action = this.pose === "attack" ? this.attackAction : poseToAction(this.pose, this.src.kind);
     const dir = (camDir + this.walker.dir) % 8;
     this.ensureFrames(action, dir);
     this.aClock += dtSec;
@@ -311,7 +312,10 @@ class Actor {
 
 // "attack" is resolved to the actor's weapon-specific attackAction at the call
 // site (a bow attacks on ATTACK3, a dagger on ATTACK1), so it never reaches here.
-function poseToAction(pose: Pose): number {
+// Mobs/NPCs use the compact monster action layout (die = 4, not the player's 8);
+// their hurt pose is disabled upstream so only "dead" actually diverges.
+function poseToAction(pose: Pose, kind: ActorSource["kind"]): number {
+  const isMob = kind === "mob";
   switch (pose) {
     case "walk":
       return SPRITE_WALK;
@@ -320,7 +324,7 @@ function poseToAction(pose: Pose): number {
     case "casting":
       return SPRITE_CASTING;
     case "dead":
-      return SPRITE_DEAD;
+      return isMob ? MOB_DEAD : SPRITE_DEAD;
     case "attack":
     case "idle":
     default:

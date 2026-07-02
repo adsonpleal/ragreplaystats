@@ -43,3 +43,13 @@ export const SPRITE_DEAD = 8;
 export const SPRITE_ATTACK2 = 10;
 export const SPRITE_ATTACK3 = 11;
 export const SPRITE_CASTING = 12;
+
+// Monster/NPC ACT files use a compact action layout, distinct from a player's:
+//   0 idle · 1 walk · 2 attack · 3 hurt · 4 die   (each × 8 directions)
+// A player's ATTACK1 (5) / DEAD (8) land out of range on a mob, so the gateway
+// returns an empty frame and the sprite VANISHES (e.g. a mob attacking, or a
+// corpse). Idle/walk (0/1) happen to match the player indices; attack/hurt/die
+// need these.
+export const MOB_ATTACK = 2;
+export const MOB_HURT = 3;
+export const MOB_DEAD = 4;
