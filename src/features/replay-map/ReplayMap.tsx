@@ -25,7 +25,7 @@ import { EntityTable } from "./Entities";
 import { EventCursor, Timeline } from "./Timeline";
 import { BuffBar, CastBarLayer, CastNameLayer, HoverTooltip, VitalBars, projectToScreen } from "./HudOverlay";
 import { lookAtStart } from "./playerState";
-import { monsterName, playerName } from "../explorer/entityNames";
+import { monsterName, npcName, playerName } from "../explorer/entityNames";
 import { SP_HP, SP_MAXHP, SP_SP, SP_MAXSP } from "../../aggregate";
 import { UNITS_PER_PX } from "../../sim/sprite";
 
@@ -393,14 +393,17 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         }
         if (matched) {
           const entity = replay.entities.get(matched.aid);
-          // Players keep their character name; mobs/NPCs resolve through the DP
-          // database (pt-BR species name) like the by-monster tab, since the
-          // packet name is often an English/instance label ("#grn_3").
+          // Players keep their character name; mobs resolve through the DP
+          // database (pt-BR species) like the by-monster tab (the packet name is
+          // often an English/instance label like "#grn_3"); NPCs get their
+          // cleaned display name (hidden/effect NPCs resolve to nothing).
           const name =
             entity?.kind === "pc"
               ? playerName(replay, matched.aid)
-              : monsterName(replay, db, matched.aid);
-          const worldPos = entities.worldPosOf(matched.aid, hoverTmp);
+              : entity?.kind === "npc"
+                ? npcName(replay, db, matched.aid)
+                : monsterName(replay, db, matched.aid);
+          const worldPos = name ? entities.worldPosOf(matched.aid, hoverTmp) : null;
           if (worldPos && projectToScreen(worldPos, engine.cam.camera, wrapW, wrapH, screenXY)) {
             tooltip.showAt(name, screenXY.x, screenXY.y);
           } else {

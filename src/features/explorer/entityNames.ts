@@ -20,6 +20,40 @@ export function playerName(replay: Replay, aid: number): string {
   return ent?.name || `#${aid}`;
 }
 
+/**
+ * Strip RO name decoration to the visible display name:
+ *   - `\x1C…\x1C` segments — internal instance/hidden codes ("\x1CYTDpCA\x1C")
+ *   - other control chars, and `^RRGGBB` caret colour codes
+ *   - the `name#unique` suffix the client hides (so "Kafra#alde01" → "Kafra";
+ *     a name that starts with `#` collapses to empty = a hidden NPC)
+ */
+function cleanNpcName(raw: string): string {
+  let s = raw.replace(/\x1c[^\x1c]*\x1c/g, "").replace(/[\x00-\x1f]/g, "");
+  const hash = s.indexOf("#");
+  if (hash >= 0) s = s.slice(0, hash);
+  return s.replace(/\^[0-9a-fA-F]{6}/g, "").trim();
+}
+
+/**
+ * Best NPC name for the map viewer's hover. NPCs are NOT monsters, so their
+ * `view` must not go through `resolveMob` (id spaces overlap → wrong names).
+ * Prefer the cleaned display name; for a hidden/effect NPC with no display name
+ * (`#eff_…`, `\x1C…\x1C`) fall back to the DB sprite name only when the view is a
+ * real species (a boss-mirage NPC → "Miragem de Amdarais"); otherwise "" so the
+ * caller shows no tooltip.
+ */
+export function npcName(replay: Replay, db: ReferenceDb | null, aid: number): string {
+  const ent = replay.entities.get(aid);
+  if (!ent) return "";
+  const cleaned = cleanNpcName(ent.name || "");
+  if (cleaned) return cleaned;
+  if (db && ent.view) {
+    const fromDb = db.resolveMob(ent.view);
+    if (!fromDb.startsWith("mob#")) return fromDb;
+  }
+  return "";
+}
+
 export function playerClass(replay: Replay, db: ReferenceDb | null, aid: number): string {
   const ent = replay.entities.get(aid);
   if (!ent || !ent.view) return t.none;
