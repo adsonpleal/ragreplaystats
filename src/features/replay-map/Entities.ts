@@ -29,6 +29,7 @@ import {
   type PlayerLook,
 } from "../../sim/ragassets";
 import { attackActionType } from "../../ui/weapon-action";
+import { Companion, FALCON_VIEW, WARG_VIEW } from "./Companion";
 import { lookFromEntity } from "./playerState";
 import type { World } from "../../sim/render/scene";
 import type { ReferenceDb } from "../../db/loader";
@@ -51,6 +52,11 @@ const INVISIBLE_NPC_VIEWS = new Set([45, 46, 111, 139, 722, 811, 2337]);
 // at scripted moments: HIDE 0x2, CLOAK 0x4, INVISIBLE 0x40.
 const OPTION_HIDDEN = 0x2 | 0x4 | 0x40;
 const isOptionHidden = (option: number): boolean => (option & OPTION_HIDDEN) !== 0;
+
+// Summon OPTION bits on the local player: Falcon (0x10) and Warg — companion
+// 0x100000 or riding 0x200000. Both warg states draw the warg trotting ahead.
+const OPTION_FALCON = 0x10;
+const OPTION_WARG = 0x100000 | 0x200000;
 
 type Pose = "idle" | "walk" | "attack" | "hurt" | "casting" | "dead";
 
@@ -337,6 +343,10 @@ export class EntityTable {
   /** Per-AID position from the latest fix-pos event (used to seed the actor's
    *  Walker the first time it becomes visible). */
   private readonly lastFix = new Map<number, { gx: number; gy: number }>();
+  /** The local player's summons, toggled by their OPTION (falcon + warg). */
+  private falcon: Companion | null = null;
+  private warg: Companion | null = null;
+  private readonly companionFeet = new Vector3();
 
   constructor(
     private readonly scene: Scene,
@@ -441,18 +451,48 @@ export class EntityTable {
     }
   }
 
-  /** OPTION/effectState change — reveal or cloak a script NPC (cloakonnpc), and
-   *  seed the actor if this is the first we hear of it. The local player is never
-   *  cloaked (they see themselves). */
+  /** OPTION/effectState change. For the local player it toggles their summons
+   *  (falcon + warg); for everyone else it reveals or cloaks a script NPC
+   *  (cloakonnpc) — the player is never cloaked (they see themselves). */
   applyOption(aid: number, option: number): void {
-    if (aid === this.playerAid) return;
+    if (aid === this.playerAid) {
+      this.setCompanion("falcon", (option & OPTION_FALCON) !== 0);
+      this.setCompanion("warg", (option & OPTION_WARG) !== 0);
+      return;
+    }
     const a = this.actors.get(aid) ?? this.ensure(aid);
     if (a) a.optionHidden = isOptionHidden(option);
+  }
+
+  private setCompanion(kind: "falcon" | "warg", want: boolean): void {
+    const cur = kind === "falcon" ? this.falcon : this.warg;
+    if (want === !!cur) return;
+    let next: Companion | null = null;
+    if (want) {
+      next = new Companion(this.scene, kind === "falcon" ? FALCON_VIEW : WARG_VIEW, kind);
+    } else {
+      cur!.dispose();
+    }
+    if (kind === "falcon") this.falcon = next;
+    else this.warg = next;
   }
 
   /** Per-frame render call. */
   update(dtSec: number, nowMs: number, camDir: number, camera: PerspectiveCamera): void {
     for (const a of this.actors.values()) a.update(dtSec, nowMs, camDir, camera);
+    // Summons trail the local player while their OPTION carries the bit.
+    const player = this.actors.get(this.playerAid);
+    if ((this.falcon || this.warg) && player && player.visible && !player.optionHidden) {
+      player.worldPos(this.companionFeet);
+      const dir = player.walker.dir;
+      const moving = player.walker.moving;
+      const cs = this.world.cellSize;
+      this.falcon?.update(dtSec, this.companionFeet, dir, moving, camDir, camera, cs);
+      this.warg?.update(dtSec, this.companionFeet, dir, moving, camDir, camera, cs);
+    } else {
+      this.falcon?.hide();
+      this.warg?.hide();
+    }
   }
 
   /** Look up an actor's world-space ground position (for damage text). */
@@ -479,5 +519,8 @@ export class EntityTable {
   dispose(): void {
     for (const a of this.actors.values()) a.dispose();
     this.actors.clear();
+    this.falcon?.dispose();
+    this.warg?.dispose();
+    this.falcon = this.warg = null;
   }
 }
