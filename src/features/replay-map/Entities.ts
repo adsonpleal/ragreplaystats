@@ -33,7 +33,7 @@ import {
   type PlayerLook,
 } from "../../sim/ragassets";
 import { attackActionType } from "../../ui/weapon-action";
-import { type AttackTarget, Companion, FALCON_VIEW, WARG_VIEW } from "./Companion";
+import { type AttackTarget, Companion, FALCON_VIEW, type OwnerState, WARG_VIEW } from "./Companion";
 import { lookFromEntity } from "./playerState";
 import type { World } from "../../sim/render/scene";
 import type { ReferenceDb } from "../../db/loader";
@@ -409,6 +409,15 @@ export class EntityTable {
   private warg: Companion | null = null;
   private readonly companionFeet = new Vector3();
   private readonly strikeFeet = new Vector3();
+  // Reused each frame to feed the companions (feet points at companionFeet,
+  // which worldPos fills) — avoids a per-frame object literal in the hot loop.
+  private readonly ownerState: OwnerState = {
+    cellX: 0,
+    cellY: 0,
+    feet: this.companionFeet,
+    dir: 0,
+    moving: false,
+  };
   /** The player's warg-mount job id while riding (null on foot, or when their
    *  class has no mounted sprite) — applied to the player Actor each frame. */
   private playerMountJob: number | null = null;
@@ -596,13 +605,12 @@ export class EntityTable {
     // Summons trail the local player while their OPTION carries the bit.
     const player = this.actors.get(this.playerAid);
     if ((this.falcon || this.warg) && player && player.visible && !player.optionHidden) {
-      const owner = {
-        cellX: player.walker.cellX,
-        cellY: player.walker.cellY,
-        feet: player.worldPos(this.companionFeet),
-        dir: player.walker.dir,
-        moving: player.walker.moving,
-      };
+      const owner = this.ownerState;
+      owner.cellX = player.walker.cellX;
+      owner.cellY = player.walker.cellY;
+      owner.dir = player.walker.dir;
+      owner.moving = player.walker.moving;
+      player.worldPos(this.companionFeet); // fills owner.feet (=== companionFeet)
       // Resolve any active companion-skill lunges, then expire the finished ones.
       const falconAttack = this.strikeTarget(this.falconStrike, nowMs);
       const wargAttack = this.strikeTarget(this.wargStrike, nowMs);

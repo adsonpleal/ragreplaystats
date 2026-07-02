@@ -116,7 +116,6 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   // internal cursor position starts clean (dead mobs alive again, damage floats
   // cleared). Wired by the setup effect once the world lands.
   const restartRef = useRef<(() => void) | null>(null);
-  const [displayedTime, setDisplayedTime] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [isPlaying, setIsPlaying] = useState(true);
   // "Highly experimental" intro shown over the viewer on open, dismissed by the
@@ -428,7 +427,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         tickSinceUiPush = 0;
         // Triggers the throttled re-render that refreshes the scrubber/readout
         // (which read the timeline clock directly, clamped to the duration).
-        setDisplayedTime(nowMs);
+        forceRender((n) => n + 1);
         setIsPlaying(timelineRef.current.isPlaying);
       }
     });
@@ -489,7 +488,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           buildRuntime();
           timelineRef.current.seek(0);
           timelineRef.current.setPlaying(true);
-          setDisplayedTime(0);
+          forceRender((n) => n + 1);
           setIsPlaying(true);
         };
         // Wait for Galmuri11 before unblocking playback — the first damage /
@@ -570,8 +569,6 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   // during the playback tail (the clock runs past `totalMs` to finish trailing
   // animations, but the UI shouldn't show more than the recording length).
   const nowMs = Math.min(timelineRef.current.time, totalMs);
-  // Silence the unused-var warning for now; kept for future "at end" UI.
-  void displayedTime;
 
   return (
     <div className="replay-map-overlay" ref={wrapRef}>

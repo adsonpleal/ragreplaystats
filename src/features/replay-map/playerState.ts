@@ -11,7 +11,7 @@
 import type { ReferenceDb } from "../../db/loader";
 import { EQUIP_SLOTS } from "../explorer/equipmentPages";
 import type { Entity, Replay } from "../../rrf/types";
-import type { PlayerLook } from "../../sim/ragassets";
+import { type PlayerLook, resolveSex } from "../../sim/ragassets";
 
 // Slot ORDER indices (into EQUIP_SLOTS) for the visual pieces — matches
 // CharacterViewer.tsx's SLOT constant.
@@ -28,19 +28,8 @@ const SLOT = {
   costumeGarment: 14,
 } as const;
 
-// Gender-locked classes (Bard/Dancer line + Kagerou/Oboro) — the recording's
-// sex byte is sometimes missing; the job decides instead.
-const GENDER_LOCKED_FEMALE = new Set([20, 4021, 4043, 4069, 4076, 4105, 4212]);
-const GENDER_LOCKED_MALE = new Set([19, 4020, 4042, 4068, 4075, 4104, 4211]);
-
 // OPTION bit for riding a Mado Gear (Mechanic) in the spawn packet's effectState.
 const OPTION_MADOGEAR = 0x20000000;
-
-function resolveSex(jobView: number, reported?: number): 0 | 1 {
-  if (GENDER_LOCKED_FEMALE.has(jobView)) return 0;
-  if (GENDER_LOCKED_MALE.has(jobView)) return 1;
-  return reported === 0 ? 0 : 1;
-}
 
 /** Walk the initial inventory (and the player entity's recorded look) into a
  *  PlayerLook the ragassets URL builders consume. v1 freezes the look at

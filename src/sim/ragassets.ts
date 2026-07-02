@@ -33,6 +33,23 @@ export type PlayerLook = {
   madogear?: 0 | 2 | null;
 };
 
+// Gender-locked classes (Bard/Dancer line + Kagerou/Oboro). The replay's sex
+// byte is frequently missing for the local player, which would default these to
+// male and render a wrong/broken sprite — so the job id decides instead (e.g.
+// 4076 Musa/Wanderer is female-only).
+const GENDER_LOCKED_FEMALE = new Set([20, 4021, 4043, 4069, 4076, 4105, 4212]);
+const GENDER_LOCKED_MALE = new Set([19, 4020, 4042, 4068, 4075, 4104, 4211]);
+
+/** Sprite sex (0 = female, 1 = male) for a job view id: gender-locked classes
+ *  are forced regardless of the reported byte; everyone else honours it and
+ *  defaults to male when absent. Shared by the paper-doll viewer and the map
+ *  viewer's billboard so they never disagree on the same character. */
+export function resolveSex(jobView: number, reported?: number): 0 | 1 {
+  if (GENDER_LOCKED_FEMALE.has(jobView)) return 0;
+  if (GENDER_LOCKED_MALE.has(jobView)) return 1;
+  return reported === 0 ? 0 : 1;
+}
+
 /** Build the /image URL for one specific frame of a player sprite. Used by the
  *  billboard to cycle frames manually (a hidden/covered APNG is paused by the
  *  browser). */

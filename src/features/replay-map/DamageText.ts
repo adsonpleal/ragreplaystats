@@ -219,9 +219,8 @@ class Float {
     this.canvas.height = TEXT_CANVAS_H;
     this.texture = new CanvasTexture(this.canvas);
     this.texture.colorSpace = SRGBColorSpace;
-    // Bilinear filtering — Impact digits look chunkier and cleaner than the
-    // nearest-neighbour shimmer at typical zoom levels.
-    // (magFilter defaults to LinearFilter, so no explicit set needed.)
+    // Keep the default LinearFilter — the digits look cleaner than the
+    // nearest-neighbour shimmer at typical zoom.
     this.worldW = TEXT_CANVAS_W * UNITS_PER_PX * 1.5;
     this.worldH = TEXT_CANVAS_H * UNITS_PER_PX * 1.5;
     const mat = new MeshBasicMaterial({
@@ -300,35 +299,16 @@ class Float {
       return;
     }
 
-    // Multi-hit hit: fly up in an open arch. The vertical rise leads early
-    // (sin ramps fast off zero) while the sideways curve comes in later
-    // (1 - cos ramps up toward the end), so the path shoots up then leans out
-    // to one side — a fountain arch, not a rigid vertical line. Every hit rides
-    // this same path, staggered in time so they trail up it. Starts large and
-    // bright, shrinks as it climbs, holds until the last 40% then fades.
-    if (this.column) {
-      const q = perc * Math.PI * 0.5;
-      const rise = COLUMN_BASE_WORLD + HIT_RISE_WORLD * Math.sin(q);
-      const side = HIT_SPREAD_WORLD * (1 - Math.cos(q));
-      const alpha = perc < 0.6 ? 1 : Math.max(0, (1 - perc) / 0.4);
-      (this.mesh.material as MeshBasicMaterial).opacity = alpha;
-      const scale = Math.max(0.5, 1 - perc * 0.5);
-      this.mesh.scale.set(scale, scale, 1);
-      this.mesh.position
-        .copy(this.anchor)
-        .addScaledVector(this.up, rise)
-        .addScaledVector(this.right, side)
-        .addScaledVector(this.toCam, 1);
-      return;
-    }
-
+    // Open arch — shared by multi-hit combo whites (`column`) and single hits
+    // (auto-attack / one-shot skill). The vertical rise leads early (sin ramps
+    // fast off zero) while the sideways curve comes in later (1 - cos ramps up
+    // toward the end), so the path shoots up then leans out to one side — a
+    // fountain arch, not a rigid vertical line. Multi-hits stagger up the one
+    // path; separate single hits sit a tier higher (`liftOffsetWorld`, 0 for
+    // combo floats) so they don't overlap. Starts large and bright, shrinks as
+    // it climbs, holds until the last 40% then fades.
     const isMiss = this.lifeMs === MISS_LIFETIME_MS;
-    if (!isMiss) {
-      // Single hit (auto-attack / one-shot skill): ride the SAME open arch as a
-      // multi-hit skill white — rising off the monster body and curving out to
-      // one side — instead of lofting way up above the target on the old
-      // Damage.js loft-and-dip. Stacked hits sit a tier higher (liftOffsetWorld)
-      // so rapid separate hits don't overlap into a blob.
+    if (this.column || !isMiss) {
       const q = perc * Math.PI * 0.5;
       const rise = COLUMN_BASE_WORLD + HIT_RISE_WORLD * Math.sin(q);
       const side = HIT_SPREAD_WORLD * (1 - Math.cos(q));

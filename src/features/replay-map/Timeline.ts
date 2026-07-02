@@ -18,30 +18,6 @@ export class EventCursor<T extends EventTime> {
       this.i++;
     }
   }
-
-  /** Reset to the first event whose time is ≥ tMs (used on seek/rewind). */
-  seek(tMs: number): void {
-    // Binary search; arrays here are typically thousands of entries.
-    let lo = 0;
-    let hi = this.events.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (this.events[mid].time < tMs) lo = mid + 1;
-      else hi = mid;
-    }
-    this.i = lo;
-  }
-
-  /** All events strictly before `tMs` — used after a seek to catch up state
-   *  that needs to remain "remembered" (positions, equip changes). */
-  takeUpTo(tMs: number): T[] {
-    const out: T[] = [];
-    while (this.i < this.events.length && this.events[this.i].time < tMs) {
-      out.push(this.events[this.i]);
-      this.i++;
-    }
-    return out;
-  }
 }
 
 export class Timeline {
@@ -53,7 +29,7 @@ export class Timeline {
    *  can animate out; the scrubber still reports the real recording duration. */
   private readonly playbackEndMs: number;
 
-  constructor(private readonly durationMs: number, tailMs = 0) {
+  constructor(durationMs: number, tailMs = 0) {
     this.playbackEndMs = durationMs + Math.max(0, tailMs);
   }
 
@@ -61,18 +37,8 @@ export class Timeline {
     return this.tMs;
   }
 
-  /** Real recording duration (for the scrubber / time readout), excluding the
-   *  playback tail. */
-  get duration(): number {
-    return this.durationMs;
-  }
-
   get isPlaying(): boolean {
     return this.playing;
-  }
-
-  get currentSpeed(): number {
-    return this.speed;
   }
 
   setSpeed(s: number): void {

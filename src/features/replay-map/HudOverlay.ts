@@ -112,7 +112,6 @@ export class VitalBars {
       this.ap.style.width = `${apFrac * HP_MAX_WIDTH_PX}px`;
       this.apFrac = apFrac;
     }
-    // AP row is always visible now — no per-frame show/hide.
   }
 
   setVisible(v: boolean): void {

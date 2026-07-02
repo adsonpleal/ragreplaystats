@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { t } from "../i18n";
+import { resolveSex } from "../sim/ragassets";
 import { CHEVRON_LEFT, CHEVRON_RIGHT, ChevronButton } from "./ChevronButton";
 import { attackActionType } from "./weapon-action";
 
@@ -26,20 +27,6 @@ const SLOT = {
   costumeHeadLow: 13,
   costumeGarment: 14,
 } as const;
-
-// Gender-locked classes (Bard/Dancer line + Kagerou/Oboro). The replay's sex
-// byte is frequently missing for the local player, which would default these
-// to male and render a wrong/broken sprite — so the job id decides instead.
-// (e.g. 4076 Musa/Wanderer is female-only.)
-const GENDER_LOCKED_FEMALE = new Set([20, 4021, 4043, 4069, 4076, 4105, 4212]);
-const GENDER_LOCKED_MALE = new Set([19, 4020, 4042, 4068, 4075, 4104, 4211]);
-
-function resolveSex(jobView: number, reported?: number): 0 | 1 {
-  if (GENDER_LOCKED_FEMALE.has(jobView)) return 0;
-  if (GENDER_LOCKED_MALE.has(jobView)) return 1;
-  // Otherwise honour the replay's sex byte; default male when absent.
-  return reported === 0 ? 0 : 1;
-}
 
 // We cycle head straight → right → left. The public gateway currently renders
 // headdir as a no-op, but we still send the documented param.
