@@ -31,11 +31,7 @@ import type { HitType } from "../../rrf/types";
 const LIFETIME_MS = 1500;
 /** Miss/dodge lifetime — matches roBrowser's `perc = age/800` for MISS. */
 const MISS_LIFETIME_MS = 800;
-/** How many world units the whole animation covers along the sprite's local
- *  axes. Chosen to roughly match the perceived motion of the roBrowser damage
- *  arc after our scene's units. */
-const HORIZONTAL_SPREAD = 4;
-const ARC_HEIGHT = 5;
+/** Miss numbers rise straight up from this base lift (world units). */
 const BASE_LIFT = 2;
 
 // Multi-hit skills, matching the RO client: each hit spawns its own white
@@ -323,22 +319,34 @@ class Float {
       return;
     }
 
-    // Single hit (auto-attack / one-shot skill). Damage arc from Damage.js:
-    //   posZ = base + 2 + sin(-π/2 + π*(0.5 + perc*1.5)) * 5   (lofts then dips)
-    //   posX = base + perc*4                                   (slight drift right)
-    // MISS just rises linearly, no drift.
     const isMiss = this.lifeMs === MISS_LIFETIME_MS;
-    const alpha = 1 - perc;
-    const scale = isMiss ? 0.6 : Math.max(0.35, 1 - perc * 0.65);
-    (this.mesh.material as MeshBasicMaterial).opacity = alpha;
-    this.mesh.scale.set(scale, scale, 1);
-    const arc = Math.sin(-Math.PI / 2 + Math.PI * (0.5 + perc * 1.5)) * ARC_HEIGHT;
-    const liftUp = isMiss ? BASE_LIFT + perc * 7 : BASE_LIFT + arc;
+    if (!isMiss) {
+      // Single hit (auto-attack / one-shot skill): ride the SAME open arch as a
+      // multi-hit skill white — rising off the monster body and curving out to
+      // one side — instead of lofting way up above the target on the old
+      // Damage.js loft-and-dip. Stacked hits sit a tier higher (liftOffsetWorld)
+      // so rapid separate hits don't overlap into a blob.
+      const q = perc * Math.PI * 0.5;
+      const rise = COLUMN_BASE_WORLD + HIT_RISE_WORLD * Math.sin(q);
+      const side = HIT_SPREAD_WORLD * (1 - Math.cos(q));
+      const alpha = perc < 0.6 ? 1 : Math.max(0, (1 - perc) / 0.4);
+      (this.mesh.material as MeshBasicMaterial).opacity = alpha;
+      const scale = Math.max(0.5, 1 - perc * 0.5);
+      this.mesh.scale.set(scale, scale, 1);
+      this.mesh.position
+        .copy(this.anchor)
+        .addScaledVector(this.up, rise + this.liftOffsetWorld)
+        .addScaledVector(this.right, side)
+        .addScaledVector(this.toCam, 1);
+      return;
+    }
+    // MISS just rises linearly, no drift.
+    (this.mesh.material as MeshBasicMaterial).opacity = 1 - perc;
+    this.mesh.scale.set(0.6, 0.6, 1);
     this.mesh.position
       .copy(this.anchor)
-      .addScaledVector(this.up, liftUp + this.liftOffsetWorld)
-      .addScaledVector(this.right, isMiss ? 0 : perc * HORIZONTAL_SPREAD)
-      .addScaledVector(this.toCam, isMiss ? 1 : 1 + perc * HORIZONTAL_SPREAD * 0.5);
+      .addScaledVector(this.up, BASE_LIFT + perc * 7 + this.liftOffsetWorld)
+      .addScaledVector(this.toCam, 1);
   }
 
   dispose(): void {
