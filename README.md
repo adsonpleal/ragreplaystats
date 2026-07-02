@@ -18,6 +18,10 @@ UI is in **Brazilian Portuguese**. The decoder is server-agnostic but the bundle
 
 The equipment **character viewer** (Estatísticas → Equipamento) renders the player's sprite — gear included — from [ragassets](https://github.com/adsonpleal/ragassets), a fast caching HTTP gateway that serves Ragnarok Online sprites as images/APNG on top of [zrenderer](https://github.com/zhad3/zrenderer) by [zhad3](https://github.com/zhad3), which does the actual rendering. Images come from the public instance at `https://assets.latam-tools.com.br` (configurable via `RAGASSETS_BASE` in `src/ui/character-viewer.ts`). Equipped gear maps to zrenderer view ids via each item's `ClassNum`, extracted into `public/db/item.json` by `tools/build-db.mjs`.
 
+## Replay viewer (experimental)
+
+The **"Assistir replay"** button opens a highly experimental 3D playback of the recording — the map, the player with gear, mobs, NPCs, floating damage, buffs and companions, driven off the replay's event streams (`src/features/replay-map/`). Its rendering pipeline — the WebGL sprite billboards, the GAT/GND/RSW/RSM map loaders, the camera and the damage-number motion — is ported from and inspired by [roBrowser](https://github.com/vthibault/roBrowser) by [vthibault](https://github.com/vthibault), a browser Ragnarok client. Many features are still missing; for the best experience, download the `.rrf` and watch it inside the game client.
+
 ## Run
 
 ```bash

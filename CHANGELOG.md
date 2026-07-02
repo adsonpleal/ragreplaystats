@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-07-02
+
+- **Visualizador de replay (experimental):** novo botão "Assistir replay" abre uma reprodução 3D da gravação — o mapa, o jogador com equipamento, monstros, NPCs, danos flutuantes, buffs e os companheiros (falcão e worg, inclusive a montaria). É **altamente experimental** e ainda faltam vários recursos; para a melhor experiência, baixe o arquivo `.rrf` e assista dentro do cliente do jogo. A renderização (sprites, mapa, câmera e a animação dos números de dano) é portada e inspirada no [roBrowser](https://github.com/vthibault/roBrowser), um cliente de Ragnarok no navegador.
+
 ## 2026-06-26
 
 - Nomes dos monstros corrigidos: agora vêm do projeto irmão [ragassets](https://github.com/adsonpleal/ragassets) (`mobs.json`), que passa a ser a fonte oficial dos nomes em português, junto com HP e nível de cada monstro. Substitui a antiga raspagem do Divine Pride — nenhum dado de monstro é mais buscado em divine-pride.net.

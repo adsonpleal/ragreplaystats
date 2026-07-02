@@ -93,6 +93,11 @@ export const t = {
   replayMapPause: "Pausar",
   replayMapRestart: "Recomeçar",
   replayMapSpeedLabel: "Velocidade",
+  replayMapCredit: "Renderização inspirada no roBrowser",
+  replayMapIntroTitle: "Recurso experimental",
+  replayMapIntroBody:
+    "Este visualizador de replay é altamente experimental e ainda faltam muitos recursos — várias habilidades, efeitos e detalhes não são reproduzidos. Para a melhor experiência, baixe o arquivo de replay (.rrf) e assista dentro do cliente do jogo.",
+  replayMapIntroDismiss: "Entendi",
 
   // Export (PDF / Excel)
   exportPdf: "Baixar PDF",

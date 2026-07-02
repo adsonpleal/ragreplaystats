@@ -119,6 +119,9 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   const [displayedTime, setDisplayedTime] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [isPlaying, setIsPlaying] = useState(true);
+  // "Highly experimental" intro shown over the viewer on open, dismissed by the
+  // user. It's purely informational (the scene keeps loading behind it).
+  const [showIntro, setShowIntro] = useState(true);
 
   useEffect(() => {
     if (!playerLook) {
@@ -642,6 +645,25 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           </select>
         </label>
       </div>
+      <a
+        className="replay-map-credit"
+        href="https://github.com/vthibault/roBrowser"
+        target="_blank"
+        rel="noreferrer"
+      >
+        {t.replayMapCredit}
+      </a>
+      {showIntro && (
+        <div className="replay-map-intro" role="dialog" aria-modal="true">
+          <div className="replay-map-intro-card">
+            <h2>{t.replayMapIntroTitle}</h2>
+            <p>{t.replayMapIntroBody}</p>
+            <button type="button" className="replay-map-btn" onClick={() => setShowIntro(false)}>
+              {t.replayMapIntroDismiss}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
