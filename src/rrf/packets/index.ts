@@ -20,7 +20,7 @@ import {
   decodeSkillNoDamage09cb,
   type GroundSkillEntry,
 } from "./skill.js";
-import { decodeMapChange, decodeMobHp, decodeVanish } from "./misc.js";
+import { decodeMapChange, decodeMobHp, decodeStateChange0229, decodeVanish } from "./misc.js";
 import { decodeFixPos, decodeMoveOther, decodeMoveSelf } from "./movement.js";
 import {
   decodeItemAdd,
@@ -47,6 +47,7 @@ import type {
   MapChange,
   MobHpUpdate,
   MoveEvent,
+  OptionChangeEvent,
   ParamChangeEvent,
   SkillCast,
   SkillUse,
@@ -86,6 +87,7 @@ export const PacketIds = {
   MOVE_OTHER: 0x0086,
   MOVE_SELF: 0x0087,
   FIX_POS: 0x0088,
+  STATE_CHANGE3: 0x0229,
 } as const;
 
 export type DecodedPacket =
@@ -106,6 +108,7 @@ export type DecodedPacket =
   | { type: "chat"; data: ChatEvent }
   | { type: "moveOther"; data: MoveEvent }
   | { type: "moveSelfRaw"; data: { time: number; startTime: number; from: { gx: number; gy: number }; to: { gx: number; gy: number } } }
+  | { type: "option"; data: OptionChangeEvent }
   | { type: "fixPos"; data: FixPosEvent };
 
 export function decodePacket(
@@ -185,6 +188,8 @@ export function decodePacket(
       }
       case PacketIds.FIX_POS:
         return { type: "fixPos", data: decodeFixPos(reader, time) };
+      case PacketIds.STATE_CHANGE3:
+        return { type: "option", data: decodeStateChange0229(reader, time) };
       default:
         return null;
     }

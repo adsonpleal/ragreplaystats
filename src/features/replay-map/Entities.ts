@@ -45,6 +45,12 @@ const DEATH_HIDE_MS = 1200;
 // the bare-sprite path would show a broken/placeholder frame. Skip them.
 const INVISIBLE_NPC_VIEWS = new Set([45, 46, 111, 139, 722, 811, 2337]);
 
+// OPTION/effectState bits that mean "cloaked / hidden" — the client doesn't draw
+// the sprite. Script NPCs use these (cloakonnpc / hideonnpc) to appear and vanish
+// at scripted moments: HIDE 0x2, CLOAK 0x4, INVISIBLE 0x40.
+const OPTION_HIDDEN = 0x2 | 0x4 | 0x40;
+const isOptionHidden = (option: number): boolean => (option & OPTION_HIDDEN) !== 0;
+
 type Pose = "idle" | "walk" | "attack" | "hurt" | "casting" | "dead";
 
 interface ActorSource {
@@ -86,6 +92,9 @@ class Actor {
   private poseUntil = 0; // ms (recording time) the held pose expires
   private dead = false;
   private deadHideAt = Infinity; // recording time to hide the corpse after death
+  /** Cloaked/hidden via OPTION (a script NPC toggled with cloakonnpc). While set
+   *  the sprite isn't drawn, regardless of the visible/pose state. */
+  optionHidden = false;
   private aAction = -1;
   private aDir = -1;
   private aClock = 0;
@@ -212,6 +221,11 @@ class Actor {
     camDir: number,
     camera: PerspectiveCamera,
   ): void {
+    // Cloaked/hidden by OPTION (script NPC) — don't draw it at all.
+    if (this.optionHidden) {
+      this.billboard.setVisible(false);
+      return;
+    }
     // A killed sprite plays its death frames, then disappears (the corpse fades
     // in the client). Once past that window it stops rendering.
     if (this.dead && nowMs >= this.deadHideAt) this.visible = false;
@@ -343,6 +357,10 @@ export class EntityTable {
     const spawn = this.lastFix.get(aid) ?? near ?? this.world.spawn;
     a = new Actor(this.scene, this.world, source, spawn);
     a.visible = this.lastFix.has(aid); // hide until we know its real position
+    // Seed the cloak state from the spawn OPTION so a script NPC that starts
+    // hidden (tr_box) stays invisible until an option change reveals it. Never
+    // cloak the local player — they always see themselves.
+    a.optionHidden = aid !== this.playerAid && isOptionHidden(entity.option ?? 0);
     this.actors.set(aid, a);
     return a;
   }
@@ -419,6 +437,15 @@ export class EntityTable {
     }
   }
 
+  /** OPTION/effectState change — reveal or cloak a script NPC (cloakonnpc), and
+   *  seed the actor if this is the first we hear of it. The local player is never
+   *  cloaked (they see themselves). */
+  applyOption(aid: number, option: number): void {
+    if (aid === this.playerAid) return;
+    const a = this.actors.get(aid) ?? this.ensure(aid);
+    if (a) a.optionHidden = isOptionHidden(option);
+  }
+
   /** Per-frame render call. */
   update(dtSec: number, nowMs: number, camDir: number, camera: PerspectiveCamera): void {
     for (const a of this.actors.values()) a.update(dtSec, nowMs, camDir, camera);
@@ -427,7 +454,7 @@ export class EntityTable {
   /** Look up an actor's world-space ground position (for damage text). */
   worldPosOf(aid: number, out: Vector3): Vector3 | null {
     const a = this.actors.get(aid);
-    if (!a || !a.visible) return null;
+    if (!a || !a.visible || a.optionHidden) return null;
     return a.worldPos(out);
   }
 
@@ -435,7 +462,7 @@ export class EntityTable {
   visibleActors(): Array<{ aid: number; mesh: Mesh; actor: Actor; billboard: Character }> {
     const out: Array<{ aid: number; mesh: Mesh; actor: Actor; billboard: Character }> = [];
     for (const [aid, a] of this.actors) {
-      if (!a.visible) continue;
+      if (!a.visible || a.optionHidden) continue;
       out.push({ aid, mesh: a.billboard.mesh, actor: a, billboard: a.billboard });
     }
     return out;

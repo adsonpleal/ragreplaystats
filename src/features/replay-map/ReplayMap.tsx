@@ -95,6 +95,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     return {
       damage: by(replay.damage),
       vanishes: by(replay.vanishes),
+      options: by(replay.optionChanges),
       moves: by(replay.moves),
       positions: by(replay.positions),
       casts: by(replay.skillCasts),
@@ -145,6 +146,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
 
     let damageCursor: EventCursor<typeof events.damage[number]> | null = null;
     let vanishCursor: EventCursor<typeof events.vanishes[number]> | null = null;
+    let optionCursor: EventCursor<typeof events.options[number]> | null = null;
     let moveCursor: EventCursor<typeof events.moves[number]> | null = null;
     let posCursor: EventCursor<typeof events.positions[number]> | null = null;
     let castCursor: EventCursor<typeof events.casts[number]> | null = null;
@@ -279,6 +281,9 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         });
         vanishCursor!.advanceTo(nowMs, (ev) => {
           entities!.applyVanish(nowMs, ev.aid, ev.kind);
+        });
+        optionCursor!.advanceTo(nowMs, (ev) => {
+          entities!.applyOption(ev.aid, ev.option);
         });
         statusCursor!.advanceTo(nowMs, (ev) => {
           if (ev.isOn) {
@@ -463,6 +468,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           damageLayer = new DamageTextLayer(engine.scene);
           damageCursor = new EventCursor(events.damage);
           vanishCursor = new EventCursor(events.vanishes);
+          optionCursor = new EventCursor(events.options);
           moveCursor = new EventCursor(events.moves);
           posCursor = new EventCursor(events.positions);
           castCursor = new EventCursor(events.casts);

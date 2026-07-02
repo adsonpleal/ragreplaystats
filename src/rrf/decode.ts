@@ -22,6 +22,7 @@ import type {
   MapChange,
   MobHpUpdate,
   MoveEvent,
+  OptionChangeEvent,
   ParamChangeEvent,
   RandomOption,
   Replay,
@@ -138,6 +139,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   const damage: DamageEvent[] = [];
   const kills: VanishEvent[] = [];
   const vanishes: VanishEvent[] = [];
+  const optionChanges: OptionChangeEvent[] = [];
   const skillCasts: SkillCast[] = [];
   const skillUses: SkillUse[] = [];
   const mobHp: MobHpUpdate[] = [];
@@ -291,8 +293,16 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
           e.headMidView = ep.look.headMid;
           e.headLowView = ep.look.headLow;
           e.robeView = ep.look.robe;
-          e.option = ep.option;
         }
+        // Spawn-time OPTION for EVERY kind — the map viewer needs it to know a
+        // script NPC starts cloaked (tr_box spawns hidden, shows only at the
+        // end), and it seeds the option timeline for mounts/summons. The server
+        // re-sends the full spawn (0x09ff) periodically carrying the CURRENT
+        // cloak state, so each spawn is also an option-timeline entry (the
+        // initial snapshot lands at t=0) — a single `e.option` would only hold
+        // the LAST value and miss when the NPC was hidden.
+        e.option = ep.option;
+        optionChanges.push({ time, aid: ep.aid, option: ep.option });
         // Spawn position → synthetic fix-pos so the map viewer can place the
         // entity at its initial cell before any walk lands. A walking spawn
         // also queues the in-flight step as a move event.
@@ -318,6 +328,9 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         // count toward kill stats.
         vanishes.push(decoded.data);
         if (decoded.data.kind === 1) kills.push(decoded.data);
+        break;
+      case "option":
+        optionChanges.push(decoded.data);
         break;
       case "mobHp": {
         const ev = decoded.data;
@@ -519,6 +532,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     damage,
     kills,
     vanishes,
+    optionChanges,
     skillCasts: dedupedSkillCasts,
     skillUses: dedupedSkillUses,
     mobHp,

@@ -94,6 +94,15 @@ export type VanishEvent = {
   kind: number;
 };
 
+/** An entity's OPTION/effectState bitmask changed mid-recording (ZC_STATE_CHANGE3
+ *  0x0229). Carries mounts/summons (Falcon, Warg) AND visibility (cloakonnpc /
+ *  hideonnpc set OPTION_HIDE/CLOAK to make a script NPC vanish and reappear). */
+export type OptionChangeEvent = {
+  time: number;
+  aid: number;
+  option: number;
+};
+
 export type MobHpUpdate = {
   time: number;
   aid: number;
@@ -237,6 +246,8 @@ export type Replay = {
    *  viewer to despawn an entity when it leaves — `kills` alone would leave mobs
    *  that walked off-screen or teleported visible forever. */
   vanishes: VanishEvent[];
+  /** OPTION/effectState changes over time (mounts, summons, NPC cloak/hide). */
+  optionChanges: OptionChangeEvent[];
   skillCasts: SkillCast[];
   skillUses: SkillUse[];
   mobHp: MobHpUpdate[];
