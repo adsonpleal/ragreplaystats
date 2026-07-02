@@ -22,8 +22,6 @@ export const ACTION_FRAMES: Record<number, number> = {
   9: 1, // frozen2
 };
 
-export const SPRITE_FRAMES = (action: number): number => ACTION_FRAMES[action] ?? 1;
-
 /** Fixed render canvas for the player. The origin (feet/ground point) sits at
  *  (anchorX, anchorY) from the top-left. Sized to fit the widest/tallest poses
  *  without clipping (dead lies wide, capes/wings extend far up). */
@@ -55,8 +53,7 @@ export const SPRITE_CASTING = 12;
 //   0 idle · 1 walk · 2 attack · 3 hurt · 4 die   (each × 8 directions)
 // A player's ATTACK1 (5) / DEAD (8) land out of range on a mob, so the gateway
 // returns an empty frame and the sprite VANISHES (e.g. a mob attacking, or a
-// corpse). Idle/walk (0/1) happen to match the player indices; attack/hurt/die
-// need these.
+// corpse). Idle/walk (0/1) happen to match the player indices; attack/die need
+// these. (Mobs don't play a hurt pose here — see poseHurtAllowed — so 3 is unused.)
 export const MOB_ATTACK = 2;
-export const MOB_HURT = 3;
 export const MOB_DEAD = 4;
