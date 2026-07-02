@@ -54,9 +54,12 @@ const OPTION_HIDDEN = 0x2 | 0x4 | 0x40;
 const isOptionHidden = (option: number): boolean => (option & OPTION_HIDDEN) !== 0;
 
 // Summon OPTION bits on the local player: Falcon (0x10) and Warg — companion
-// 0x100000 or riding 0x200000. Both warg states draw the warg trotting ahead.
+// (WUG 0x100000, trots beside the player) or riding (WUGRIDER 0x200000, the warg
+// becomes the mount under the rider). Either bit means a warg is present.
 const OPTION_FALCON = 0x10;
-const OPTION_WARG = 0x100000 | 0x200000;
+const OPTION_WUG = 0x100000;
+const OPTION_WUGRIDER = 0x200000;
+const OPTION_WARG = OPTION_WUG | OPTION_WUGRIDER;
 
 type Pose = "idle" | "walk" | "attack" | "hurt" | "casting" | "dead";
 
@@ -458,6 +461,8 @@ export class EntityTable {
     if (aid === this.playerAid) {
       this.setCompanion("falcon", (option & OPTION_FALCON) !== 0);
       this.setCompanion("warg", (option & OPTION_WARG) !== 0);
+      // Riding (WUGRIDER) turns the warg into the mount under the rider.
+      this.warg?.setMounted((option & OPTION_WUGRIDER) !== 0);
       return;
     }
     const a = this.actors.get(aid) ?? this.ensure(aid);
@@ -492,6 +497,8 @@ export class EntityTable {
         cellX: player.walker.cellX,
         cellY: player.walker.cellY,
         feet: player.worldPos(this.companionFeet),
+        dir: player.walker.dir,
+        moving: player.walker.moving,
       };
       this.falcon?.update(dtSec, owner, camDir, camera);
       this.warg?.update(dtSec, owner, camDir, camera);

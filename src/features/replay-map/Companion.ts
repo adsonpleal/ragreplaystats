@@ -29,8 +29,16 @@ export const WARG_VIEW = 20833;
 
 export type CompanionKind = "falcon" | "warg";
 
-/** What the owning player looks like this frame: their GAT cell + scene feet. */
-export type OwnerState = { cellX: number; cellY: number; feet: Vector3 };
+/** What the owning player looks like this frame: their GAT cell, scene feet,
+ *  facing direction (0–7), and whether they're walking — the falcon faces the
+ *  same way as its owner, and a ridden warg walks/idles in sync with them. */
+export type OwnerState = {
+  cellX: number;
+  cellY: number;
+  feet: Vector3;
+  dir: number;
+  moving: boolean;
+};
 
 // Warg follow, in cells (mirrors latamvisuais' Pet): chase once the owner pulls
 // FOLLOW_FAR away, keep walking until back within FOLLOW_NEAR (the gap stops a
@@ -56,6 +64,12 @@ const FALCON_BOB_SPEED = 3.4;
 // and it catches up once they stop. Lower = more trailing; higher = tighter.
 const FALCON_LAG_RATE = 6;
 
+// A ridden warg is drawn at the rider's own ground point, so it needs a smaller
+// line-of-sight pull than the default (Character.FRONT_BIAS = 2.5) — that seats
+// the warg behind the rider in depth so the player draws on top of their mount
+// instead of being covered by it.
+const MOUNT_FRONT_BIAS = 1;
+
 const chebyshev = (ax: number, ay: number, bx: number, by: number): number =>
   Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 
@@ -72,6 +86,9 @@ export class Companion {
   private readonly walker: Walker | null;
   private following = false;
   private lastGoal = "";
+  // Warg riding: when the owner's OPTION has WUGRIDER the warg stops pet-following
+  // and locks under the rider (mount), walking/idling in sync with them.
+  private mounted = false;
   // Falcon bob phase + the lagging hover point that trails the owner.
   private bobT = Math.random() * Math.PI * 2;
   private readonly hoverPos = new Vector3();
@@ -104,16 +121,30 @@ export class Companion {
 
   update(dtSec: number, owner: OwnerState, camDir: number, camera: PerspectiveCamera): void {
     let action: number;
-    if (this.walker) {
-      // Warg — trail the player like a pet, drawn at its own walked cell.
+    let spriteDir: number;
+    let frontBias: number | undefined;
+    if (this.walker && this.mounted) {
+      // Ridden warg — the mount: locked under the rider, facing the same way and
+      // walking when they walk. Keep the walker parked on the rider's cell so it
+      // doesn't dash off pathing when they dismount.
+      this.walker.stop();
+      this.walker.px = owner.cellX + 0.5;
+      this.walker.py = owner.cellY + 0.5;
+      this.feet.copy(owner.feet);
+      action = owner.moving ? SPRITE_WALK : SPRITE_IDLE;
+      spriteDir = owner.dir;
+      frontBias = MOUNT_FRONT_BIAS; // seat the warg behind the rider
+    } else if (this.walker) {
+      // Warg companion — trail the player like a pet, drawn at its own walked cell.
       this.follow(owner);
       this.walker.update(dtSec);
       action = this.walker.moving ? SPRITE_WALK : SPRITE_IDLE;
+      spriteDir = this.walker.dir;
       this.feet.set(-this.walker.worldX(), -this.walker.worldY(), this.walker.worldZ());
     } else {
-      // Falcon — hover above the owner's head, flapping in place, its hover
-      // point trailing the player so it lags behind when they walk (horizontal
-      // only; height + bob ride on top).
+      // Falcon — hover above the owner's head, flapping in place, facing the same
+      // way as the owner, its hover point trailing the player so it lags behind
+      // when they walk (horizontal only; height + bob ride on top).
       this.bobT += dtSec * FALCON_BOB_SPEED;
       if (!this.hoverInit) {
         this.hoverPos.copy(owner.feet);
@@ -128,14 +159,21 @@ export class Companion {
         this.hoverPos.z,
       );
       action = SPRITE_IDLE;
+      spriteDir = owner.dir;
     }
-    const dir = (camDir + (this.walker ? this.walker.dir : 0)) % 8;
+    const dir = (camDir + spriteDir) % 8;
     this.ensureFrames(action, dir);
     this.aClock += dtSec;
     const fi = this.frames.length ? frameAt(this.aClock, this.aInfo) : 0;
     const frame = this.frames[fi];
     this.billboard.setVisible(true);
-    if (frame && frame.complete && frame.naturalWidth) this.billboard.update(frame, this.feet, camera);
+    if (frame && frame.complete && frame.naturalWidth) this.billboard.update(frame, this.feet, camera, frontBias);
+  }
+
+  /** Toggle the warg between pet-follow and ridden-mount (WUGRIDER). No-op for
+   *  the falcon. */
+  setMounted(mounted: boolean): void {
+    this.mounted = mounted;
   }
 
   /** Warg pet follow: path to a cell beside the owner when they pull ahead, idle

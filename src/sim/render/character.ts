@@ -76,8 +76,11 @@ export class Character {
   }
 
   /** Redraw from the (animating) sprite img, then orient/place the plane.
-   *  `feet` is the ground point in world space; the plane faces `camera`. */
-  update(img: HTMLImageElement, feet: Vector3, camera: PerspectiveCamera): void {
+   *  `feet` is the ground point in world space; the plane faces `camera`.
+   *  `frontBias` overrides the default line-of-sight pull toward the camera —
+   *  a smaller value seats the sprite further back in depth, so two sprites at
+   *  the same ground point (a warg mount and its rider) order correctly. */
+  update(img: HTMLImageElement, feet: Vector3, camera: PerspectiveCamera, frontBias = FRONT_BIAS): void {
     if (img.complete && img.naturalWidth) {
       this.ctx.clearRect(0, 0, this.metrics.w, this.metrics.h);
       this.ctx.drawImage(img, 0, 0, this.metrics.w, this.metrics.h);
@@ -91,7 +94,7 @@ export class Character {
     // Pull toward the camera along the line of sight so nearby ground can't clip
     // the lower edge (depth-only nudge; the on-screen position is unchanged).
     this.toCam.copy(camera.position).sub(this.mesh.position).normalize();
-    this.mesh.position.addScaledVector(this.toCam, FRONT_BIAS);
+    this.mesh.position.addScaledVector(this.toCam, frontBias);
   }
 
   /** Show/hide the billboard — used to keep the previous map's character from
