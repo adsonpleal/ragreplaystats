@@ -1019,8 +1019,22 @@ function parseStatusNames(map) {
       if (name) out[String(Math.round(id))] = { name };
     }
   }
+  // Stat/utility food buffs carry a bare "%s" title (the client substitutes the
+  // food item name at runtime), so status.json would show a literal "%s". Give
+  // them descriptive pt-BR names keyed by EFST id — the CASH variants (271-276)
+  // are the same effect as the base ones (241-246). NOTE the client order is
+  // STR/AGI/VIT/DEX/INT/LUK (DEX before INT). See efstids.lub EFST_FOOD_*.
+  for (const [id, name] of Object.entries(FOOD_STATUS_NAMES)) out[id] = { name };
   return out;
 }
+
+const FOOD_STATUS_NAMES = {
+  241: "Comida de FOR", 242: "Comida de AGI", 243: "Comida de VIT",
+  244: "Comida de DES", 245: "Comida de INT", 246: "Comida de SOR",
+  247: "Comida de Esquiva", 248: "Comida de Precisão", 249: "Comida de Crítico",
+  271: "Comida de FOR", 272: "Comida de AGI", 273: "Comida de VIT",
+  274: "Comida de DES", 275: "Comida de INT", 276: "Comida de SOR",
+};
 
 // SKID const -> numeric id, read from skillid.lub's constant pool. Used by the
 // icon extractor to map a skill's icon file (named after the const) to its id.
