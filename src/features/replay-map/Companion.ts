@@ -45,8 +45,9 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 // Falcon: floats this far above the owner's feet, bobbing (scene "up" is +y).
-const FALCON_HEIGHT = 6.5;
-const FALCON_BOB = 0.6;
+// Kept low so it sits right over the head, like the client — not way overhead.
+const FALCON_HEIGHT = 3.4;
+const FALCON_BOB = 0.5;
 const FALCON_BOB_SPEED = 3.4;
 
 const chebyshev = (ax: number, ay: number, bx: number, by: number): number =>
