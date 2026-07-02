@@ -88,6 +88,13 @@ const FALCON_SKILLS = new Set([129, 5326]);
 // How long the companion stays on its lunge before returning to the player.
 const STRIKE_MS = 900;
 
+// Self-cast toggles that must NOT drive the cast/attack pose. Warg Ride (2241,
+// "Montaria em Worg") is the mount on/off toggle: it's cast on yourself, and the
+// mount transition is the whole visual. Left as a normal cast it flowed
+// casting → attack (the release flourish), so the freshly-mounted sprite played
+// a spurious warg-lunge right after mounting.
+const MOUNT_TOGGLE_SKILLS = new Set([2241]);
+
 type Pose = "idle" | "walk" | "attack" | "hurt" | "casting" | "dead";
 
 interface ActorSource {
@@ -522,7 +529,9 @@ export class EntityTable {
     return { cellX: t.walker.cellX, cellY: t.walker.cellY, feet: t.worldPos(this.strikeFeet) };
   }
 
-  applyCast(nowMs: number, sourceAid: number, targetAid: number, castMs: number): void {
+  applyCast(nowMs: number, sourceAid: number, targetAid: number, castMs: number, skillId = 0): void {
+    // A mount toggle isn't an attack — don't pose it (see MOUNT_TOGGLE_SKILLS).
+    if (MOUNT_TOGGLE_SKILLS.has(skillId)) return;
     const src = this.actors.get(sourceAid) ?? this.ensure(sourceAid);
     const tgt = this.actors.get(targetAid);
     if (!src) return;

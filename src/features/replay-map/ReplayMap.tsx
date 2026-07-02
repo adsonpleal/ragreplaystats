@@ -267,7 +267,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           entities!.applyMove(ev, (from, to) => findPath(world!.gat, from, to));
         });
         castCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyCast(nowMs, ev.source, ev.target, ev.castMs);
+          entities!.applyCast(nowMs, ev.source, ev.target, ev.castMs, ev.skillId);
           const name = db?.resolveSkill(ev.skillId) ?? `skill#${ev.skillId}`;
           castNames.spawn(ev.source, name, nowMs, ev.castMs);
           castBars.spawn(ev.source, nowMs, ev.castMs);
