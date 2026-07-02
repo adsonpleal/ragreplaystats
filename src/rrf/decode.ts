@@ -159,6 +159,13 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   if (session.aid && (session.gx || session.gy)) {
     positions.push({ time: 0, aid: session.aid, gx: session.gx, gy: session.gy });
   }
+  // Seed the local player's OPTION at t=0 from the Session snapshot so any
+  // mount/summon they already had (falcon, warg, mado gear) is present from the
+  // first frame — the packet stream often doesn't re-broadcast their 0x0229
+  // until seconds in, which otherwise left companions popping in late.
+  if (session.aid) {
+    optionChanges.push({ time: 0, aid: session.aid, option: session.option });
+  }
   const knownPacketIdSet = new Set<number>();
   // Map from ground-skill-unit AID → caster AID. Skills like Onda Psíquica
   // (Psychic Wave), Storm Gust, Comet, etc. spawn a "skill unit" entity that
@@ -593,6 +600,13 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
   // Local player's recording-start cell (from ReplayData chunks 967 / 968).
   let gx = 0;
   let gy = 0;
+  // Local player's OPTION/effectState at recording start (Session chunk 1070) —
+  // the same bitfield 0x0229 carries. It holds the mount/summon bits (FALCON,
+  // WUG, MADOGEAR, …) the character already had when recording began. The local
+  // player never self-spawns and often isn't re-broadcast a 0x0229 until seconds
+  // in, so without this seed the falcon/warg (or mado gear) pop in late instead
+  // of being present from the first frame. 0 = no special state.
+  let option = 0;
 
   const replayData = containers.find(
     (c): c is GenericContainer =>
@@ -636,9 +650,10 @@ function extractSessionInfo(containers: AnyContainer[], recordedAt: Date) {
     hairStyle = readU32ChunkById(sessionContainer, 1060) ?? 0;
     hairColor = readU32ChunkById(sessionContainer, 1064) ?? 0;
     clothesColor = readU32ChunkById(sessionContainer, 1063) ?? 0;
+    option = readU32ChunkById(sessionContainer, 1070) ?? 0;
   }
 
-  return { player, map, aid, job, baseLevel, recordedAt, sex, hairStyle, hairColor, clothesColor, gx, gy };
+  return { player, map, aid, job, baseLevel, recordedAt, sex, hairStyle, hairColor, clothesColor, gx, gy, option };
 }
 
 /**
