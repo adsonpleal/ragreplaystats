@@ -27,8 +27,11 @@ import {
 import { UNITS_PER_PX } from "../../sim/sprite";
 import type { HitType } from "../../rrf/types";
 
-/** Damage lifetime in ms — matches roBrowser's `obj.delay = 1500`. */
-const LIFETIME_MS = 1500;
+/** Single-hit (auto-attack / one-shot skill) number lifetime in ms. Kept close
+ *  to the multi-hit whites' quick pop-and-fade (HIT_LIFETIME_MS) so a lone hit
+ *  moves and clears at the same brisk pace as a combo — the old roBrowser 1500ms
+ *  loft felt sluggish here. */
+const LIFETIME_MS = 700;
 /** Miss/dodge lifetime — matches roBrowser's `perc = age/800` for MISS. */
 const MISS_LIFETIME_MS = 800;
 /** Miss numbers rise straight up from this base lift (world units). */
