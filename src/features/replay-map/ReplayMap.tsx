@@ -117,9 +117,11 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   // cleared). Wired by the setup effect once the world lands.
   const restartRef = useRef<(() => void) | null>(null);
   const [speed, setSpeed] = useState(1);
-  const [isPlaying, setIsPlaying] = useState(true);
-  // "Highly experimental" intro shown over the viewer on open, dismissed by the
-  // user. It's purely informational (the scene keeps loading behind it).
+  // Playback starts PAUSED behind the intro dialog; dismissing it (below) is
+  // what kicks off the replay, so the user reads the warning before it plays.
+  const [isPlaying, setIsPlaying] = useState(false);
+  // "Highly experimental" intro shown over the viewer on open. Dismissing it
+  // starts playback.
   const [showIntro, setShowIntro] = useState(true);
 
   useEffect(() => {
@@ -154,6 +156,10 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     let castCursor: EventCursor<typeof events.casts[number]> | null = null;
     let paramCursor: EventCursor<typeof events.params[number]> | null = null;
     let statusCursor: EventCursor<typeof events.status[number]> | null = null;
+    // Drain the cursors once even while paused so the starting frame (player +
+    // entities placed at t=0, camera on them) shows behind/after the intro
+    // dialog, before the user presses play. Reset by buildRuntime on restart.
+    let primed = false;
 
     // Local player's active buffs: EFST id → expiry time (ms, recording clock;
     // Infinity when the status has no timed duration). Rebuilt on restart. The
@@ -259,7 +265,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
 
       const advanced = timelineRef.current.tick(dt);
       const nowMs = timelineRef.current.time;
-      if (advanced) {
+      if (advanced || !primed) {
+        primed = true;
         // Drain cursors up to the playback time, applying each event to the
         // entity table / damage / cast layers.
         posCursor!.advanceTo(nowMs, (ev) => {
@@ -482,8 +489,11 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           vitals.hp = vitals.maxHp = vitals.sp = vitals.maxSp = vitals.ap = vitals.maxAp = 0;
           activeBuffs.clear();
           buffsDirty = true; // force one reconcile so a rewind clears the strip
+          primed = false; // re-drain the starting frame for the fresh cursors
         };
         buildRuntime();
+        // Open paused behind the intro dialog — pressing "Entendi" starts it.
+        timelineRef.current.setPlaying(false);
         restartRef.current = () => {
           buildRuntime();
           timelineRef.current.seek(0);
@@ -655,7 +665,15 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           <div className="replay-map-intro-card">
             <h2>{t.replayMapIntroTitle}</h2>
             <p>{t.replayMapIntroBody}</p>
-            <button type="button" className="replay-map-btn" onClick={() => setShowIntro(false)}>
+            <button
+              type="button"
+              className="replay-map-btn"
+              onClick={() => {
+                setShowIntro(false);
+                timelineRef.current.setPlaying(true);
+                setIsPlaying(true);
+              }}
+            >
               {t.replayMapIntroDismiss}
             </button>
           </div>
