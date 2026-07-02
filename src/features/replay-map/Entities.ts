@@ -67,12 +67,16 @@ const OPTION_WARG = OPTION_WUG | OPTION_WUGRIDER;
 
 // Warg-riding classes render as a player+warg composite the gateway serves under
 // a "riding" job id (it composites the player's gear onto the warg too), so we
-// swap the rider's sprite to that id instead of drawing a separate warg. Map the
-// base class → mounted id; unmapped classes fall back to the under-rider warg.
-// Only the Hunter/Ranger branch can ride a warg.
+// swap the rider's sprite to that id instead of drawing a separate warg. Base
+// class (the replay's session jobView) → mounted id; unmapped classes fall back
+// to the under-rider warg. Only the Hunter/Ranger branch rides a warg. The ids
+// are ported from latamvisuais' authoritative mount catalog (core/mounts.ts,
+// nameKey:"wolf"), verified on the live gateway. 4080→4088 is kept as a defensive
+// alias for the alternate Ranger sprite id some clients report.
 const WARG_MOUNT_JOB: Record<number, number> = {
-  4080: 4088, // Ranger → Ranger (warg)
-  4257: 4278, // Windhawk → Windhawk (warg)
+  4056: 4111, // Ranger (Sentinela) → Ranger (warg)
+  4080: 4088, // Ranger (alternate sprite id) → Ranger (warg)
+  4257: 4278, // Windhawk (Falcão do Vento) → Windhawk (warg)
 };
 const wargMountJob = (baseJob: number): number | null => WARG_MOUNT_JOB[baseJob] ?? null;
 
