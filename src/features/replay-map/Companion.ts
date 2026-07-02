@@ -20,7 +20,7 @@ import { findPath } from "../../sim/pathfind";
 import { Character } from "../../sim/render/character";
 import type { World } from "../../sim/render/scene";
 import { MOB_SPRITE, mobFrameProbeUrl, mobFrameUrl } from "../../sim/ragassets";
-import { SPRITE_IDLE, SPRITE_WALK } from "../../sim/sprite";
+import { MOB_ATTACK, SPRITE_IDLE, SPRITE_WALK } from "../../sim/sprite";
 import { Walker } from "../../sim/walker";
 
 /** Windhawk companion sprite ids (ragassets → windhawk_hawk / windhawk_wolf). */
@@ -39,6 +39,11 @@ export type OwnerState = {
   dir: number;
   moving: boolean;
 };
+
+/** A companion-skill target this frame (Warg Strike, Aerial Dive, …): the warg
+ *  lunges to the enemy and bites, the falcon dives at it. Passed while the strike
+ *  is active; cleared afterwards so the companion returns to the player. */
+export type AttackTarget = { cellX: number; cellY: number; feet: Vector3 };
 
 // Warg follow, in cells (mirrors latamvisuais' Pet): chase once the owner pulls
 // FOLLOW_FAR away, keep walking until back within FOLLOW_NEAR (the gap stops a
@@ -69,6 +74,13 @@ const FALCON_LAG_RATE = 6;
 // the warg behind the rider in depth so the player draws on top of their mount
 // instead of being covered by it.
 const MOUNT_FRONT_BIAS = 1;
+
+// Companion-skill lunge: the warg dashes straight at the enemy (cells/sec, faster
+// than its follow pace so it reaches within the strike window) and bites once
+// adjacent. The falcon swoops from its hover down toward the target and back.
+const DASH_SPEED = 16;
+const FALCON_DIVE_RATE = 7; // how fast the falcon closes on the target (exp smoothing)
+const FALCON_DIVE_HEIGHT = 1.8; // it drops from head-height to just over the enemy
 
 const chebyshev = (ax: number, ay: number, bx: number, by: number): number =>
   Math.max(Math.abs(ax - bx), Math.abs(ay - by));
@@ -111,19 +123,68 @@ export class Companion {
   }
 
   private async probe(): Promise<void> {
+    // The warg also bites on a strike (MOB_ATTACK); the falcon dives with its
+    // idle flap, so it doesn't need the attack pose.
+    const actions = this.walker ? [SPRITE_IDLE, SPRITE_WALK, MOB_ATTACK] : [SPRITE_IDLE, SPRITE_WALK];
     await Promise.all(
-      [SPRITE_IDLE, SPRITE_WALK].map(async (a) => {
+      actions.map(async (a) => {
         this.frameInfo.set(a, await fetchApngInfo(mobFrameProbeUrl(this.view, a)));
       }),
     );
     this.aAction = -1; // force a rebuild against the real frame counts
   }
 
-  update(dtSec: number, owner: OwnerState, camDir: number, camera: PerspectiveCamera): void {
+  update(
+    dtSec: number,
+    owner: OwnerState,
+    camDir: number,
+    camera: PerspectiveCamera,
+    attack?: AttackTarget,
+  ): void {
     let action: number;
     let spriteDir: number;
     let frontBias: number | undefined;
-    if (this.walker && this.mounted) {
+    if (this.walker && attack && !this.mounted) {
+      // Warg Strike — lunge straight at the enemy and bite. Move the walker's
+      // position directly (a fast dash, no A* — it's a short pounce) toward a
+      // cell beside the target, biting once adjacent. When the strike ends the
+      // pet-follow takes over and walks it back to the player.
+      const w = this.walker;
+      const goal = this.spotNear({ gx: attack.cellX, gy: attack.cellY }, { gx: w.cellX, gy: w.cellY });
+      const dx = goal.gx + 0.5 - w.px;
+      const dy = goal.gy + 0.5 - w.py;
+      const dist = Math.hypot(dx, dy);
+      const step = DASH_SPEED * dtSec;
+      if (dist > 1e-3) {
+        const move = Math.min(step, dist);
+        w.px += (dx / dist) * move;
+        w.py += (dy / dist) * move;
+      }
+      w.stop(); // drop any queued follow path
+      w.face(attack.cellX, attack.cellY);
+      this.lastGoal = "";
+      action = chebyshev(w.cellX, w.cellY, attack.cellX, attack.cellY) <= 1 ? MOB_ATTACK : SPRITE_WALK;
+      spriteDir = w.dir;
+      this.feet.set(-w.worldX(), -w.worldY(), w.worldZ());
+    } else if (!this.walker && attack) {
+      // Aerial Dive — swoop from the hover down toward the enemy, then the return
+      // (below) glides it back over the player once the strike ends.
+      this.bobT += dtSec * FALCON_BOB_SPEED;
+      if (!this.hoverInit) {
+        this.hoverPos.copy(owner.feet);
+        this.hoverInit = true;
+      }
+      const a = 1 - Math.exp(-dtSec * FALCON_DIVE_RATE);
+      this.hoverPos.x += (attack.feet.x - this.hoverPos.x) * a;
+      this.hoverPos.z += (attack.feet.z - this.hoverPos.z) * a;
+      this.feet.set(
+        this.hoverPos.x,
+        attack.feet.y + FALCON_DIVE_HEIGHT + Math.sin(this.bobT) * FALCON_BOB,
+        this.hoverPos.z,
+      );
+      action = SPRITE_IDLE;
+      spriteDir = owner.dir;
+    } else if (this.walker && this.mounted) {
       // Ridden warg — the mount: locked under the rider, facing the same way and
       // walking when they walk. Keep the walker parked on the rider's cell so it
       // doesn't dash off pathing when they dismount.

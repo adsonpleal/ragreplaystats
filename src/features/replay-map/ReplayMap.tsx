@@ -273,7 +273,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           castBars.spawn(ev.source, nowMs, ev.castMs);
         });
         damageCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyDamage(nowMs, ev.source, ev.target);
+          entities!.applyDamage(nowMs, ev.source, ev.target, ev.skillId);
           const pos = entities!.worldPosOf(ev.target, targetWorldTmp);
           if (pos) {
             damageLayer!.spawn(ev.target, pos, ev.damage, ev.hitType, ev.source === playerAid, nowMs, ev.hits);

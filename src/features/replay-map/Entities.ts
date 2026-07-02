@@ -33,7 +33,7 @@ import {
   type PlayerLook,
 } from "../../sim/ragassets";
 import { attackActionType } from "../../ui/weapon-action";
-import { Companion, FALCON_VIEW, WARG_VIEW } from "./Companion";
+import { type AttackTarget, Companion, FALCON_VIEW, WARG_VIEW } from "./Companion";
 import { lookFromEntity } from "./playerState";
 import type { World } from "../../sim/render/scene";
 import type { ReferenceDb } from "../../db/loader";
@@ -75,6 +75,14 @@ const WARG_MOUNT_JOB: Record<number, number> = {
   4257: 4278, // Windhawk → Windhawk (warg)
 };
 const wargMountJob = (baseJob: number): number | null => WARG_MOUNT_JOB[baseJob] ?? null;
+
+// Companion attack skills: when the local player lands one of these, the relevant
+// companion lunges at the target and attacks (like the client). Warg: Assalto /
+// Investida / Mordida de Worg. Falcon: Ataque Aéreo / Mergulho Aéreo.
+const WARG_SKILLS = new Set([2242, 2243, 2244]);
+const FALCON_SKILLS = new Set([129, 5326]);
+// How long the companion stays on its lunge before returning to the player.
+const STRIKE_MS = 900;
 
 type Pose = "idle" | "walk" | "attack" | "hurt" | "casting" | "dead";
 
@@ -389,9 +397,15 @@ export class EntityTable {
   private falcon: Companion | null = null;
   private warg: Companion | null = null;
   private readonly companionFeet = new Vector3();
+  private readonly strikeFeet = new Vector3();
   /** The player's warg-mount job id while riding (null on foot, or when their
    *  class has no mounted sprite) — applied to the player Actor each frame. */
   private playerMountJob: number | null = null;
+  /** Active companion-skill lunges: the target AID and when the lunge ends
+   *  (recording ms). While set, the companion attacks that target instead of
+   *  following; cleared when the window passes so it returns to the player. */
+  private wargStrike: { targetAid: number; until: number } | null = null;
+  private falconStrike: { targetAid: number; until: number } | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -466,8 +480,9 @@ export class EntityTable {
     }
   }
 
-  /** Source attacked target — face & swing. */
-  applyDamage(nowMs: number, sourceAid: number, targetAid: number): void {
+  /** Source attacked target — face & swing. A companion skill from the local
+   *  player also sends the warg/falcon lunging at the target. */
+  applyDamage(nowMs: number, sourceAid: number, targetAid: number, skillId = 0): void {
     const tgt = this.actors.get(targetAid) ?? this.ensure(targetAid);
     const src = this.actors.get(sourceAid) ?? this.ensure(sourceAid);
     if (src && tgt) {
@@ -476,6 +491,31 @@ export class EntityTable {
       src.triggerAttack(nowMs);
     }
     if (tgt) tgt.triggerHurt(nowMs);
+    if (sourceAid === this.playerAid) this.companionStrike(skillId, targetAid, nowMs);
+  }
+
+  /** Start a companion lunge if `skillId` is a warg/falcon skill and that
+   *  companion is out (a mounted warg is part of the rider sprite, so it can't
+   *  lunge — the falcon still can). */
+  private companionStrike(skillId: number, targetAid: number, nowMs: number): void {
+    if (WARG_SKILLS.has(skillId) && this.warg) {
+      this.wargStrike = { targetAid, until: nowMs + STRIKE_MS };
+    } else if (FALCON_SKILLS.has(skillId) && this.falcon) {
+      this.falconStrike = { targetAid, until: nowMs + STRIKE_MS };
+    }
+  }
+
+  /** The attack target for an active strike, or undefined when it's expired or
+   *  the target is gone (also clears the finished strike). */
+  private strikeTarget(
+    strike: { targetAid: number; until: number } | null,
+    nowMs: number,
+  ): AttackTarget | undefined {
+    if (!strike) return undefined;
+    if (nowMs >= strike.until) return undefined;
+    const t = this.actors.get(strike.targetAid);
+    if (!t || !t.visible || t.optionHidden) return undefined;
+    return { cellX: t.walker.cellX, cellY: t.walker.cellY, feet: t.worldPos(this.strikeFeet) };
   }
 
   applyCast(nowMs: number, sourceAid: number, targetAid: number, castMs: number): void {
@@ -550,8 +590,13 @@ export class EntityTable {
         dir: player.walker.dir,
         moving: player.walker.moving,
       };
-      this.falcon?.update(dtSec, owner, camDir, camera);
-      this.warg?.update(dtSec, owner, camDir, camera);
+      // Resolve any active companion-skill lunges, then expire the finished ones.
+      const falconAttack = this.strikeTarget(this.falconStrike, nowMs);
+      const wargAttack = this.strikeTarget(this.wargStrike, nowMs);
+      if (this.falconStrike && nowMs >= this.falconStrike.until) this.falconStrike = null;
+      if (this.wargStrike && nowMs >= this.wargStrike.until) this.wargStrike = null;
+      this.falcon?.update(dtSec, owner, camDir, camera, falconAttack);
+      this.warg?.update(dtSec, owner, camDir, camera, wargAttack);
     } else {
       this.falcon?.hide();
       this.warg?.hide();
