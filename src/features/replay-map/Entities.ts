@@ -469,7 +469,12 @@ export class EntityTable {
     if (want === !!cur) return;
     let next: Companion | null = null;
     if (want) {
-      next = new Companion(this.scene, kind === "falcon" ? FALCON_VIEW : WARG_VIEW, kind);
+      const player = this.actors.get(this.playerAid);
+      const near = player
+        ? { gx: player.walker.cellX, gy: player.walker.cellY }
+        : this.world.spawn;
+      const view = kind === "falcon" ? FALCON_VIEW : WARG_VIEW;
+      next = new Companion(this.scene, this.world, view, kind, near);
     } else {
       cur!.dispose();
     }
@@ -483,12 +488,13 @@ export class EntityTable {
     // Summons trail the local player while their OPTION carries the bit.
     const player = this.actors.get(this.playerAid);
     if ((this.falcon || this.warg) && player && player.visible && !player.optionHidden) {
-      player.worldPos(this.companionFeet);
-      const dir = player.walker.dir;
-      const moving = player.walker.moving;
-      const cs = this.world.cellSize;
-      this.falcon?.update(dtSec, this.companionFeet, dir, moving, camDir, camera, cs);
-      this.warg?.update(dtSec, this.companionFeet, dir, moving, camDir, camera, cs);
+      const owner = {
+        cellX: player.walker.cellX,
+        cellY: player.walker.cellY,
+        feet: player.worldPos(this.companionFeet),
+      };
+      this.falcon?.update(dtSec, owner, camDir, camera);
+      this.warg?.update(dtSec, owner, camDir, camera);
     } else {
       this.falcon?.hide();
       this.warg?.hide();
