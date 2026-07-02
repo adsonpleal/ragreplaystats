@@ -90,14 +90,23 @@ export function statusIconUrl(efstId: number): string {
 export const MOB_SPRITE = { w: 248, h: 256, anchorX: 124, anchorY: 200 } as const;
 const MOB_CANVAS = `${MOB_SPRITE.w}x${MOB_SPRITE.h}+${MOB_SPRITE.anchorX}+${MOB_SPRITE.anchorY}`;
 
-/** One frame of a mob sprite (job=<mobId>, no gender/gear). */
-export function mobFrameUrl(mob: number, action: number, dir: number, frame: number): string {
+/** One frame of a mob sprite (job=<mobId>, no gender/gear). `shadow=false` drops
+ *  the baked ground shadow — used for the flying falcon, which shouldn't cast a
+ *  shadow floating in the air with it. */
+export function mobFrameUrl(
+  mob: number,
+  action: number,
+  dir: number,
+  frame: number,
+  shadow = true,
+): string {
   const p = new URLSearchParams();
   p.set("job", String(mob));
   p.set("action", String(action * 8 + dir));
   p.set("frame", String(frame));
   p.set("headdir", "0");
   p.set("canvas", MOB_CANVAS);
+  if (!shadow) p.set("enableShadow", "false");
   return `${RAGASSETS_BASE}/image?${p.toString()}`;
 }
 

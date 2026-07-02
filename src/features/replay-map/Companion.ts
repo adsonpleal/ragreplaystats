@@ -189,7 +189,9 @@ export class Companion {
     this.aAction = action;
     this.aDir = dir;
     const n = this.aInfo.count;
-    this.frames = Array.from({ length: n }, (_, f) => loadImage(mobFrameUrl(this.view, action, dir, f)));
+    // The falcon flies, so drop its ground shadow (the warg keeps its).
+    const shadow = this.walker !== null;
+    this.frames = Array.from({ length: n }, (_, f) => loadImage(mobFrameUrl(this.view, action, dir, f, shadow)));
   }
 
   hide(): void {
