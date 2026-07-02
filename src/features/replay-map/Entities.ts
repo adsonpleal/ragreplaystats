@@ -35,6 +35,10 @@ import type { Entity, FixPosEvent, MoveEvent } from "../../rrf/types";
 
 const ATTACK_HOLD_MS = 600; // attack pose displays for this long after a damage event
 const HURT_HOLD_MS = 250; // brief flash; long enough to register, short enough to keep walking feeling fluid
+// After a kill (vanish kind 1) the sprite plays its death frames for this long,
+// then disappears — like the client, where a corpse fades out. Without this a
+// killed mob would linger on the ground for the whole recording.
+const DEATH_HIDE_MS = 1200;
 
 // NPC sprite view ids that are invisible in the client — warp portals and the
 // "hidden" script-trigger NPCs. They have no real sprite, so rendering them via
@@ -81,6 +85,7 @@ class Actor {
   pose: Pose = "idle";
   private poseUntil = 0; // ms (recording time) the held pose expires
   private dead = false;
+  private deadHideAt = Infinity; // recording time to hide the corpse after death
   private aAction = -1;
   private aDir = -1;
   private aClock = 0;
@@ -139,12 +144,19 @@ class Actor {
     this.aAction = -1;
   }
 
-  /** Snap to a cell (no animation). */
+  /** Snap to a cell (no animation). A fresh position means the entity is present
+   *  again, so revive it if it had died (the server reuses an AID for a new
+   *  spawn). */
   setPos(gx: number, gy: number): void {
     this.walker.stop();
     this.walker.px = gx + 0.5;
     this.walker.py = gy + 0.5;
     this.visible = true;
+    if (this.dead) {
+      this.dead = false;
+      this.deadHideAt = Infinity;
+      this.pose = "idle";
+    }
   }
 
   /** Trigger an attack pose for ATTACK_HOLD_MS ms, optionally facing target cell. */
@@ -177,10 +189,11 @@ class Actor {
     this.poseUntil = nowMs + HURT_HOLD_MS;
   }
 
-  kill(): void {
+  kill(nowMs: number): void {
     this.dead = true;
     this.pose = "dead";
     this.poseUntil = Infinity;
+    this.deadHideAt = nowMs + DEATH_HIDE_MS;
     this.walker.stop();
   }
 
@@ -199,6 +212,9 @@ class Actor {
     camDir: number,
     camera: PerspectiveCamera,
   ): void {
+    // A killed sprite plays its death frames, then disappears (the corpse fades
+    // in the client). Once past that window it stops rendering.
+    if (this.dead && nowMs >= this.deadHideAt) this.visible = false;
     // Expire held poses. Casting flows into attack (the RO client plays the
     // strike animation right after the cast bar fills — the "release" of the
     // raised arms), so a completed cast transitions to attack for
@@ -392,11 +408,11 @@ export class EntityTable {
     src.triggerCasting(nowMs, castMs, tgt ? { gx: tgt.walker.cellX, gy: tgt.walker.cellY } : undefined);
   }
 
-  applyVanish(aid: number, kind: number): void {
+  applyVanish(nowMs: number, aid: number, kind: number): void {
     const a = this.actors.get(aid);
     if (!a) return;
     if (kind === 1) {
-      a.kill();
+      a.kill(nowMs);
     } else {
       // out of sight / logged out / teleported — hide without playing dead
       a.visible = false;

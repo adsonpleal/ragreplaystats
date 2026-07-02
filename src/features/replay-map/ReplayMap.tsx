@@ -25,6 +25,7 @@ import { EntityTable } from "./Entities";
 import { EventCursor, Timeline } from "./Timeline";
 import { BuffBar, CastBarLayer, CastNameLayer, HoverTooltip, VitalBars, projectToScreen } from "./HudOverlay";
 import { lookAtStart } from "./playerState";
+import { monsterName, playerName } from "../explorer/entityNames";
 import { SP_HP, SP_MAXHP, SP_SP, SP_MAXSP } from "../../aggregate";
 import { UNITS_PER_PX } from "../../sim/sprite";
 
@@ -93,7 +94,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     const by = <T extends { time: number }>(arr: ReadonlyArray<T>): T[] => [...arr].sort((a, b) => a.time - b.time);
     return {
       damage: by(replay.damage),
-      kills: by(replay.kills),
+      vanishes: by(replay.vanishes),
       moves: by(replay.moves),
       positions: by(replay.positions),
       casts: by(replay.skillCasts),
@@ -143,7 +144,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     let cursor: CursorAnimator | null = null;
 
     let damageCursor: EventCursor<typeof events.damage[number]> | null = null;
-    let killCursor: EventCursor<typeof events.kills[number]> | null = null;
+    let vanishCursor: EventCursor<typeof events.vanishes[number]> | null = null;
     let moveCursor: EventCursor<typeof events.moves[number]> | null = null;
     let posCursor: EventCursor<typeof events.positions[number]> | null = null;
     let castCursor: EventCursor<typeof events.casts[number]> | null = null;
@@ -276,8 +277,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
             damageLayer!.spawn(ev.target, pos, ev.damage, ev.hitType, ev.source === playerAid, nowMs, ev.hits);
           }
         });
-        killCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyVanish(ev.aid, ev.kind);
+        vanishCursor!.advanceTo(nowMs, (ev) => {
+          entities!.applyVanish(nowMs, ev.aid, ev.kind);
         });
         statusCursor!.advanceTo(nowMs, (ev) => {
           if (ev.isOn) {
@@ -387,7 +388,13 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         }
         if (matched) {
           const entity = replay.entities.get(matched.aid);
-          const name = entity?.name || `#${matched.aid}`;
+          // Players keep their character name; mobs/NPCs resolve through the DP
+          // database (pt-BR species name) like the by-monster tab, since the
+          // packet name is often an English/instance label ("#grn_3").
+          const name =
+            entity?.kind === "pc"
+              ? playerName(replay, matched.aid)
+              : monsterName(replay, db, matched.aid);
           const worldPos = entities.worldPosOf(matched.aid, hoverTmp);
           if (worldPos && projectToScreen(worldPos, engine.cam.camera, wrapW, wrapH, screenXY)) {
             tooltip.showAt(name, screenXY.x, screenXY.y);
@@ -455,7 +462,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           entities = new EntityTable(engine.scene, world!, replay, playerAid, playerLook, db);
           damageLayer = new DamageTextLayer(engine.scene);
           damageCursor = new EventCursor(events.damage);
-          killCursor = new EventCursor(events.kills);
+          vanishCursor = new EventCursor(events.vanishes);
           moveCursor = new EventCursor(events.moves);
           posCursor = new EventCursor(events.positions);
           castCursor = new EventCursor(events.casts);
@@ -497,7 +504,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
                 castBars,
                 buffBar,
                 timeline: timelineRef.current,
-                get cursors() { return { damageCursor, killCursor, moveCursor, posCursor, castCursor, paramCursor }; },
+                get cursors() { return { damageCursor, vanishCursor, moveCursor, posCursor, castCursor, paramCursor }; },
                 tick(ms: number) {
                   const dt = ms / 1000;
                   engine.renderOnce(dt);

@@ -137,6 +137,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   }
   const damage: DamageEvent[] = [];
   const kills: VanishEvent[] = [];
+  const vanishes: VanishEvent[] = [];
   const skillCasts: SkillCast[] = [];
   const skillUses: SkillUse[] = [];
   const mobHp: MobHpUpdate[] = [];
@@ -313,6 +314,9 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         positions.push(decoded.data);
         break;
       case "vanish":
+        // Every vanish drives the map viewer's despawn; only deaths (kind 1)
+        // count toward kill stats.
+        vanishes.push(decoded.data);
         if (decoded.data.kind === 1) kills.push(decoded.data);
         break;
       case "mobHp": {
@@ -514,6 +518,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     entities,
     damage,
     kills,
+    vanishes,
     skillCasts: dedupedSkillCasts,
     skillUses: dedupedSkillUses,
     mobHp,

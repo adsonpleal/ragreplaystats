@@ -231,7 +231,12 @@ export type Replay = {
   sessionInfo: SessionInfo;
   entities: Map<number, Entity>;
   damage: DamageEvent[];
+  /** Deaths only (vanish kind 1) — drives kill counts / attribution stats. */
   kills: VanishEvent[];
+  /** EVERY vanish (died / out-of-sight / logged-out / teleported), for the map
+   *  viewer to despawn an entity when it leaves — `kills` alone would leave mobs
+   *  that walked off-screen or teleported visible forever. */
+  vanishes: VanishEvent[];
   skillCasts: SkillCast[];
   skillUses: SkillUse[];
   mobHp: MobHpUpdate[];
