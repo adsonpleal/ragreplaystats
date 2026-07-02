@@ -35,9 +35,11 @@ export type OwnerState = { cellX: number; cellY: number; feet: Vector3 };
 // Warg follow, in cells (mirrors latamvisuais' Pet): chase once the owner pulls
 // FOLLOW_FAR away, keep walking until back within FOLLOW_NEAR (the gap stops a
 // walk↔idle flicker at the boundary), teleport when they outrun it. A little
-// faster than the player so a trailing warg can close the gap.
+// faster than the player so a trailing warg can close the gap. FOLLOW_FAR is
+// kept tight (2 cells) so the warg walks right beside the player like in-game,
+// rather than trailing several cells back before catching up.
 const FOLLOW_NEAR = 1;
-const FOLLOW_FAR = 3;
+const FOLLOW_FAR = 2;
 const TELEPORT_AT = 14;
 const WARG_SPEED = 7.5;
 const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
@@ -49,6 +51,10 @@ const NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
 const FALCON_HEIGHT = 4.7;
 const FALCON_BOB = 0.5;
 const FALCON_BOB_SPEED = 3.4;
+// The falcon's hover point chases the owner with a lag (exponential smoothing,
+// frame-rate independent): while the player walks the hawk drifts behind them,
+// and it catches up once they stop. Lower = more trailing; higher = tighter.
+const FALCON_LAG_RATE = 6;
 
 const chebyshev = (ax: number, ay: number, bx: number, by: number): number =>
   Math.max(Math.abs(ax - bx), Math.abs(ay - by));
@@ -66,8 +72,10 @@ export class Companion {
   private readonly walker: Walker | null;
   private following = false;
   private lastGoal = "";
-  // Falcon bob phase.
+  // Falcon bob phase + the lagging hover point that trails the owner.
   private bobT = Math.random() * Math.PI * 2;
+  private readonly hoverPos = new Vector3();
+  private hoverInit = false;
 
   constructor(
     scene: Scene,
@@ -103,10 +111,22 @@ export class Companion {
       action = this.walker.moving ? SPRITE_WALK : SPRITE_IDLE;
       this.feet.set(-this.walker.worldX(), -this.walker.worldY(), this.walker.worldZ());
     } else {
-      // Falcon — hover above the owner's head, flapping in place.
+      // Falcon — hover above the owner's head, flapping in place, its hover
+      // point trailing the player so it lags behind when they walk (horizontal
+      // only; height + bob ride on top).
       this.bobT += dtSec * FALCON_BOB_SPEED;
-      this.feet.copy(owner.feet);
-      this.feet.y += FALCON_HEIGHT + Math.sin(this.bobT) * FALCON_BOB;
+      if (!this.hoverInit) {
+        this.hoverPos.copy(owner.feet);
+        this.hoverInit = true;
+      }
+      const a = 1 - Math.exp(-dtSec * FALCON_LAG_RATE);
+      this.hoverPos.x += (owner.feet.x - this.hoverPos.x) * a;
+      this.hoverPos.z += (owner.feet.z - this.hoverPos.z) * a;
+      this.feet.set(
+        this.hoverPos.x,
+        owner.feet.y + FALCON_HEIGHT + Math.sin(this.bobT) * FALCON_BOB,
+        this.hoverPos.z,
+      );
       action = SPRITE_IDLE;
     }
     const dir = (camDir + (this.walker ? this.walker.dir : 0)) % 8;
