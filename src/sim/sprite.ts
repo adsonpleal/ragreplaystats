@@ -30,6 +30,13 @@ export const SPRITE_FRAMES = (action: number): number => ACTION_FRAMES[action] ?
 export const SPRITE = { w: 208, h: 210, anchorX: 104, anchorY: 152 } as const;
 export const SPRITE_CANVAS = `${SPRITE.w}x${SPRITE.h}+${SPRITE.anchorX}+${SPRITE.anchorY}`;
 
+/** Render canvas for a warg-mounted player (the player+warg composite the
+ *  gateway serves under the "riding" job id, e.g. Windhawk 4257 → 4278). It's
+ *  taller and wider than the on-foot sprite — the warg extends the body down and
+ *  out — with the feet anchor at the warg's paws. */
+export const MOUNTED_SPRITE = { w: 248, h: 232, anchorX: 124, anchorY: 184 } as const;
+export const MOUNTED_CANVAS = `${MOUNTED_SPRITE.w}x${MOUNTED_SPRITE.h}+${MOUNTED_SPRITE.anchorX}+${MOUNTED_SPRITE.anchorY}`;
+
 /** Sprite-pixel → world scale. roBrowser SpriteRenderer: _size = size / 175 *
  *  xSize, xSize = 5. */
 export const UNITS_PER_PX = 5 / 175;

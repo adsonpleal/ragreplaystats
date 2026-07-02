@@ -42,12 +42,13 @@ export function playerFrameUrl(
   dir: number,
   frame: number,
   headdir = 0,
+  canvas: string = SPRITE_CANVAS,
 ): string {
   const p = playerParams(look);
   p.set("action", String(action * 8 + dir));
   p.set("frame", String(frame));
   p.set("headdir", String(headdir));
-  p.set("canvas", SPRITE_CANVAS);
+  p.set("canvas", canvas);
   return `${RAGASSETS_BASE}/image?${p.toString()}`;
 }
 

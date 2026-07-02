@@ -97,6 +97,22 @@ export class Character {
     this.mesh.position.addScaledVector(this.toCam, frontBias);
   }
 
+  /** Swap the render canvas + plane to a different size — used when the player
+   *  mounts a warg and the sprite grows to the player+warg composite (and back
+   *  on dismount). No-op if the metrics are unchanged. */
+  setMetrics(metrics: SpriteMetrics): void {
+    if (metrics === this.metrics) return;
+    this.metrics = metrics;
+    this.canvas.width = metrics.w;
+    this.canvas.height = metrics.h;
+    const worldW = metrics.w * UNITS_PER_PX;
+    const worldH = metrics.h * UNITS_PER_PX;
+    this.anchorOffset = (metrics.anchorY / metrics.h - 0.5) * worldH;
+    this.mesh.geometry.dispose();
+    this.mesh.geometry = new PlaneGeometry(worldW, worldH);
+    this.texture.needsUpdate = true;
+  }
+
   /** Show/hide the billboard — used to keep the previous map's character from
    *  lingering in the scene while the next map loads. */
   setVisible(visible: boolean): void {

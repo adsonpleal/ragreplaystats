@@ -14,6 +14,10 @@ import {
   ACTION_FRAMES,
   MOB_ATTACK,
   MOB_DEAD,
+  MOUNTED_CANVAS,
+  MOUNTED_SPRITE,
+  SPRITE,
+  SPRITE_CANVAS,
   SPRITE_CASTING,
   SPRITE_DEAD,
   SPRITE_HURT,
@@ -60,6 +64,17 @@ const OPTION_FALCON = 0x10;
 const OPTION_WUG = 0x100000;
 const OPTION_WUGRIDER = 0x200000;
 const OPTION_WARG = OPTION_WUG | OPTION_WUGRIDER;
+
+// Warg-riding classes render as a player+warg composite the gateway serves under
+// a "riding" job id (it composites the player's gear onto the warg too), so we
+// swap the rider's sprite to that id instead of drawing a separate warg. Map the
+// base class → mounted id; unmapped classes fall back to the under-rider warg.
+// Only the Hunter/Ranger branch can ride a warg.
+const WARG_MOUNT_JOB: Record<number, number> = {
+  4080: 4088, // Ranger → Ranger (warg)
+  4257: 4278, // Windhawk → Windhawk (warg)
+};
+const wargMountJob = (baseJob: number): number | null => WARG_MOUNT_JOB[baseJob] ?? null;
 
 type Pose = "idle" | "walk" | "attack" | "hurt" | "casting" | "dead";
 
@@ -124,6 +139,10 @@ class Actor {
    *  composites the weapon on the motion that weapon actually animates on).
    *  Mobs always use ATTACK1. */
   private readonly attackAction: number;
+  /** Warg-mount override (player only): when set, the sprite renders as the
+   *  player+warg composite under this job id and on the larger mounted canvas.
+   *  Null = on foot. */
+  private mountJob: number | null = null;
 
   constructor(
     scene: Scene,
@@ -151,7 +170,7 @@ class Actor {
         : [SPRITE_IDLE, SPRITE_WALK, MOB_ATTACK, MOB_DEAD];
     const probeUrl = (a: number) =>
       this.src.kind === "player"
-        ? playerFrameProbeUrl(this.src.look!, a)
+        ? playerFrameProbeUrl(this.renderLook(), a)
         : mobFrameProbeUrl(this.src.view!, a);
     await Promise.all(
       actions.map(async (a) => {
@@ -220,6 +239,25 @@ class Actor {
   worldPos(out: Vector3): Vector3 {
     out.set(-this.walker.worldX(), -this.walker.worldY(), this.walker.worldZ());
     return out;
+  }
+
+  /** The look the URL builders should render — the base look on foot, or the
+   *  same look with the warg-mount job id swapped in while riding (so gear still
+   *  composites onto the mounted body). */
+  private renderLook(): PlayerLook {
+    const look = this.src.look!;
+    return this.mountJob != null ? { ...look, jobView: this.mountJob } : look;
+  }
+
+  /** Switch the player between the on-foot sprite and a warg-mount sprite
+   *  (`jobView` = the mounted job id, or null to dismount). Resizes the billboard
+   *  and re-probes frame counts for the swapped sprite. No-op for mobs. */
+  setMount(jobView: number | null): void {
+    if (this.src.kind !== "player" || jobView === this.mountJob) return;
+    this.mountJob = jobView;
+    this.billboard.setMetrics(jobView != null ? MOUNTED_SPRITE : SPRITE);
+    this.aAction = -1; // force a frame rebuild against the swapped sprite
+    void this.probeFrames();
   }
 
   /** Render one frame. `nowMs` is the recording's time cursor (used to expire
@@ -306,8 +344,9 @@ class Actor {
     this.aDir = dir;
     const n = this.aInfo.count;
     if (this.src.kind === "player") {
-      const look = this.src.look!;
-      this.frames = Array.from({ length: n }, (_, f) => loadImage(playerFrameUrl(look, action, dir, f)));
+      const look = this.renderLook();
+      const canvas = this.mountJob != null ? MOUNTED_CANVAS : SPRITE_CANVAS;
+      this.frames = Array.from({ length: n }, (_, f) => loadImage(playerFrameUrl(look, action, dir, f, 0, canvas)));
     } else {
       const mob = this.src.view!;
       this.frames = Array.from({ length: n }, (_, f) => loadImage(mobFrameUrl(mob, action, dir, f)));
@@ -350,6 +389,9 @@ export class EntityTable {
   private falcon: Companion | null = null;
   private warg: Companion | null = null;
   private readonly companionFeet = new Vector3();
+  /** The player's warg-mount job id while riding (null on foot, or when their
+   *  class has no mounted sprite) — applied to the player Actor each frame. */
+  private playerMountJob: number | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -459,10 +501,16 @@ export class EntityTable {
    *  (cloakonnpc) — the player is never cloaked (they see themselves). */
   applyOption(aid: number, option: number): void {
     if (aid === this.playerAid) {
+      const wargPresent = (option & OPTION_WARG) !== 0;
+      const riding = (option & OPTION_WUGRIDER) !== 0;
+      // Riding + a mounted sprite for this class → render the player as the
+      // player+warg composite (applied to the Actor in update); no separate warg.
+      this.playerMountJob = riding ? wargMountJob(this.playerLook.jobView) : null;
       this.setCompanion("falcon", (option & OPTION_FALCON) !== 0);
-      this.setCompanion("warg", (option & OPTION_WARG) !== 0);
-      // Riding (WUGRIDER) turns the warg into the mount under the rider.
-      this.warg?.setMounted((option & OPTION_WUGRIDER) !== 0);
+      this.setCompanion("warg", wargPresent && this.playerMountJob == null);
+      // Fallback for a warg-rider class with no mounted sprite: draw the warg
+      // under the rider instead (no-op when there's no separate warg).
+      this.warg?.setMounted(riding);
       return;
     }
     const a = this.actors.get(aid) ?? this.ensure(aid);
@@ -489,6 +537,8 @@ export class EntityTable {
 
   /** Per-frame render call. */
   update(dtSec: number, nowMs: number, camDir: number, camera: PerspectiveCamera): void {
+    // Apply the player's mount state (warg-riding sprite swap) before drawing.
+    this.actors.get(this.playerAid)?.setMount(this.playerMountJob);
     for (const a of this.actors.values()) a.update(dtSec, nowMs, camDir, camera);
     // Summons trail the local player while their OPTION carries the bit.
     const player = this.actors.get(this.playerAid);
