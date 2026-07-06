@@ -36,7 +36,7 @@ export function TopBar() {
           )}
           <a
             className="topnav-link"
-            href="https://discord.gg/S4uEwGqK"
+            href="https://discord.gg/JCXTqqWq9Q"
             target="_blank"
             rel="noopener noreferrer"
             title={t.discordTitle}
