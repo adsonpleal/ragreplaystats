@@ -87,6 +87,20 @@ export type SkillUse = {
   skillLevel: number;
 };
 
+/** A ground-skill unit placement (0x09ca) with its cell, plus the skill it most
+ *  likely belongs to (correlated from the caster's latest skill use/cast — the
+ *  packet itself only carries the unit graphic, not the skill id). Drives the map
+ *  viewer's ground effects (Storm Gust, Arrow Storm, Pneuma, …). skillId is 0 when
+ *  no recent skill could be attributed. */
+export type GroundSkillUnit = {
+  time: number;
+  unitAid: number;
+  casterAid: number;
+  gx: number;
+  gy: number;
+  skillId: number;
+};
+
 export type VanishEvent = {
   time: number;
   aid: number;
@@ -273,6 +287,9 @@ export type Replay = {
    * `entities`.
    */
   groundUnits: Set<number>;
+  /** Ground-skill-unit placements with cells + attributed skill id, in packet
+   *  order. Drives the map viewer's ground effects. */
+  groundSkillUnits: GroundSkillUnit[];
   totals: {
     packetCount: number;
     handledPackets: number;

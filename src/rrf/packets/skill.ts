@@ -60,11 +60,16 @@ export function decodeSkillCast07fb(reader: ByteReader, time: number): SkillCast
  *
  * Layout after pkt id:
  *   pktLen u16, AID u32 (unit), creatorAID u32, x i16, y i16, ... (rest ignored)
+ *
+ * gx/gy are the unit's GAT cell — the anchor the map viewer drops the skill's
+ * ground effect (Storm Gust, Arrow Storm, Pneuma, …) onto.
  */
 export type GroundSkillEntry = {
   time: number;
   unitAid: number;
   casterAid: number;
+  gx: number;
+  gy: number;
 };
 
 export function decodeSkillEntry09ca(
@@ -74,5 +79,7 @@ export function decodeSkillEntry09ca(
   reader.u16(); // pktLen
   const unitAid = reader.u32();
   const casterAid = reader.u32();
-  return { time, unitAid, casterAid };
+  const gx = reader.u16(); // cell coords (positive; sent as int16)
+  const gy = reader.u16();
+  return { time, unitAid, casterAid, gx, gy };
 }

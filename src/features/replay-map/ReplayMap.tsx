@@ -21,6 +21,8 @@ import { MAPS_ROOT } from "../../sim/ragassets";
 import { findPath } from "../../sim/pathfind";
 import { CursorAnimator } from "../../sim/cursor";
 import { DamageTextLayer } from "./DamageText";
+import { EffectsLayer } from "./Effects";
+import { hasSkillEffect, preloadSkillMap, skillEntry } from "../../sim/render/effectAssets";
 import { EntityTable } from "./Entities";
 import { EventCursor, Timeline } from "./Timeline";
 import { BuffBar, CastBarLayer, CastNameLayer, HoverTooltip, VitalBars, projectToScreen } from "./HudOverlay";
@@ -54,6 +56,17 @@ const CAST_ABOVE_ANCHOR_WORLD = 120 * UNITS_PER_PX;
 // tail still finishes its fade before the clock auto-pauses. The bulk of the
 // tail comes from the real duration now, so this stays small.
 const PLAYBACK_TAIL_MS = 1500;
+
+// Ground effects (Storm Gust, Arrow Storm, Pneuma, …) are persistent: the STR
+// loops for this long, then it's culled. The 0x09ca stream doesn't carry the
+// skill's real duration, so this is a single reasonable default (most ground
+// AoEs run ~3–6s). GROUND_DEDUP_MS collapses the burst of unit cells one cast
+// drops into a single centred effect.
+const GROUND_EFFECT_MS = 4500;
+const GROUND_DEDUP_MS = 600;
+// Collapse a skill activation's repeated result packets (multi-hit damage, or a
+// cast+use pair) into a single main-effect spawn.
+const MAIN_EFFECT_DEDUP_MS = 500;
 
 type Phase = "loading" | "ready" | "error";
 
@@ -100,6 +113,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       positions: by(replay.positions),
       casts: by(replay.skillCasts),
       uses: by(replay.skillUses),
+      ground: by(replay.groundSkillUnits),
       params: by(replay.paramChanges),
       // Local player's status changes only — drives the buff strip.
       status: by(replay.statusEvents.filter((e) => e.aid === playerAid)),
@@ -146,6 +160,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     let world: World | null = null;
     let entities: EntityTable | null = null;
     let damageLayer: DamageTextLayer | null = null;
+    let effectsLayer: EffectsLayer | null = null;
     let cursor: CursorAnimator | null = null;
 
     let damageCursor: EventCursor<typeof events.damage[number]> | null = null;
@@ -154,6 +169,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     let moveCursor: EventCursor<typeof events.moves[number]> | null = null;
     let posCursor: EventCursor<typeof events.positions[number]> | null = null;
     let castCursor: EventCursor<typeof events.casts[number]> | null = null;
+    let useCursor: EventCursor<typeof events.uses[number]> | null = null;
+    let groundCursor: EventCursor<typeof events.ground[number]> | null = null;
     let paramCursor: EventCursor<typeof events.params[number]> | null = null;
     let statusCursor: EventCursor<typeof events.status[number]> | null = null;
     // Drain the cursors once even while paused so the starting frame (player +
@@ -166,6 +183,30 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     // strip only re-renders when this set changes (`buffsDirty`).
     const activeBuffs = new Map<number, number>();
     let buffsDirty = false;
+
+    // Per-activation dedupe for ground effects: `${casterAid}:${skillId}` → last
+    // spawn ms, so the burst of unit cells one cast drops spawns a single effect.
+    // Cleared on restart.
+    const lastGroundSpawn = new Map<string, number>();
+    // Same idea for a skill's MAIN effect (effectId): `${skillId}:${targetAid}` →
+    // last spawn ms, so a multi-hit / cast+use activation only spawns it once.
+    const lastMainEffect = new Map<string, number>();
+
+    // Spawn a skill's main effect ON THE TARGET, attached (follows it). This is
+    // the arrow-rain / bolt / heal-sparkle that belongs over the entity the skill
+    // was used on — NOT on the caster. Deduped per activation. Self-cast skills
+    // pass the caster as the target. No-op for skills with no renderable effect,
+    // an unknown target, or before the skill-map loads.
+    const spawnMainEffect = (skillId: number, targetAid: number, nowMs: number): void => {
+      if (!skillId || !targetAid || !effectsLayer || !entities || !hasSkillEffect(skillId)) return;
+      const key = `${skillId}:${targetAid}`;
+      const last = lastMainEffect.get(key);
+      if (last != null && nowMs - last < MAIN_EFFECT_DEDUP_MS) return;
+      lastMainEffect.set(key, nowMs);
+      effectsLayer.spawnSkillMain(skillId, targetAid, entities.worldPosOf(targetAid, mainEffectTmp), nowMs, {
+        attached: true,
+      });
+    };
 
     // Player vitals — updated as paramChange events drain. Kept in refs so the
     // per-frame HUD read is O(1) with no React state churn.
@@ -249,6 +290,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     const charWorldTmp = new Vector3();
     const targetWorldTmp = new Vector3();
     const castWorldTmp = new Vector3();
+    const groundWorldTmp = new Vector3();
+    const mainEffectTmp = new Vector3();
     const camUpTmp = new Vector3();
     const feetTmp = new Vector3();
     const screenXY = { x: 0, y: 0 };
@@ -280,12 +323,48 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           const name = db?.resolveSkill(ev.skillId) ?? `skill#${ev.skillId}`;
           castNames.spawn(ev.source, name, nowMs, ev.castMs);
           castBars.spawn(ev.source, nowMs, ev.castMs);
+          // The cast only drives the caster's pose + cast bar; the skill's main
+          // effect belongs on the TARGET and is spawned when the skill lands (its
+          // skill-use / damage packet below), not on the caster at cast start.
+        });
+        useCursor!.advanceTo(nowMs, (ev) => {
+          // No-damage skills (heals/buffs) land via skill-use: play the main
+          // effect on the target it was used on (self for a buff).
+          spawnMainEffect(ev.skillId, ev.target || ev.source, nowMs);
+        });
+        groundCursor!.advanceTo(nowMs, (ev) => {
+          // Persistent ground effect (Storm Gust/Arrow Storm/…) at the unit's
+          // cell. The skill is attributed from the caster's recent use/cast; one
+          // effect per activation (the cell burst is deduped), looped for a fixed
+          // lifetime. Anchored in scene space (X/Y negated like the actors).
+          if (!ev.skillId) return;
+          const eff = skillEntry(ev.skillId);
+          if (eff?.groundEffectId == null) return;
+          const key = `${ev.casterAid}:${ev.skillId}`;
+          const last = lastGroundSpawn.get(key);
+          if (last != null && nowMs - last < GROUND_DEDUP_MS) return;
+          lastGroundSpawn.set(key, nowMs);
+          const cs = world!.cellSize;
+          const h = world!.gat.heightAt(ev.gx, ev.gy, 0.5, 0.5);
+          groundWorldTmp.set(-((ev.gx + 0.5) * cs), -h, (ev.gy + 0.5) * cs);
+          effectsLayer!.spawn(eff.groundEffectId, ev.casterAid, groundWorldTmp, nowMs, {
+            loop: true,
+            durationMs: GROUND_EFFECT_MS,
+          });
         });
         damageCursor!.advanceTo(nowMs, (ev) => {
           entities!.applyDamage(nowMs, ev.source, ev.target, ev.skillId);
           const pos = entities!.worldPosOf(ev.target, targetWorldTmp);
           if (pos) {
             damageLayer!.spawn(ev.target, pos, ev.damage, ev.hitType, ev.source === playerAid, nowMs, ev.hits);
+            // Damage skills land via their damage packet: the main effect once on
+            // the target (Arrow Storm rain, bolt impact), plus the per-hit effect
+            // pinned where each hit landed (a quick flash, not attached).
+            spawnMainEffect(ev.skillId, ev.target, nowMs);
+            const eff = skillEntry(ev.skillId);
+            if (eff?.hitEffectId != null) {
+              effectsLayer!.spawn(eff.hitEffectId, ev.target, pos, nowMs);
+            }
           }
         });
         vanishCursor!.advanceTo(nowMs, (ev) => {
@@ -318,6 +397,12 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
 
       entities.update(dt, nowMs, engine.cam.direction, engine.cam.camera);
       damageLayer.update(nowMs, engine.cam.camera);
+      // Skill/world STR effects. Guarded so a bad effect never breaks playback.
+      try {
+        effectsLayer?.update(nowMs, engine.cam.camera);
+      } catch (err) {
+        console.warn("[ReplayMap] effects update failed", err);
+      }
 
       // Expire timed buffs whose duration ran out with no explicit "off" event
       // (a buff can lapse silently). Only mutate when something actually drops.
@@ -451,6 +536,12 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         const fontReady = document.fonts
           ? document.fonts.load("16px Galmuri11").catch(() => null)
           : Promise.resolve();
+        // Warm the skill→effect map so the per-event drain can look up effect ids
+        // synchronously. Awaited below (with the font) before the viewer goes
+        // "ready" — it's ~20KB while the map is dozens of textures, but on a slow
+        // link an unawaited fetch could land after the first casts drained,
+        // silently skipping their effects. Never rejects (falls back to {}).
+        const skillMapReady = preloadSkillMap();
         const base = `${MAPS_ROOT}${mapName}/`;
         const manifest = (await fetch(`${base}manifest.json`).then((r) => r.json())) as MapManifest;
         if (disposed) return;
@@ -476,18 +567,24 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         const buildRuntime = () => {
           entities?.dispose();
           damageLayer?.dispose();
+          effectsLayer?.dispose();
           entities = new EntityTable(engine.scene, world!, replay, playerAid, playerLook, db);
           damageLayer = new DamageTextLayer(engine.scene);
+          effectsLayer = new EffectsLayer(engine.scene, entities);
           damageCursor = new EventCursor(events.damage);
           vanishCursor = new EventCursor(events.vanishes);
           optionCursor = new EventCursor(events.options);
           moveCursor = new EventCursor(events.moves);
           posCursor = new EventCursor(events.positions);
           castCursor = new EventCursor(events.casts);
+          useCursor = new EventCursor(events.uses);
+          groundCursor = new EventCursor(events.ground);
           paramCursor = new EventCursor(events.params);
           statusCursor = new EventCursor(events.status);
           vitals.hp = vitals.maxHp = vitals.sp = vitals.maxSp = vitals.ap = vitals.maxAp = 0;
           activeBuffs.clear();
+          lastGroundSpawn.clear();
+          lastMainEffect.clear();
           buffsDirty = true; // force one reconcile so a rewind clears the strip
           primed = false; // re-drain the starting frame for the fresh cursors
         };
@@ -506,6 +603,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         // late-arrival of the font would leave those first labels frozen in
         // the fallback font for their entire lifetime.
         await fontReady;
+        await skillMapReady;
         if (disposed) return;
         setPhase("ready");
         forceRender((n) => n + 1);
@@ -519,8 +617,10 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
               return {
                 engine,
                 world,
+                replay,
                 get entities() { return entities; },
                 get damageLayer() { return damageLayer; },
+                get effectsLayer() { return effectsLayer; },
                 castNames,
                 castBars,
                 buffBar,
@@ -555,6 +655,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       castBars.dispose();
       castNames.dispose();
       buffBar.dispose();
+      effectsLayer?.dispose();
       damageLayer?.dispose();
       entities?.dispose();
       world?.dispose();

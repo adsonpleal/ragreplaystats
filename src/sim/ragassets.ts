@@ -103,6 +103,35 @@ export function statusIconUrl(efstId: number): string {
   return `${RAGASSETS_BASE}/icons/status/${efstId}.png`;
 }
 
+// --- Skill/world effect gateway (STR renderer) ---------------------------
+// The /effect/* endpoints serve roBrowser's effect data + textures so the client
+// renders skill visuals itself (blend fidelity — see src/sim/render/strEffect.ts).
+// All are immutable + CORS-enabled; fetch the tables once and cache (effectAssets).
+
+/** roBrowser's SkillEffect table: skillId → { effectId?, hitEffectId?,
+ *  groundEffectId? }. One fetch for the whole map. */
+export function effectSkillMapUrl(): string {
+  return `${RAGASSETS_BASE}/effect/skill-map`;
+}
+
+/** roBrowser's EffectTable: effectId → array of effect entries (STR/SPR/…). One
+ *  fetch for the whole table. */
+export function effectTableUrl(): string {
+  return `${RAGASSETS_BASE}/effect/table`;
+}
+
+/** Parsed .str keyframe animation for one effect file (name relative to the
+ *  GRF's data/, with the %d variant already substituted by the caller). */
+export function effectStrUrl(file: string): string {
+  return `${RAGASSETS_BASE}/effect/str?file=${encodeURIComponent(file)}`;
+}
+
+/** One .str layer texture as an RGBA PNG (colorkey already applied). `file` is
+ *  the texture name relative to data/texture/effect/. */
+export function effectTextureUrl(file: string): string {
+  return `${RAGASSETS_BASE}/effect/texture?file=${encodeURIComponent(file)}`;
+}
+
 /** Mob/monster billboard canvas. Sized like the latamvisuais pet canvas — the
  *  largest tameable monster extends ~189px up / 46px down / 114px sideways. */
 export const MOB_SPRITE = { w: 248, h: 256, anchorX: 124, anchorY: 200 } as const;

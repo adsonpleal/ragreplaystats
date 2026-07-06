@@ -25,6 +25,7 @@ import type {
   OptionChangeEvent,
   ParamChangeEvent,
   RandomOption,
+  GroundSkillUnit,
   Replay,
   SkillCast,
   SkillUse,
@@ -173,6 +174,15 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   // AID as the source. We rewrite source back to the caster when we see one.
   const groundUnitOwner = new Map<number, number>();
   const groundUnits = new Set<number>();
+  // Ground-skill-unit placements (0x09ca) with their cell + the skill they belong
+  // to. The packet only carries the unit graphic, not the skill id, so we
+  // attribute it from the caster's most recent skill use/cast (the AoE's own
+  // activation packet, sent just before its units) — see lastSkillByCaster.
+  const groundSkillUnits: GroundSkillUnit[] = [];
+  const lastSkillByCaster = new Map<number, { skillId: number; time: number }>();
+  // Widest cast we care to bridge (a long channel like Storm Gust) — beyond this
+  // the "last skill" is too stale to trust as this unit's source.
+  const GROUND_SKILL_ATTR_MS = 6000;
 
   // Initial inventory snapshot from the Items container — used to resolve
   // `itemId` for slots when 0x07fa fires later. Mutated as 0x0a37 / 0x07fa
@@ -367,6 +377,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         const owner = groundUnitOwner.get(u.source);
         if (owner) u.source = owner;
         skillUses.push(u);
+        lastSkillByCaster.set(u.source, { skillId: u.skillId, time: u.time });
         break;
       }
       case "skillCast": {
@@ -374,6 +385,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         const owner = groundUnitOwner.get(c.source);
         if (owner) c.source = owner;
         skillCasts.push(c);
+        lastSkillByCaster.set(c.source, { skillId: c.skillId, time: c.time });
         break;
       }
       case "groundSkillEntry": {
@@ -382,6 +394,19 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
           groundUnitOwner.set(ev.unitAid, ev.casterAid);
         }
         if (ev.unitAid) groundUnits.add(ev.unitAid);
+        // Attribute the unit to the caster's most recent skill (its activation
+        // packet fires just before its units) so the viewer can pick the right
+        // ground effect; 0 when nothing recent enough matched.
+        const recent = lastSkillByCaster.get(ev.casterAid);
+        const skillId = recent && ev.time - recent.time <= GROUND_SKILL_ATTR_MS ? recent.skillId : 0;
+        groundSkillUnits.push({
+          time: ev.time,
+          unitAid: ev.unitAid,
+          casterAid: ev.casterAid,
+          gx: ev.gx,
+          gy: ev.gy,
+          skillId,
+        });
         break;
       }
       case "chat":
@@ -554,6 +579,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     statusEvents: dedupedStatus,
     chats,
     groundUnits,
+    groundSkillUnits,
     totals: {
       packetCount,
       handledPackets,
