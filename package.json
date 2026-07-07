@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && npm run prerender",
+    "prerender": "node tools/prerender.mjs",
     "preview": "vite preview",
     "build:db": "node tools/build-db.mjs",
     "build:monsters": "node tools/build-monsters.mjs"
@@ -15,6 +16,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "firebase-admin": "^13.10.0",
+    "puppeteer": "^25.3.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11"
   },

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ragnarecap.web.app/sitemap.xml
+Sitemap: https://recap.latam-tools.com.br/sitemap.xml

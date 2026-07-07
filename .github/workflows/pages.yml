@@ -1,4 +1,4 @@
-name: Deploy GH Pages redirect to ragnarecap.web.app
+name: Deploy GH Pages redirect to recap.latam-tools.com.br
 
 on:
   push:
@@ -26,18 +26,18 @@ jobs:
           <html lang="pt-BR">
           <head>
             <meta charset="UTF-8">
-            <title>Mudamos para RagnaRecap — ragnarecap.web.app</title>
+            <title>Mudamos para RagnaRecap — recap.latam-tools.com.br</title>
             <meta name="robots" content="noindex">
-            <link rel="canonical" href="https://ragnarecap.web.app/">
-            <meta http-equiv="refresh" content="0;url=https://ragnarecap.web.app/">
+            <link rel="canonical" href="https://recap.latam-tools.com.br/">
+            <meta http-equiv="refresh" content="0;url=https://recap.latam-tools.com.br/">
             <style>body{font-family:system-ui;max-width:40em;margin:4em auto;padding:0 1em;line-height:1.5;color:#222}a{color:#ff6f8d}</style>
           </head>
           <body>
             <h1>RagReplayStats agora é RagnaRecap</h1>
-            <p>O site foi movido para <a href="https://ragnarecap.web.app/">ragnarecap.web.app</a>.
+            <p>O site foi movido para <a href="https://recap.latam-tools.com.br/">recap.latam-tools.com.br</a>.
                Você será redirecionado automaticamente. Atualize seus favoritos!</p>
             <script>
-              location.replace("https://ragnarecap.web.app/" + location.search + location.hash);
+              location.replace("https://recap.latam-tools.com.br/" + location.search + location.hash);
             </script>
           </body>
           </html>
