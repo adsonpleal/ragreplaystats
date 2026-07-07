@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const PROJECT_NAME = "RagnaRecap";
-const SITE_URL = "https://ragnarecap.web.app";
+const SITE_URL = "https://recap.latam-tools.com.br/";
 const DEFAULT_CHANNEL_ID = "1524025278471471295";
 const EMBED_COLOR = 0xff6f8d; // pink, matches the app accent
 const DISCORD_DESC_LIMIT = 4096;
