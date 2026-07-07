@@ -8,6 +8,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # full history so the post-deploy step can compare package.json against
+          # the pre-push commit (github.event.before) to detect a version bump
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -21,3 +25,26 @@ jobs:
           channelId: live
           projectId: ragreplaystats
           target: ragnarecap
+
+      # Announce the release in Discord — only when this push actually bumped the
+      # version (so routine main pushes don't spam the channel). Runs after a
+      # successful deploy; a missing DISCORD_BOT_TOKEN secret is a no-op.
+      - name: Detect version bump
+        id: ver
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          NEW=$(node -p "require('./package.json').version")
+          OLD=""
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE:package.json" 2>/dev/null; then
+            OLD=$(git show "$BEFORE:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          fi
+          echo "New version: $NEW / previous: ${OLD:-<none>}"
+          if [ "$NEW" != "$OLD" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Post novidades to Discord
+        if: steps.ver.outputs.changed == 'true'
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID: "1524025278471471295"
+        run: node tools/post-novidades.mjs

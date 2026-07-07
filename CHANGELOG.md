@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-07-07
+
+- Base de itens atualizada com o último patch do cliente: **389 itens novos** (equipamentos Sombrios, conjuntos de Sakray, munições de canhão, entre outros) e diversos nomes corrigidos. Os replays passam a mostrar o nome correto desses itens em vez de exibir só o ID.
+
 ## 2026-07-02
 
 - **Visualizador de replay (experimental):** novo botão "Assistir replay" abre uma reprodução 3D da gravação — o mapa, o jogador com equipamento, monstros, NPCs, danos flutuantes, buffs e os companheiros (falcão e worg, inclusive a montaria). É **altamente experimental** e ainda faltam vários recursos; para a melhor experiência, baixe o arquivo `.rrf` e assista dentro do cliente do jogo. A renderização (sprites, mapa, câmera e a animação dos números de dano) é portada e inspirada no [roBrowser](https://github.com/vthibault/roBrowser), um cliente de Ragnarok no navegador.
