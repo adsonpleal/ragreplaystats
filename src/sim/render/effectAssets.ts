@@ -11,6 +11,7 @@
 import {
   ClampToEdgeWrapping,
   LinearFilter,
+  RepeatWrapping,
   SRGBColorSpace,
   Texture,
   TextureLoader,
@@ -58,6 +59,39 @@ export interface LoadedStr {
   startDelayMs?: number;
 }
 
+/** A parsed + texture-loaded CYLINDER, ready for CylinderEffect to draw. Sizes
+ *  are in tiles (world units = size * cellSize); colour/alpha 0–1. */
+export interface LoadedCylinder {
+  texture: Texture | null;
+  totalCircleSides: number;
+  circleSides: number;
+  topSize: number;
+  bottomSize: number;
+  height: number;
+  alphaMax: number;
+  blendMode: number;
+  fade: boolean;
+  rotate: boolean;
+  animation: number;
+  duration: number;
+  angleX: number;
+  angleY: number;
+  angleZ: number;
+  repeat: boolean;
+  repeatTextureX: number;
+  rotateWithCamera: boolean;
+  color: [number, number, number];
+  /** Part stagger (ms) — same staging role as LoadedStr.startDelayMs. */
+  startDelayMs?: number;
+}
+
+/** An effect resolves to a list of these — each renders as its own StrEffect or
+ *  CylinderEffect, all anchored together. A single effectId can mix both (e.g. a
+ *  ground ring plus a keyframe flash). */
+export type LoadedPart =
+  | { kind: "str"; str: LoadedStr }
+  | { kind: "cylinder"; cyl: LoadedCylinder };
+
 /** A skill's effect ids from the SkillEffect table. */
 interface SkillEffectEntry {
   effectId?: number;
@@ -65,12 +99,38 @@ interface SkillEffectEntry {
   groundEffectId?: number;
 }
 
-/** One EffectTable row entry (only `type:"STR"` is rendered in v1). Other wire
- *  fields (min/wav/attachedEntity) are ignored, so they're omitted here. */
+/** One EffectTable row entry. `type:"STR"` (keyframe files) and `type:"CYLINDER"`
+ *  (procedural ground rings) render; SPR/FUNC/3D and sound-only rows are ignored.
+ *  Cylinder fields mirror roBrowser's Cylinder effect attributes. */
 interface EffectTableEntry {
-  type?: string; // "STR" | "SPR" | "CYLINDER" | "FUNC" | undefined (sound-only)
+  type?: string; // "STR" | "CYLINDER" | "SPR" | "FUNC" | "3D" | undefined (sound-only)
   file?: string; // STR file name; may contain a "%d" variant placeholder
   rand?: number[]; // [min, max] for the "%d" variant (client picks one)
+  // --- CYLINDER attributes (all optional; defaults applied on load) ----------
+  textureName?: string;
+  topSize?: number;
+  bottomSize?: number;
+  height?: number;
+  alphaMax?: number;
+  blendMode?: number;
+  fade?: boolean;
+  rotate?: boolean;
+  animation?: number;
+  duration?: number;
+  totalCircleSides?: number;
+  circleSides?: number;
+  angleX?: number;
+  angleY?: number;
+  angleZ?: number;
+  angleXRandom?: number;
+  angleYRandom?: number;
+  angleZRandom?: number;
+  repeat?: boolean;
+  repeatTextureX?: number;
+  rotateWithCamera?: boolean;
+  red?: number;
+  green?: number;
+  blue?: number;
 }
 
 // --- Skill map (skillId → effect ids) ------------------------------------
@@ -136,24 +196,29 @@ function effectTable(): Promise<Record<string, EffectTableEntry[]>> {
 const textureLoader = new TextureLoader();
 const textureCache = new Map<string, Texture>();
 
-function loadEffectTexture(name: string): Texture {
-  let tex = textureCache.get(name);
+function loadEffectTexture(name: string, wrapRepeat = false): Texture {
+  // Cylinders with repeatTextureX>1 tile the texture around the ring (wrapS =
+  // Repeat); everything else clamps. Cache per (name, wrap) so the two modes of
+  // the same file don't clobber each other's wrap setting.
+  const key = wrapRepeat ? `${name}|repeat` : name;
+  let tex = textureCache.get(key);
   if (!tex) {
     tex = textureLoader.load(effectTextureUrl(name), undefined, undefined, () =>
       console.debug("[effects] texture failed", name),
     );
     tex.colorSpace = SRGBColorSpace;
-    // NPOT effect PNGs: clamp + linear, no mipmaps (smooth glow, no seams).
-    tex.wrapS = tex.wrapT = ClampToEdgeWrapping;
+    // NPOT effect PNGs: linear, no mipmaps (smooth glow, no seams).
+    tex.wrapS = wrapRepeat ? RepeatWrapping : ClampToEdgeWrapping;
+    tex.wrapT = ClampToEdgeWrapping;
     tex.minFilter = tex.magFilter = LinearFilter;
     tex.generateMipmaps = false;
-    textureCache.set(name, tex);
+    textureCache.set(key, tex);
   }
   return tex;
 }
 
-// --- Effect loading (effectId → LoadedStr[]) -----------------------------
-const effectCache = new Map<number, Promise<LoadedStr[]>>();
+// --- Effect loading (effectId → LoadedPart[]) ----------------------------
+const effectCache = new Map<number, Promise<LoadedPart[]>>();
 
 /** One STR file that makes up (part of) an effect, with an optional stagger
  *  before it starts. Multi-part modern effects list several. */
@@ -162,21 +227,22 @@ interface EffectPart {
   delayMs?: number;
 }
 
-/** Load a list of STR parts, stamping each with its stagger delay. A part that
- *  fails to load is dropped (logged) rather than sinking the whole effect. */
-function loadParts(parts: EffectPart[]): Promise<LoadedStr[]> {
+/** Load a list of STR parts (client override / modern rework — both STR-only),
+ *  stamping each with its stagger delay and wrapping as a LoadedPart. A part
+ *  that fails to load is dropped (logged) rather than sinking the whole effect. */
+function loadParts(parts: EffectPart[]): Promise<LoadedPart[]> {
   return Promise.all(
-    parts.map(async (part) => {
+    parts.map(async (part): Promise<LoadedPart | null> => {
       try {
         const str = await loadStrFile(part.file);
         str.startDelayMs = part.delayMs;
-        return str;
+        return { kind: "str", str };
       } catch (err) {
         console.warn("[effects] part load failed", part.file, err);
         return null;
       }
     }),
-  ).then((a) => a.filter((x): x is LoadedStr => x != null));
+  ).then((a) => a.filter((x): x is LoadedPart => x != null));
 }
 
 /** Modern-client effect rework: kRO redesigned many skill visuals (~2020) as
@@ -229,7 +295,7 @@ const SKILL_STR_OVERRIDES: Record<number, EffectPart[]> = {
   ],
 };
 
-const skillOverrideCache = new Map<number, Promise<LoadedStr[]>>();
+const skillOverrideCache = new Map<number, Promise<LoadedPart[]>>();
 
 /** Whether a skill has ANY main effect we can render — a client STR override or
  *  a gateway skill-map effectId. Synchronous (reads the memoized skill-map).
@@ -241,7 +307,7 @@ export function hasSkillEffect(skillId: number): boolean {
 /** Resolve a skill's MAIN effect to loaded STR parts: a client override wins
  *  (covers skills the gateway lacks / would render with a stale asset), else the
  *  gateway skill-map's effectId. Resolves to [] when neither applies. Memoized. */
-export function loadSkillMainEffect(skillId: number): Promise<LoadedStr[]> {
+export function loadSkillMainEffect(skillId: number): Promise<LoadedPart[]> {
   const override = SKILL_STR_OVERRIDES[skillId];
   if (override) {
     let p = skillOverrideCache.get(skillId);
@@ -266,14 +332,50 @@ function resolveFileName(file: string, rand?: number[]): string {
   return file.replace("%d", String(n));
 }
 
-async function loadStrEntry(entry: EffectTableEntry): Promise<LoadedStr | null> {
+async function loadStrEntry(entry: EffectTableEntry): Promise<LoadedPart | null> {
   if (!entry.file) return null;
   try {
-    return await loadStrFile(resolveFileName(entry.file, entry.rand));
+    const str = await loadStrFile(resolveFileName(entry.file, entry.rand));
+    return { kind: "str", str };
   } catch (err) {
     console.warn("[effects] str load failed", entry.file, err);
     return null;
   }
+}
+
+const num = (v: number | undefined, dflt: number): number =>
+  typeof v === "number" && !isNaN(v) ? v : dflt;
+
+/** Parse one CYLINDER table entry into a LoadedCylinder, kicking off its texture
+ *  load. Defaults follow roBrowser's Cylinder constructor (20 sides, alphaMax 1,
+ *  white). Random angle jitter is resolved once here (per instance). */
+function loadCylinderEntry(entry: EffectTableEntry): LoadedPart {
+  const total = num(entry.totalCircleSides, 20);
+  const repeatTextureX = num(entry.repeatTextureX, 1);
+  const cyl: LoadedCylinder = {
+    texture: entry.textureName
+      ? loadEffectTexture(entry.textureName, repeatTextureX > 1)
+      : null,
+    totalCircleSides: total,
+    circleSides: num(entry.circleSides, total),
+    topSize: num(entry.topSize, 0),
+    bottomSize: num(entry.bottomSize, 0),
+    height: num(entry.height, 10),
+    alphaMax: entry.alphaMax && entry.alphaMax > 0 ? entry.alphaMax : 1,
+    blendMode: num(entry.blendMode, 0),
+    fade: !!entry.fade,
+    rotate: !!entry.rotate,
+    animation: num(entry.animation, 0),
+    duration: num(entry.duration, 1000),
+    angleX: num(entry.angleX, 0) + Math.floor(Math.random() * num(entry.angleXRandom, 0)),
+    angleY: num(entry.angleY, 0) + Math.floor(Math.random() * num(entry.angleYRandom, 0)),
+    angleZ: num(entry.angleZ, 0) + Math.floor(Math.random() * num(entry.angleZRandom, 0)),
+    repeat: !!entry.repeat,
+    repeatTextureX,
+    rotateWithCamera: !!entry.rotateWithCamera,
+    color: [num(entry.red, 1), num(entry.green, 1), num(entry.blue, 1)],
+  };
+  return { kind: "cylinder", cyl };
 }
 
 /** Fetch + texture-load one parsed .str by gateway file name. Nested STRs (the
@@ -297,9 +399,11 @@ export async function loadStrFile(file: string): Promise<LoadedStr> {
   return { fps: json.fps, maxKey: json.maxKey, layers };
 }
 
-/** Resolve an effectId to its loaded .str animation(s), memoized. Non-STR entry
- *  types are logged and skipped; a fully unknown/empty effectId resolves to []. */
-export function loadEffect(effectId: number): Promise<LoadedStr[]> {
+/** Resolve an effectId to its loaded parts (STR keyframe files + CYLINDER ground
+ *  rings), memoized. SPR/FUNC/3D/sound-only entries are logged and skipped; a
+ *  fully unknown/empty effectId resolves to []. STR and CYLINDER parts keep the
+ *  table's declared order so a ring under a flash renders in the right sequence. */
+export function loadEffect(effectId: number): Promise<LoadedPart[]> {
   let p = effectCache.get(effectId);
   if (!p) {
     p = (async () => {
@@ -307,16 +411,23 @@ export function loadEffect(effectId: number): Promise<LoadedStr[]> {
       if (modern) return loadParts(modern);
       const table = await effectTable();
       const entries = table[String(effectId)] ?? [];
-      const strEntries = entries.filter((e) => e.type === "STR");
-      const others = entries.filter((e) => e.type && e.type !== "STR");
+      const others = entries.filter((e) => e.type && e.type !== "STR" && e.type !== "CYLINDER");
       if (others.length) {
         console.debug(
-          `[effects] effect ${effectId}: skipping non-STR entries`,
+          `[effects] effect ${effectId}: skipping unsupported entries`,
           others.map((e) => e.type),
         );
       }
-      const loaded = await Promise.all(strEntries.map(loadStrEntry));
-      return loaded.filter((x): x is LoadedStr => x != null);
+      const loaded = await Promise.all(
+        entries.map((e) =>
+          e.type === "STR"
+            ? loadStrEntry(e)
+            : e.type === "CYLINDER"
+              ? loadCylinderEntry(e)
+              : null,
+        ),
+      );
+      return loaded.filter((x): x is LoadedPart => x != null);
     })();
     effectCache.set(effectId, p);
   }

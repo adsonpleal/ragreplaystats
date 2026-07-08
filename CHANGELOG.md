@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-07-08
+
+- Visualizador de replay: efeitos visuais de habilidades agora incluem os **efeitos de área no chão** (tipo "cilindro" do cliente) — o pilar vermelho do Magnus Exorcismus, anéis, domos e auras de área de ~150 efeitos, renderizados fielmente como no jogo (porte do renderer de cilindros do roBrowser). Complementa os efeitos de habilidade em `.str` já suportados; habilidades sem efeito conhecido continuam sem efeito (nada de placeholders genéricos).
+
 ## 2026-07-07
 
 - Base de itens atualizada com o último patch do cliente: **389 itens novos** (equipamentos Sombrios, conjuntos de Sakray, munições de canhão, entre outros) e diversos nomes corrigidos. Os replays passam a mostrar o nome correto desses itens em vez de exibir só o ID.

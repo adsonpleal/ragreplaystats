@@ -13,11 +13,15 @@
 
 import { type PerspectiveCamera, type Scene, Vector3 } from "three";
 import { StrEffect } from "../../sim/render/strEffect";
-import { type LoadedStr, loadEffect, loadSkillMainEffect } from "../../sim/render/effectAssets";
+import { CylinderEffect } from "../../sim/render/cylinderEffect";
+import { type LoadedPart, loadEffect, loadSkillMainEffect } from "../../sim/render/effectAssets";
 import type { EntityTable } from "./Entities";
 
+/** Either renderer — both share update(elapsedMs, camera, anchor, loop) + dispose. */
+type EffectRenderer = StrEffect | CylinderEffect;
+
 interface LiveEffect {
-  effect: StrEffect;
+  effect: EffectRenderer;
   spawnMs: number;
   /** Part stagger (ms after spawnMs before this STR starts playing) — multi-part
    *  modern effects stage their waves. Animation time = elapsed - delayMs;
@@ -50,6 +54,8 @@ export class EffectsLayer {
   constructor(
     private readonly scene: Scene,
     private readonly entities: EntityTable,
+    /** World units per map tile — CylinderEffect converts its tile-unit sizes. */
+    private readonly cellSize: number,
   ) {}
 
   /** Spawn `effectId`'s STR animation(s) at `anchor` (world space). `attached`
@@ -82,10 +88,11 @@ export class EffectsLayer {
     this.instantiate(loadSkillMainEffect(skillId), aid, anchor, nowMs, opts, `skill ${skillId}`);
   }
 
-  /** Await a resolved STR list and push a live instance per part. Shared by the
-   *  effectId and skillId spawn paths. */
+  /** Await a resolved part list and push a live instance per part — a StrEffect
+   *  for keyframe parts, a CylinderEffect for procedural ground rings. Shared by
+   *  the effectId and skillId spawn paths. */
   private instantiate(
-    strsPromise: Promise<LoadedStr[]>,
+    partsPromise: Promise<LoadedPart[]>,
     aid: number,
     anchor: Vector3,
     nowMs: number,
@@ -96,14 +103,20 @@ export class EffectsLayer {
     const attached = opts.attached ?? false;
     const loop = opts.loop ?? false;
     const durationMs = opts.durationMs ?? 0;
-    strsPromise
-      .then((strs) => {
-        if (this.disposed || !strs.length) return;
-        for (const str of strs) {
+    partsPromise
+      .then((parts) => {
+        if (this.disposed || !parts.length) return;
+        for (const part of parts) {
+          const effect =
+            part.kind === "str"
+              ? new StrEffect(this.scene, part.str)
+              : new CylinderEffect(this.scene, part.cyl, this.cellSize);
+          const delayMs =
+            (part.kind === "str" ? part.str.startDelayMs : part.cyl.startDelayMs) ?? 0;
           this.live.push({
-            effect: new StrEffect(this.scene, str),
+            effect,
             spawnMs: nowMs,
-            delayMs: str.startDelayMs ?? 0,
+            delayMs,
             attached,
             aid,
             anchor: anchorSnapshot.clone(),

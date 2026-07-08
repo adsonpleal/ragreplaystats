@@ -570,7 +570,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           effectsLayer?.dispose();
           entities = new EntityTable(engine.scene, world!, replay, playerAid, playerLook, db);
           damageLayer = new DamageTextLayer(engine.scene);
-          effectsLayer = new EffectsLayer(engine.scene, entities);
+          effectsLayer = new EffectsLayer(engine.scene, entities, world!.cellSize);
           damageCursor = new EventCursor(events.damage);
           vanishCursor = new EventCursor(events.vanishes);
           optionCursor = new EventCursor(events.options);
