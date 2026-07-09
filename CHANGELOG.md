@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-07-09
+
+- Visualizador de replay: **7 habilidades que antes não mostravam nenhum efeito** agora aparecem com o visual reformulado do próprio cliente — Cross Ripper Slasher, Axe Boomerang, Repair Weapon, Jack Frost, Wall of Thorns, Poison Smoke e Earth Grave. Esses efeitos foram recuperados diretamente do cliente do jogo (o roBrowser não os incluía) e usam os arquivos `.str` originais. Habilidades sem efeito conhecido continuam sem efeito — nada de placeholders genéricos.
+
 ## 2026-07-08
 
 - Visualizador de replay: efeitos visuais de habilidades agora incluem os **efeitos de área no chão** (tipo "cilindro" do cliente) — o pilar vermelho do Magnus Exorcismus, anéis, domos e auras de área de ~150 efeitos, renderizados fielmente como no jogo (porte do renderer de cilindros do roBrowser). Complementa os efeitos de habilidade em `.str` já suportados; habilidades sem efeito conhecido continuam sem efeito (nada de placeholders genéricos).

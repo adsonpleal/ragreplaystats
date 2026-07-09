@@ -354,6 +354,39 @@ const MODERN_EFFECT_OVERRIDES: Record<number, EffectPart[]> = {
     { file: "new_arrowstorm/new_arrowstorm_01/new_arrowstorm_01", delayMs: 650 },
     { file: "new_arrowstorm/new_arrowstorm_01/new_arrowstorm_01", delayMs: 950 },
   ],
+
+  // --- Client-recovered "new_*" reworks (2025 Ragexe) --------------------
+  // roBrowserLegacy's EffectTable ships these as commented-out empty stubs
+  // (//NNN: [{}], //EF_*), so the gateway table has no row and the skill would
+  // draw nothing. Each is a dedicated procedural/STR effect in the client; the
+  // ids below are roBrowser's EFFECT consts (what skill_map points at), and the
+  // STR paths are the client's real GRF resources (data/texture/effect/new_*),
+  // confirmed present on disk. See memory: dangling-effects-recovery.
+  //
+  // EF_STIN6 (769) — GC_CROSSRIPPERSLASHER (skill 2037): flung spinning knives.
+  769: [{ file: "new_crossripperslasher/new_crossripperslasher/new_crossripperslasher" }],
+  // EF_SHIELDBOOMERANG4 (774) — NC_AXEBOOMERANG (2278): the thrown axe + impact.
+  774: [
+    { file: "new_axeboomerang/new_axeboomerang/new_axeboomerang" },
+    { file: "new_axeboomerang/new_axeboomerang_hit/new_axeboomerang_hit", delayMs: 250 },
+  ],
+  // EF_REPAIRTIME (785) — NC_REPAIR (2275): the upward-flying wrenches (flat STR).
+  785: [{ file: "repairweapon" }],
+  // EF_FROSTDIVER3 (801) — WL_JACKFROST ground (2204): erupting ice spikes.
+  801: [{ file: "new_jackfrost/new_jackfrost/new_jackfrost_00" }],
+  // EF_WALLOFTHORN (912) — GN_WALLOFTHORN ground (2482): the thorn wall + its
+  // ground shadow layer (no plain-main str exists; the client uses the _cast pair).
+  912: [
+    { file: "new_wallofthorn/new_wallofthorn_cast/new_wallofthorn_cast" },
+    { file: "new_wallofthorn/new_wallofthorn_cast_bottom/new_wallofthorn_cast_bottom" },
+  ],
+  // EF_POISONSMOKE2 (924) — GC_POISONSMOKE (2032): the drifting poison cloud.
+  924: [{ file: "new_poisonsmoke/new_poisonsmoke/new_poisonsmoke_1" }],
+  // EF_SPR_PLANT11 (927) — SO_EARTHGRAVE (2446): the spearing roots + ground crack.
+  927: [
+    { file: "new_earthgrave/new_earthgrave/new_earthgrave" },
+    { file: "new_earthgrave/new_earthgrave_bottom/new_earthgrave_bottom" },
+  ],
 };
 
 /** Client-side skill → STR overrides for skills the gateway's skill-map doesn't
