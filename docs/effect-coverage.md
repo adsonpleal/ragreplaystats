@@ -60,14 +60,16 @@ current ragassets `/effect/*` mirror.
   - Verified in isolation (glow + swirl + bubbles) **and in-replay** (`?r=wGzeHZtz5w`: the
     level-181 Arch Bishop shows the full aura at her feet, following her; other entities none).
     The swirl was lifted (renderOrder 3 + depthTest off) so it reads over the sprite.
-  - **Higher tiers (150/160/185/4th "250"): NOT implemented — a Phase-3 EXE task.** The client's
-    level→aura config is data-driven in `externalsettings.lub`: the **"250 aura" = EF_LEVEL4TH
-    (2275/2276)**, the 4th-job (base-250) max-level aura. It's rendered by the EXE's
-    `CLevel150Effect`/`CLevel150SubEffect` (+ `CLevel99Orb1/2Effect` orbs) using job-colored
-    pikapika glows (`pikapika_<job>_<color>.tga`) — none of which are in roBrowser. Recovering
-    it needs reversing those classes + extracting the assets; not guess-rendered. The current
-    viewer shows the 99 aura for all `clevel ≥ 99` (roBrowser's simplification); correct
-    tiering needs each char's job cap (MaxLevelTable). See project memory `level-aura-config`.
+  - `maxLevelAuraEffect.ts` — the **base-250 4th-job aura ("250 aura")**, **recovered from the
+    client EXE** (Phase-3 Ghidra, manual MSVC RTTI walk of `CLevel150Effect`). Decoded: one
+    class tinted by the tier's effect id — 150=blue, 160=yellow, 185=pink, **EF_LEVEL4TH (2275)
+    = gold (255,155,0)** — built from dense rings of animated `W_bubble01-27.tga` billboards +
+    two flat rotating ground rings (`cir0002`, `emp shock`). The renderer is a faithful
+    approximation (rings of gold W_bubble billboards + flat rings); golden-verified. **Wired**
+    via a tier-aware `syncAuras`: base level ≥ 250 → gold aura, 99–249 → the 99 aura (a known
+    simplification for the 150/160/185 mid-tiers). No regression (level-181 test char still gets
+    the 99 aura); the 250 path awaits a base-250 recording to eyeball. Recovery + RTTI-walk
+    recipe in project memory (`aura-150-exe-recovery`, `level-aura-config`).
 - **Remaining FUNC: magic-ring cast auras, weather, songs, screen-shake, etc.**
 - **Phases 3–4 — EXE deep-dive, EFST-buff visuals, RSM traps: not started.**
 
