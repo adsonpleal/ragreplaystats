@@ -39,8 +39,14 @@ current ragassets `/effect/*` mirror.
     (c) a ground-unit-type → trap-RSM-key map (roBrowser has it). None are buildable/verifiable
     in the current offline environment (models absent, no deploy), so RSM lands with the
     Phase-4 ground-unit work rather than as a standalone renderer.
-- **Phases 2–4 — FUNC procedurals (cast circle, auras), EXE deep-dive, cast/EFST/aura wiring:
-  not started.**
+- **Phase 2 — FUNC procedurals: cast circle DONE.** `src/sim/render/castCircleEffect.ts`
+  renders the lock-on cast ring (EF_LOCKON) — a spinning ground quad that shrinks 15→3 tiles
+  and pulses white→red — and it's **wired on cast-start** (ReplayMap `castCursor` →
+  `EffectsLayer.spawnCastCircle`, attached to the caster for the cast duration). The first
+  effect wired to a live replay event, not just skill→effectId. Verified with an isolated
+  ground render (the circle-plus-square reticle closing in). **Remaining FUNC: level/job auras
+  (`GroundAura`/`Level99`/`Level150`), magic-ring cast auras, weather, songs, etc.**
+- **Phases 3–4 — EXE deep-dive, EFST-buff / aura-on-spawn wiring: not started.**
 
 ---
 
