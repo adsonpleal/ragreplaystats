@@ -44,6 +44,7 @@ import { StrEffect } from "../sim/render/strEffect";
 import { CylinderEffect } from "../sim/render/cylinderEffect";
 import { ThreeDEffect } from "../sim/render/threeDEffect";
 import { SprAnimEffect } from "../sim/render/sprAnimEffect";
+import { QuadHornEffect } from "../sim/render/quadHornEffect";
 
 const SIZE = 512;
 const CELL_SIZE = 1; // world units per tile — must match the map scene (cellSize=1)
@@ -51,7 +52,7 @@ const GROUND_TILES = 16;
 
 /** One renderer over a loaded part; both share update(...)/dispose(). */
 interface StageEffect {
-  kind: "str" | "cylinder" | "threeD" | "sprAnim";
+  kind: "str" | "cylinder" | "threeD" | "sprAnim" | "quadHorn";
   update(elapsedMs: number, camera: PerspectiveCamera, anchor: Vector3, loop: boolean): boolean;
   dispose(): void;
 }
@@ -202,7 +203,9 @@ async function createStage(seed = 1): Promise<Stage> {
         return Object.assign(new CylinderEffect(scene, p.cyl, CELL_SIZE) as unknown as StageEffect, { kind: "cylinder" as const });
       if (p.kind === "threeD")
         return Object.assign(new ThreeDEffect(scene, p.three, CELL_SIZE) as unknown as StageEffect, { kind: "threeD" as const });
-      return Object.assign(new SprAnimEffect(scene, p.spr, CELL_SIZE) as unknown as StageEffect, { kind: "sprAnim" as const });
+      if (p.kind === "sprAnim")
+        return Object.assign(new SprAnimEffect(scene, p.spr, CELL_SIZE) as unknown as StageEffect, { kind: "sprAnim" as const });
+      return Object.assign(new QuadHornEffect(scene, p.quad, CELL_SIZE) as unknown as StageEffect, { kind: "quadHorn" as const });
     });
     delays = parts.map((p) =>
       (p.kind === "str"
@@ -211,7 +214,9 @@ async function createStage(seed = 1): Promise<Stage> {
           ? p.cyl.startDelayMs
           : p.kind === "threeD"
             ? p.three.startDelayMs
-            : p.spr.startDelayMs) ?? 0,
+            : p.kind === "sprAnim"
+              ? p.spr.startDelayMs
+              : p.quad.startDelayMs) ?? 0,
     );
     await new Promise((r) => setTimeout(r, 700)); // let textures decode
     return parts;
@@ -277,11 +282,19 @@ export async function mount(effectIds: number | number[], seed = 1): Promise<Loa
           alphaMax: p.three.alphaMax,
           blendMode: p.three.blendMode,
         };
+      if (p.kind === "sprAnim")
+        return {
+          kind: "sprAnim",
+          frames: p.spr.frames.length,
+          loop: p.spr.loop,
+          head: p.spr.head,
+        };
       return {
-        kind: "sprAnim",
-        frames: p.spr.frames.length,
-        loop: p.spr.loop,
-        head: p.spr.head,
+        kind: "quadHorn",
+        texture: p.quad.texture ? "loaded" : null,
+        height: p.quad.height,
+        bottomSize: p.quad.bottomSize,
+        animation: p.quad.animation,
       };
     }),
   };

@@ -117,6 +117,24 @@ export interface LoadedThreeD {
   startDelayMs?: number;
 }
 
+/** A resolved "QuadHorn" pyramid spike (Ice Wall / stone spikes). Sizes/offsets in
+ *  tiles; QuadHornEffect scales a unit pyramid by them. Random `[min,max]` fields are
+ *  sampled once here (per instance). */
+export interface LoadedQuadHorn {
+  texture: Texture | null;
+  blendMode: number;
+  height: number;
+  bottomSize: number;
+  offsetX: number; offsetY: number; offsetZ: number;
+  rotateX: number; rotateY: number; rotateZ: number;
+  color: [number, number, number, number];
+  animation: number;
+  animationSpeed: number;
+  animationOut: boolean;
+  duration: number;
+  startDelayMs?: number;
+}
+
 /** A played .spr/.act sprite animation, resolved to its composited frame textures
  *  + timing (from the gateway's /effects/sprites/<key>/ bundle). SprAnimEffect
  *  swaps the frame texture on `delayMs` and sizes the quad to each frame's pixels. */
@@ -136,7 +154,8 @@ export type LoadedPart =
   | { kind: "str"; str: LoadedStr }
   | { kind: "cylinder"; cyl: LoadedCylinder }
   | { kind: "threeD"; three: LoadedThreeD }
-  | { kind: "sprAnim"; spr: LoadedSprAnim };
+  | { kind: "sprAnim"; spr: LoadedSprAnim }
+  | { kind: "quadHorn"; quad: LoadedQuadHorn };
 
 /** A skill's effect ids from the SkillEffect table. */
 interface SkillEffectEntry {
@@ -579,6 +598,44 @@ function loadThreeDEntry(entry: EffectTableEntry, twoD = false): LoadedPart[] {
   return out;
 }
 
+/** Resolve one "QuadHorn" table entry (Ice Wall / stone spikes). Fields may be a
+ *  scalar or a `[min,max]` range sampled once here (roBrowser QuadHorn). Defaults
+ *  follow the constructor (offsets 0.5, white, blendMode 1). textureFile is
+ *  GRF-relative under data/texture/ — strip the leading "effect/" like 3D. */
+function loadQuadHornEntry(entry: EffectTableEntry): LoadedPart {
+  const e = entry as unknown as Record<string, unknown>;
+  const rand = (min: number, max: number) =>
+    parseFloat(Math.min(min + Math.random() * (max - min), max).toFixed(3));
+  // A field that may be a number or a [min,max] pair; `dflt` when absent.
+  const val = (k: string, dflt: number): number => {
+    const v = e[k];
+    if (Array.isArray(v)) return rand(v[0], v[1]);
+    return typeof v === "number" ? v : dflt;
+  };
+  const texFile = typeof e.textureFile === "string"
+    ? e.textureFile.replace(/^effect[/\\]/i, "")
+    : undefined;
+  const color = Array.isArray(e.color) ? (e.color as number[]) : [1, 1, 1, 1];
+  const quad: LoadedQuadHorn = {
+    texture: texFile ? loadEffectTexture(texFile) : null,
+    blendMode: val("blendMode", 1),
+    height: val("height", 0),
+    bottomSize: val("bottomSize", 0),
+    offsetX: val("offsetX", 0.5),
+    offsetY: val("offsetY", 0.5),
+    offsetZ: val("offsetZ", 0.5),
+    rotateX: val("rotateX", 0),
+    rotateY: val("rotateY", 0),
+    rotateZ: val("rotateZ", 0),
+    color: [color[0] ?? 1, color[1] ?? 1, color[2] ?? 1, color[3] ?? 1],
+    animation: val("animation", 0),
+    animationSpeed: val("animationSpeed", 100),
+    animationOut: !!e.animationOut,
+    duration: val("duration", 0),
+  };
+  return { kind: "quadHorn", quad };
+}
+
 // Load a GPU texture from a full URL (sprite-effect frame PNGs, which — unlike STR
 // layer textures — already carry a complete gateway path). Cached by URL.
 function loadTextureByUrl(url: string): Texture {
@@ -673,7 +730,7 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
       if (modern) return loadParts(modern);
       const table = await effectTable();
       const entries = table[String(effectId)] ?? [];
-      const SUPPORTED = new Set(["STR", "CYLINDER", "3D", "2D", "SPR"]);
+      const SUPPORTED = new Set(["STR", "CYLINDER", "3D", "2D", "SPR", "QuadHorn"]);
       const others = entries.filter((e) => e.type && !SUPPORTED.has(e.type));
       if (others.length) {
         console.debug(
@@ -695,7 +752,9 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
                   ? loadThreeDEntry(e, true)
                   : e.type === "SPR"
                     ? loadSprEntry(effectId, e)
-                    : null,
+                    : e.type === "QuadHorn"
+                      ? loadQuadHornEntry(e)
+                      : null,
         ),
       );
       return loaded.flat().filter((x): x is LoadedPart => x != null);
