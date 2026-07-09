@@ -43,6 +43,7 @@ import { type LoadedPart, loadEffect } from "../sim/render/effectAssets";
 import { StrEffect } from "../sim/render/strEffect";
 import { CylinderEffect } from "../sim/render/cylinderEffect";
 import { ThreeDEffect } from "../sim/render/threeDEffect";
+import { SprAnimEffect } from "../sim/render/sprAnimEffect";
 
 const SIZE = 512;
 const CELL_SIZE = 1; // world units per tile — must match the map scene (cellSize=1)
@@ -50,7 +51,7 @@ const GROUND_TILES = 16;
 
 /** One renderer over a loaded part; both share update(...)/dispose(). */
 interface StageEffect {
-  kind: "str" | "cylinder" | "threeD";
+  kind: "str" | "cylinder" | "threeD" | "sprAnim";
   update(elapsedMs: number, camera: PerspectiveCamera, anchor: Vector3, loop: boolean): boolean;
   dispose(): void;
 }
@@ -199,10 +200,18 @@ async function createStage(seed = 1): Promise<Stage> {
         return Object.assign(new StrEffect(scene, p.str) as unknown as StageEffect, { kind: "str" as const });
       if (p.kind === "cylinder")
         return Object.assign(new CylinderEffect(scene, p.cyl, CELL_SIZE) as unknown as StageEffect, { kind: "cylinder" as const });
-      return Object.assign(new ThreeDEffect(scene, p.three, CELL_SIZE) as unknown as StageEffect, { kind: "threeD" as const });
+      if (p.kind === "threeD")
+        return Object.assign(new ThreeDEffect(scene, p.three, CELL_SIZE) as unknown as StageEffect, { kind: "threeD" as const });
+      return Object.assign(new SprAnimEffect(scene, p.spr, CELL_SIZE) as unknown as StageEffect, { kind: "sprAnim" as const });
     });
     delays = parts.map((p) =>
-      (p.kind === "str" ? p.str.startDelayMs : p.kind === "cylinder" ? p.cyl.startDelayMs : p.three.startDelayMs) ?? 0,
+      (p.kind === "str"
+        ? p.str.startDelayMs
+        : p.kind === "cylinder"
+          ? p.cyl.startDelayMs
+          : p.kind === "threeD"
+            ? p.three.startDelayMs
+            : p.spr.startDelayMs) ?? 0,
     );
     await new Promise((r) => setTimeout(r, 700)); // let textures decode
     return parts;
@@ -260,12 +269,19 @@ export async function mount(effectIds: number | number[], seed = 1): Promise<Loa
           alphaMax: p.cyl.alphaMax,
           duration: p.cyl.duration,
         };
+      if (p.kind === "threeD")
+        return {
+          kind: "threeD",
+          texture: p.three.texture ? "loaded" : null,
+          duration: p.three.duration,
+          alphaMax: p.three.alphaMax,
+          blendMode: p.three.blendMode,
+        };
       return {
-        kind: "threeD",
-        texture: p.three.texture ? "loaded" : null,
-        duration: p.three.duration,
-        alphaMax: p.three.alphaMax,
-        blendMode: p.three.blendMode,
+        kind: "sprAnim",
+        frames: p.spr.frames.length,
+        loop: p.spr.loop,
+        head: p.spr.head,
       };
     }),
   };

@@ -15,11 +15,12 @@ import { type PerspectiveCamera, type Scene, Vector3 } from "three";
 import { StrEffect } from "../../sim/render/strEffect";
 import { CylinderEffect } from "../../sim/render/cylinderEffect";
 import { ThreeDEffect } from "../../sim/render/threeDEffect";
+import { SprAnimEffect } from "../../sim/render/sprAnimEffect";
 import { type LoadedPart, loadEffect, loadSkillMainEffect } from "../../sim/render/effectAssets";
 import type { EntityTable } from "./Entities";
 
 /** Any renderer — all share update(elapsedMs, camera, anchor, loop) + dispose. */
-type EffectRenderer = StrEffect | CylinderEffect | ThreeDEffect;
+type EffectRenderer = StrEffect | CylinderEffect | ThreeDEffect | SprAnimEffect;
 
 interface LiveEffect {
   effect: EffectRenderer;
@@ -116,9 +117,12 @@ export class EffectsLayer {
           } else if (part.kind === "cylinder") {
             effect = new CylinderEffect(this.scene, part.cyl, this.cellSize);
             delayMs = part.cyl.startDelayMs ?? 0;
-          } else {
+          } else if (part.kind === "threeD") {
             effect = new ThreeDEffect(this.scene, part.three, this.cellSize);
             delayMs = part.three.startDelayMs ?? 0;
+          } else {
+            effect = new SprAnimEffect(this.scene, part.spr, this.cellSize);
+            delayMs = part.spr.startDelayMs ?? 0;
           }
           this.live.push({
             effect,

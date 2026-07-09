@@ -18,6 +18,8 @@ import {
 } from "three";
 import {
   effectSkillMapUrl,
+  effectSpriteFrameUrl,
+  effectSpriteUrl,
   effectStrUrl,
   effectTableUrl,
   effectTextureUrl,
@@ -115,13 +117,26 @@ export interface LoadedThreeD {
   startDelayMs?: number;
 }
 
+/** A played .spr/.act sprite animation, resolved to its composited frame textures
+ *  + timing (from the gateway's /effects/sprites/<key>/ bundle). SprAnimEffect
+ *  swaps the frame texture on `delayMs` and sizes the quad to each frame's pixels. */
+export interface LoadedSprAnim {
+  frames: { texture: Texture; delayMs: number; offX: number; offY: number }[];
+  loop: boolean;
+  stopAtEnd: boolean;
+  head: boolean;
+  yOffset: number;
+  startDelayMs?: number;
+}
+
 /** An effect resolves to a list of these — each renders as its own StrEffect,
- *  CylinderEffect or ThreeDEffect, all anchored together. A single effectId can
- *  mix them (e.g. a ground ring plus a keyframe flash plus a mote cloud). */
+ *  CylinderEffect, ThreeDEffect or SprAnimEffect, all anchored together. A single
+ *  effectId can mix them (e.g. a ground ring plus a keyframe flash plus a sprite). */
 export type LoadedPart =
   | { kind: "str"; str: LoadedStr }
   | { kind: "cylinder"; cyl: LoadedCylinder }
-  | { kind: "threeD"; three: LoadedThreeD };
+  | { kind: "threeD"; three: LoadedThreeD }
+  | { kind: "sprAnim"; spr: LoadedSprAnim };
 
 /** A skill's effect ids from the SkillEffect table. */
 interface SkillEffectEntry {
@@ -564,6 +579,67 @@ function loadThreeDEntry(entry: EffectTableEntry, twoD = false): LoadedPart[] {
   return out;
 }
 
+// Load a GPU texture from a full URL (sprite-effect frame PNGs, which — unlike STR
+// layer textures — already carry a complete gateway path). Cached by URL.
+function loadTextureByUrl(url: string): Texture {
+  let tex = textureCache.get(url);
+  if (!tex) {
+    tex = textureLoader.load(url, undefined, undefined, () =>
+      console.debug("[effects] sprite frame failed", url),
+    );
+    tex.colorSpace = SRGBColorSpace;
+    tex.wrapS = tex.wrapT = ClampToEdgeWrapping;
+    tex.minFilter = tex.magFilter = LinearFilter;
+    tex.generateMipmaps = false;
+    textureCache.set(url, tex);
+  }
+  return tex;
+}
+
+// Legacy name-keyed sprite bundles (built by extract-grf.mjs's original
+// SPRITE_EFFECT_TABLE for map ambiance). The client-first pipeline builds every SPR
+// effect keyed by id under eff_<id>; until that ships, these three bridge the effect
+// ids whose bundles already exist on the gateway so the SPR path is live + testable.
+const SPRITE_KEY_ALIASES: Record<number, string> = {
+  44: "smoke",
+  47: "torch_01",
+  165: "banjjakii",
+};
+
+/** Resolve a "SPR" (or sprite-textured) effect id to its played-sprite bundle:
+ *  fetch /effects/sprites/<key>/sprite.json and load each composited frame PNG.
+ *  `key` is the legacy alias if one exists, else `eff_<id>` (the id-keyed bundle the
+ *  gateway extraction builds). A missing bundle (404) resolves to null — nothing
+ *  renders, never a wrong stand-in. Memoised by the caller (loadEffect). */
+async function loadSprEntry(effectId: number, entry: EffectTableEntry): Promise<LoadedPart | null> {
+  const e = entry as unknown as Record<string, unknown>;
+  const key = SPRITE_KEY_ALIASES[effectId] ?? `eff_${effectId}`;
+  let bundle: { frames: { img: string; delay: number; offset: [number, number] }[] };
+  try {
+    const res = await fetch(effectSpriteUrl(key), { cache: "force-cache" });
+    if (!res.ok) return null; // no bundle for this effect (yet) → render nothing
+    bundle = await res.json();
+  } catch (err) {
+    console.debug("[effects] sprite bundle load failed", key, err);
+    return null;
+  }
+  if (!bundle.frames?.length) return null;
+  const spr: LoadedSprAnim = {
+    frames: bundle.frames.map((f) => ({
+      texture: loadTextureByUrl(effectSpriteFrameUrl(key, f.img)),
+      delayMs: f.delay > 0 ? f.delay : 100,
+      offX: f.offset?.[0] ?? 0,
+      offY: f.offset?.[1] ?? 0,
+    })),
+    // `repeat` loops; otherwise `stopAtEnd` holds the last frame, else play once.
+    loop: !!e.repeat,
+    stopAtEnd: !!e.stopAtEnd,
+    head: !!e.head,
+    yOffset: typeof e.yOffset === "number" ? e.yOffset : 0,
+  };
+  return { kind: "sprAnim", spr };
+}
+
 /** Fetch + texture-load one parsed .str by gateway file name. Nested STRs (the
  *  modern "new_*" effect rework lives in per-effect subdirs) reference their
  *  textures by bare name relative to the STR's own directory — resolve them
@@ -597,7 +673,7 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
       if (modern) return loadParts(modern);
       const table = await effectTable();
       const entries = table[String(effectId)] ?? [];
-      const SUPPORTED = new Set(["STR", "CYLINDER", "3D", "2D"]);
+      const SUPPORTED = new Set(["STR", "CYLINDER", "3D", "2D", "SPR"]);
       const others = entries.filter((e) => e.type && !SUPPORTED.has(e.type));
       if (others.length) {
         console.debug(
@@ -617,7 +693,9 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
                 ? loadThreeDEntry(e)
                 : e.type === "2D"
                   ? loadThreeDEntry(e, true)
-                  : null,
+                  : e.type === "SPR"
+                    ? loadSprEntry(effectId, e)
+                    : null,
         ),
       );
       return loaded.flat().filter((x): x is LoadedPart => x != null);

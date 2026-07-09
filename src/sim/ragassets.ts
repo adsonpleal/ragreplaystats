@@ -132,6 +132,18 @@ export function effectTextureUrl(file: string): string {
   return `${RAGASSETS_BASE}/effect/texture?file=${encodeURIComponent(file)}`;
 }
 
+/** A played-sprite (.spr/.act) effect bundle: /effects/sprites/<key>/sprite.json =
+ *  { frames: [{ img, delay, offset:[x,y] }] }. Pre-composited by extract-grf.mjs
+ *  (buildSpriteEffect). `key` is the URL-safe slug the bundle is served under. */
+export function effectSpriteUrl(key: string): string {
+  return `${RAGASSETS_BASE}/effects/sprites/${encodeURIComponent(key)}/sprite.json`;
+}
+
+/** One composited frame PNG of a played-sprite effect bundle. */
+export function effectSpriteFrameUrl(key: string, img: string): string {
+  return `${RAGASSETS_BASE}/effects/sprites/${encodeURIComponent(key)}/${img}`;
+}
+
 /** Mob/monster billboard canvas. Sized like the latamvisuais pet canvas — the
  *  largest tameable monster extends ~189px up / 46px down / 114px sideways. */
 export const MOB_SPRITE = { w: 248, h: 256, anchorX: 124, anchorY: 200 } as const;
