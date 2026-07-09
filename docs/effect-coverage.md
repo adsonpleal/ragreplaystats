@@ -44,9 +44,19 @@ current ragassets `/effect/*` mirror.
   and pulses white→red — and it's **wired on cast-start** (ReplayMap `castCursor` →
   `EffectsLayer.spawnCastCircle`, attached to the caster for the cast duration). The first
   effect wired to a live replay event, not just skill→effectId. Verified with an isolated
-  ground render (the circle-plus-square reticle closing in). **Remaining FUNC: level/job auras
-  (`GroundAura`/`Level99`/`Level150`), magic-ring cast auras, weather, songs, etc.**
-- **Phases 3–4 — EXE deep-dive, EFST-buff / aura-on-spawn wiring: not started.**
+  ground render (the circle-plus-square reticle closing in).
+- **Phase 2 — level-99 aura: GroundAura DONE (renderer).** `src/sim/render/groundAuraEffect.ts`
+  renders EF_LEVEL99_2's two additive pikapika2 ground-glow discs (the per-frame breathing
+  accumulator reformulated as a scrub-safe sine). Reached via FUNC dispatch (`loadFuncEntry`,
+  keyed by the Phase-0 `func` tag). Verified isolated (blue sparkle disc, flat, breathing).
+  **Remaining aura renderers: `SwirlingAura` spiral ribbons (EF_LEVEL99) + `Level99Bubble`
+  rising bubbles (EF_LEVEL99_3) — both large dynamic-geometry ports — plus level-150/175
+  (roBrowser only implements 99).**
+- **Aura wiring (Phase 4): not started.** A persistent per-actor spawn keyed on `clevel ≥ 99`
+  (local player from session chunk 1016; others from the spawn packet `level`), attached +
+  culled on the actor's vanish and re-spawned on a backward-seek layer rebuild.
+- **Remaining FUNC: magic-ring cast auras, weather, songs, screen-shake, etc.**
+- **Phases 3–4 — EXE deep-dive, EFST-buff visuals, RSM traps: not started.**
 
 ---
 
