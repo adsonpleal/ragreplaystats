@@ -64,7 +64,11 @@ export class SwirlingAuraEffect {
       map: texture,
       transparent: true,
       depthWrite: false,
-      depthTest: true,
+      // No depth TEST: the ribbons rise from the feet, so depth-testing against the
+      // character sprite (drawn just before) culls the parts behind it and the aura
+      // all but vanishes over a bright map. Off + additive lets the glow layer over
+      // the sprite (renderOrder 3, with the skill effects) — the intended aura look.
+      depthTest: false,
       fog: false,
       side: DoubleSide,
       blending: AdditiveBlending, // roBrowser: blendFunc(SRC_ALPHA, ONE)
@@ -91,7 +95,7 @@ export class SwirlingAuraEffect {
       geometry.setIndex(idx.slice());
       const mesh = new Mesh(geometry, this.material);
       mesh.frustumCulled = false;
-      mesh.renderOrder = 2; // above the ground glow, under the character
+      mesh.renderOrder = 3; // over the character sprite, with the skill effects
       this.bands.push({
         rotStart: ec * 90,
         maxHeight: (15 - 2 * ec) * GAME_TO_WORLD,
