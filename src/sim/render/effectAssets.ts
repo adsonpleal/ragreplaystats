@@ -166,7 +166,8 @@ export type LoadedPart =
   | { kind: "sprAnim"; spr: LoadedSprAnim }
   | { kind: "quadHorn"; quad: LoadedQuadHorn }
   | { kind: "groundAura"; aura: LoadedGroundAura }
-  | { kind: "swirlingAura"; texture: Texture | null };
+  | { kind: "swirlingAura"; texture: Texture | null }
+  | { kind: "levelBubble"; texture: Texture | null };
 
 /** A skill's effect ids from the SkillEffect table. */
 interface SkillEffectEntry {
@@ -655,6 +656,7 @@ export function levelAuraParts(): LoadedPart[] {
   return [
     { kind: "swirlingAura", texture: loadEffectTexture("ring_blue.tga") },
     { kind: "groundAura", aura: { texture: loadEffectTexture("pikapika2.bmp"), size: 100, distance: 15 } },
+    { kind: "levelBubble", texture: loadEffectTexture("whitelight.tga") },
   ];
 }
 
@@ -675,6 +677,8 @@ function loadFuncEntry(entry: EffectTableEntry): LoadedPart | null {
       return { kind: "groundAura", aura: { texture: loadEffectTexture("pikapika2.bmp"), size: 100, distance: 15 } };
     case "SwirlingAura": // EF_LEVEL99 — new SwirlingAura(pos, 'ring_blue.tga', tick)
       return { kind: "swirlingAura", texture: loadEffectTexture("ring_blue.tga") };
+    case "Level99Bubble": // EF_LEVEL99_3 — new Level99Bubble(pos, 'whitelight.tga', tick, 1)
+      return { kind: "levelBubble", texture: loadEffectTexture("whitelight.tga") };
     default:
       return null;
   }

@@ -20,6 +20,7 @@ import { QuadHornEffect } from "../../sim/render/quadHornEffect";
 import { CastCircleEffect } from "../../sim/render/castCircleEffect";
 import { GroundAuraEffect } from "../../sim/render/groundAuraEffect";
 import { SwirlingAuraEffect } from "../../sim/render/swirlingAuraEffect";
+import { Level99BubbleEffect } from "../../sim/render/level99BubbleEffect";
 import {
   type LoadedPart,
   levelAuraParts,
@@ -39,7 +40,8 @@ type EffectRenderer =
   | QuadHornEffect
   | CastCircleEffect
   | GroundAuraEffect
-  | SwirlingAuraEffect;
+  | SwirlingAuraEffect
+  | Level99BubbleEffect;
 
 interface LiveEffect {
   effect: EffectRenderer;
@@ -187,6 +189,8 @@ export class EffectsLayer {
         return { effect: new GroundAuraEffect(this.scene, part.aura, this.cellSize), delayMs: 0 };
       case "swirlingAura":
         return { effect: new SwirlingAuraEffect(this.scene, part.texture, this.cellSize), delayMs: 0 };
+      case "levelBubble":
+        return { effect: new Level99BubbleEffect(this.scene, part.texture, this.cellSize), delayMs: 0 };
     }
   }
 
