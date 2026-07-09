@@ -15,13 +15,20 @@ current ragassets `/effect/*` mirror.
 - **Phase 0 — pipeline honesty (ragassets): DONE.** `gen-effect-tables.mjs` no longer drops
   FUNC bodies — each FUNC part gets a stable `func` dispatch name and the sources are lifted
   into `effect_funcs.json`; `effect_provenance.json` tags every id's origin.
-- **Phase 1 — data-driven renderers (viewer): 3D + 2D DONE.** `src/sim/render/threeDEffect.ts`
-  renders the "3D" billboard-particle type (~117 ids) and the "2D" overlay variant (6 ids),
-  loaded/expanded by `loadThreeDEntry` (duplicate stagger, random jitter, circlePattern).
-  Both verified on the golden stage (effect 37 Improve Concentration; effect 1 EF_HIT lens
-  burst). **Remaining data-driven: QuadHorn (4 ids), SPR (69, needs a sprite-anim pipeline),
-  RSM (19, 3D models).**
-- **Phases 2–4 — FUNC procedurals, EXE deep-dive, cast/EFST/aura wiring: not started.**
+- **Phase 1 — data-driven renderers (viewer): 3D + 2D + SPR DONE.**
+  - `src/sim/render/threeDEffect.ts` renders the "3D" billboard-particle type (~117 ids) and
+    the "2D" overlay variant (6 ids), loaded/expanded by `loadThreeDEntry` (duplicate stagger,
+    random jitter, circlePattern). Verified on the golden stage (effect 37 Improve
+    Concentration; effect 1 EF_HIT lens burst).
+  - `src/sim/render/sprAnimEffect.ts` renders the "SPR" played-sprite type (69 ids) as a
+    frame-swapping billboard, from the gateway's `/effects/sprites/<key>/` bundles.
+    `loadSprEntry` resolves an id to its bundle (`eff_<id>`, else a legacy alias). Verified on
+    effect 165 (banjjakii). The gateway now builds a bundle per SPR id (extract-grf.mjs
+    `sprites/eff_<id>/`, verified byte-identical to the proven build); **full 69-id coverage
+    needs one `--effects` run + deploy.**
+  - **Remaining data-driven: QuadHorn (4 ids, pyramid mesh), RSM (19, 3D models).**
+- **Phases 2–4 — FUNC procedurals (cast circle, auras), EXE deep-dive, cast/EFST/aura wiring:
+  not started.**
 
 ---
 
