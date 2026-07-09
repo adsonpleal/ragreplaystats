@@ -14,11 +14,12 @@
 import { type PerspectiveCamera, type Scene, Vector3 } from "three";
 import { StrEffect } from "../../sim/render/strEffect";
 import { CylinderEffect } from "../../sim/render/cylinderEffect";
+import { ThreeDEffect } from "../../sim/render/threeDEffect";
 import { type LoadedPart, loadEffect, loadSkillMainEffect } from "../../sim/render/effectAssets";
 import type { EntityTable } from "./Entities";
 
-/** Either renderer — both share update(elapsedMs, camera, anchor, loop) + dispose. */
-type EffectRenderer = StrEffect | CylinderEffect;
+/** Any renderer — all share update(elapsedMs, camera, anchor, loop) + dispose. */
+type EffectRenderer = StrEffect | CylinderEffect | ThreeDEffect;
 
 interface LiveEffect {
   effect: EffectRenderer;
@@ -107,12 +108,18 @@ export class EffectsLayer {
       .then((parts) => {
         if (this.disposed || !parts.length) return;
         for (const part of parts) {
-          const effect =
-            part.kind === "str"
-              ? new StrEffect(this.scene, part.str)
-              : new CylinderEffect(this.scene, part.cyl, this.cellSize);
-          const delayMs =
-            (part.kind === "str" ? part.str.startDelayMs : part.cyl.startDelayMs) ?? 0;
+          let effect: EffectRenderer;
+          let delayMs: number;
+          if (part.kind === "str") {
+            effect = new StrEffect(this.scene, part.str);
+            delayMs = part.str.startDelayMs ?? 0;
+          } else if (part.kind === "cylinder") {
+            effect = new CylinderEffect(this.scene, part.cyl, this.cellSize);
+            delayMs = part.cyl.startDelayMs ?? 0;
+          } else {
+            effect = new ThreeDEffect(this.scene, part.three, this.cellSize);
+            delayMs = part.three.startDelayMs ?? 0;
+          }
           this.live.push({
             effect,
             spawnMs: nowMs,

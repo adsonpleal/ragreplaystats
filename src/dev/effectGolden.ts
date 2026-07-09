@@ -42,6 +42,7 @@ import {
 import { type LoadedPart, loadEffect } from "../sim/render/effectAssets";
 import { StrEffect } from "../sim/render/strEffect";
 import { CylinderEffect } from "../sim/render/cylinderEffect";
+import { ThreeDEffect } from "../sim/render/threeDEffect";
 
 const SIZE = 512;
 const CELL_SIZE = 1; // world units per tile — must match the map scene (cellSize=1)
@@ -49,7 +50,7 @@ const GROUND_TILES = 16;
 
 /** One renderer over a loaded part; both share update(...)/dispose(). */
 interface StageEffect {
-  kind: "str" | "cylinder";
+  kind: "str" | "cylinder" | "threeD";
   update(elapsedMs: number, camera: PerspectiveCamera, anchor: Vector3, loop: boolean): boolean;
   dispose(): void;
 }
@@ -193,15 +194,16 @@ async function createStage(seed = 1): Promise<Stage> {
     const partsPerId = await Promise.all(effectIds.map((id) => loadEffect(id)));
     restore();
     const parts = partsPerId.flat();
-    effects = parts.map((p) =>
-      p.kind === "str"
-        ? Object.assign(new StrEffect(scene, p.str) as unknown as StageEffect, { kind: "str" as const })
-        : Object.assign(
-            new CylinderEffect(scene, p.cyl, CELL_SIZE) as unknown as StageEffect,
-            { kind: "cylinder" as const },
-          ),
+    effects = parts.map((p) => {
+      if (p.kind === "str")
+        return Object.assign(new StrEffect(scene, p.str) as unknown as StageEffect, { kind: "str" as const });
+      if (p.kind === "cylinder")
+        return Object.assign(new CylinderEffect(scene, p.cyl, CELL_SIZE) as unknown as StageEffect, { kind: "cylinder" as const });
+      return Object.assign(new ThreeDEffect(scene, p.three, CELL_SIZE) as unknown as StageEffect, { kind: "threeD" as const });
+    });
+    delays = parts.map((p) =>
+      (p.kind === "str" ? p.str.startDelayMs : p.kind === "cylinder" ? p.cyl.startDelayMs : p.three.startDelayMs) ?? 0,
     );
-    delays = parts.map((p) => (p.kind === "str" ? p.str.startDelayMs : p.cyl.startDelayMs) ?? 0);
     await new Promise((r) => setTimeout(r, 700)); // let textures decode
     return parts;
   };
@@ -245,19 +247,27 @@ export async function mount(effectIds: number | number[], seed = 1): Promise<Loa
   (window as unknown as { __golden?: unknown }).__golden = {
     frame,
     montage,
-    info: parts.map((p) =>
-      p.kind === "str"
-        ? { kind: "str", fps: p.str.fps, maxKey: p.str.maxKey, layers: p.str.layers.length }
-        : {
-            kind: "cylinder",
-            texture: p.cyl.texture ? "loaded" : null,
-            topSize: p.cyl.topSize,
-            bottomSize: p.cyl.bottomSize,
-            height: p.cyl.height,
-            alphaMax: p.cyl.alphaMax,
-            duration: p.cyl.duration,
-          },
-    ),
+    info: parts.map((p) => {
+      if (p.kind === "str")
+        return { kind: "str", fps: p.str.fps, maxKey: p.str.maxKey, layers: p.str.layers.length };
+      if (p.kind === "cylinder")
+        return {
+          kind: "cylinder",
+          texture: p.cyl.texture ? "loaded" : null,
+          topSize: p.cyl.topSize,
+          bottomSize: p.cyl.bottomSize,
+          height: p.cyl.height,
+          alphaMax: p.cyl.alphaMax,
+          duration: p.cyl.duration,
+        };
+      return {
+        kind: "threeD",
+        texture: p.three.texture ? "loaded" : null,
+        duration: p.three.duration,
+        alphaMax: p.three.alphaMax,
+        blendMode: p.three.blendMode,
+      };
+    }),
   };
   return parts;
 }

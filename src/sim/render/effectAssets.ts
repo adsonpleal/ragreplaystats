@@ -85,12 +85,41 @@ export interface LoadedCylinder {
   startDelayMs?: number;
 }
 
-/** An effect resolves to a list of these — each renders as its own StrEffect or
- *  CylinderEffect, all anchored together. A single effectId can mix both (e.g. a
- *  ground ring plus a keyframe flash). */
+/** A parsed + texture-loaded "3D" billboard particle, fully resolved for one
+ *  duplicate instance (randoms sampled, `*Delta` applied) — ThreeDEffect just
+ *  plays it. Positions are in tiles; sizes in sprite-px (× UNITS_PER_PX at draw). */
+export interface LoadedThreeD {
+  texture: Texture | null;
+  overlay: boolean;
+  blendMode: number;
+  duration: number;
+  alphaMax: number;
+  red: number;
+  green: number;
+  blue: number;
+  posxStart: number; posxEnd: number; posxSmooth: boolean;
+  posyStart: number; posyEnd: number; posySmooth: boolean;
+  poszStart: number; poszEnd: number; poszSmooth: boolean;
+  rotatePosX: number; rotatePosY: number; nbOfRotation: number;
+  rotateLate: number; rotationClockwise: boolean;
+  retreat: number; arc: number;
+  sizeStartX: number; sizeEndX: number;
+  sizeStartY: number; sizeEndY: number;
+  sizeSmooth: boolean;
+  angle: number; toAngle: number; rotate: boolean; rotateWithCamera: boolean;
+  fadeIn: boolean; fadeOut: boolean;
+  sparkling: boolean; sparkNumber: number;
+  /** Duplicate stagger (ms) — same staging role as LoadedStr.startDelayMs. */
+  startDelayMs?: number;
+}
+
+/** An effect resolves to a list of these — each renders as its own StrEffect,
+ *  CylinderEffect or ThreeDEffect, all anchored together. A single effectId can
+ *  mix them (e.g. a ground ring plus a keyframe flash plus a mote cloud). */
 export type LoadedPart =
   | { kind: "str"; str: LoadedStr }
-  | { kind: "cylinder"; cyl: LoadedCylinder };
+  | { kind: "cylinder"; cyl: LoadedCylinder }
+  | { kind: "threeD"; three: LoadedThreeD };
 
 /** A skill's effect ids from the SkillEffect table. */
 interface SkillEffectEntry {
@@ -378,6 +407,126 @@ function loadCylinderEntry(entry: EffectTableEntry): LoadedPart {
   return { kind: "cylinder", cyl };
 }
 
+// roBrowser randBetween (3-dp clamp to max), used to sample the 3D pos/size
+// jitter fields once at load (per duplicate instance).
+function randBetween(min: number, max: number): number {
+  return parseFloat(Math.min(min + Math.random() * (max - min), max).toFixed(3));
+}
+
+/** Resolve one "3D" table entry into `duplicate` LoadedThreeD instances, faithfully
+ *  porting roBrowser ThreeDEffect's constructor (pos/size variant collapse, random
+ *  jitter, `*Delta` scaling by duplicateID) and EffectManager's duplicate stagger
+ *  (`timeBetweenDupli*id`). Advanced roBrowser paths not yet ported — projectile
+ *  travel (fromSrc/toSrc, needs a target position), circlePattern, soulStrike/
+ *  drainPattern, and sprite-textured 3D (spriteName/absoluteSpriteName/shadowTexture,
+ *  needs .spr/.act) — are skipped: the part still renders its base `file` billboard,
+ *  or nothing if it has no plain texture (never a wrong stand-in). */
+function loadThreeDEntry(entry: EffectTableEntry): LoadedPart[] {
+  const e = entry as unknown as Record<string, number | number[] | boolean | string | undefined>;
+  const n = (k: string, d: number): number => {
+    const v = e[k];
+    return typeof v === "number" && !isNaN(v) ? v : d;
+  };
+  const has = (k: string): boolean => typeof e[k] === "number";
+  const b = (k: string): boolean => !!e[k];
+  // The table's 3D `file` is GRF-relative ("effect/ac_center2.tga"), but the
+  // gateway's texture endpoint is already rooted at data/texture/effect/ (STR
+  // texture names arrive bare) — so strip the leading "effect/" or the URL
+  // double-roots and 404s.
+  const rawFile = typeof e.file === "string" ? e.file : undefined;
+  const file = rawFile?.replace(/^effect[/\\]/i, "");
+  // Sprite-textured 3D isn't supported yet → no texture (renders nothing, not wrong).
+  const texture = file && !e.spriteName && !e.absoluteSpriteName && !e.shadowTexture
+    ? loadEffectTexture(file)
+    : null;
+
+  let duplicate = n("duplicate", 1);
+  if (duplicate === -1) duplicate = 999;
+  duplicate = Math.max(1, Math.min(duplicate, 999));
+  const timeBetweenDupli = n("timeBetweenDupli", 200);
+
+  const out: LoadedPart[] = [];
+  for (let id = 0; id < duplicate; id++) {
+    // --- size variants → start/end X/Y (roBrowser order) --------------------
+    let sizeStartX = 1, sizeStartY = 1, sizeEndX = 1, sizeEndY = 1;
+    if (has("size")) { const s = n("size", 1); sizeStartX = sizeStartY = sizeEndX = sizeEndY = s; }
+    if (has("sizeDelta")) { const d = n("sizeDelta", 0) * id; sizeStartX += d; sizeStartY += d; sizeEndX += d; sizeEndY += d; }
+    if (has("sizeStart")) { sizeStartX = sizeStartY = n("sizeStart", 1); }
+    if (has("sizeEnd")) { sizeEndX = sizeEndY = n("sizeEnd", 1); }
+    if (has("sizeX")) { sizeStartX = sizeEndX = n("sizeX", 1); }
+    if (has("sizeY")) { sizeStartY = sizeEndY = n("sizeY", 1); }
+    if (has("sizeStartX")) sizeStartX = n("sizeStartX", 1);
+    if (has("sizeStartY")) sizeStartY = n("sizeStartY", 1);
+    if (has("sizeEndX")) sizeEndX = n("sizeEndX", 1);
+    if (has("sizeEndY")) sizeEndY = n("sizeEndY", 1);
+    if (has("sizeRand")) { const s = n("size", 0) + randBetween(-n("sizeRand", 0), n("sizeRand", 0)); sizeStartX = sizeStartY = sizeEndX = sizeEndY = s; }
+    if (has("sizeRandX")) { const m = n("sizeRandXMiddle", 100); sizeStartX = sizeEndX = randBetween(m - n("sizeRandX", 0), m + n("sizeRandX", 0)); }
+    if (has("sizeRandY")) { const m = n("sizeRandYMiddle", 100); sizeStartY = sizeEndY = randBetween(m - n("sizeRandY", 0), m + n("sizeRandY", 0)); }
+
+    // --- one axis's start/end position variant collapse ---------------------
+    const axis = (ax: "x" | "y" | "z"): [number, number] => {
+      let start = n(`pos${ax}Start`, 0);
+      let end = n(`pos${ax}End`, 0);
+      if (has(`pos${ax}`)) { start = end = n(`pos${ax}`, 0); }
+      if (has(`pos${ax}Rand`)) { start = randBetween(-n(`pos${ax}Rand`, 0), n(`pos${ax}Rand`, 0)); end = start; }
+      if (has(`pos${ax}RandDiff`)) { start = randBetween(-n(`pos${ax}RandDiff`, 0), n(`pos${ax}RandDiff`, 0)); end = randBetween(-n(`pos${ax}RandDiff`, 0), n(`pos${ax}RandDiff`, 0)); }
+      if (has(`pos${ax}StartRand`)) { const m = n(`pos${ax}StartRandMiddle`, 0); start = randBetween(m - n(`pos${ax}StartRand`, 0), m + n(`pos${ax}StartRand`, 0)); }
+      if (has(`pos${ax}EndRand`)) { const m = n(`pos${ax}EndRandMiddle`, 0); end = randBetween(m - n(`pos${ax}EndRand`, 0), m + n(`pos${ax}EndRand`, 0)); }
+      return [start, end];
+    };
+    const [posxStart, posxEnd] = axis("x");
+    const [posyStart, posyEnd] = axis("y");
+    const [poszStart, poszEnd] = axis("z");
+
+    let alphaMax = has("alphaMax") ? Math.max(Math.min(n("alphaMax", 1), 1), 0) : 1;
+    alphaMax = Math.max(Math.min(alphaMax + n("alphaMaxDelta", 0) * id, 1), 0);
+
+    let sparkNumber = 1;
+    if (has("sparkNumber")) sparkNumber = n("sparkNumber", 1);
+    else if (Array.isArray(e.sparkNumberRand)) sparkNumber = randBetween(e.sparkNumberRand[0], e.sparkNumberRand[1]);
+
+    let angle = n("angle", 0);
+    if (b("rotateToTarget")) {
+      // Without a target vector we can't aim; keep the base angle (documented gap).
+      angle += 0;
+    }
+    const duration = has("durationRand") && Array.isArray(e.durationRand)
+      ? randBetween(e.durationRand[0], e.durationRand[1])
+      : n("duration", 1000);
+
+    const rotateLate = n("rotateLate", 0) + n("rotateLateDelta", 0) * id;
+
+    out.push({
+      kind: "threeD",
+      three: {
+        texture,
+        overlay: b("overlay"),
+        blendMode: n("blendMode", 0),
+        duration,
+        alphaMax,
+        red: n("red", 1), green: n("green", 1), blue: n("blue", 1),
+        posxStart, posxEnd, posxSmooth: b("posxSmooth"),
+        posyStart, posyEnd, posySmooth: b("posySmooth"),
+        poszStart, poszEnd, poszSmooth: b("poszSmooth"),
+        rotatePosX: Math.max(0, n("rotatePosX", 0)),
+        rotatePosY: Math.max(0, n("rotatePosY", 0)),
+        nbOfRotation: n("nbOfRotation", 0) > 0 ? n("nbOfRotation", 1) : 1,
+        rotateLate,
+        rotationClockwise: b("rotationClockwise"),
+        retreat: n("retreat", 0),
+        arc: n("arc", 0),
+        sizeStartX, sizeEndX, sizeStartY, sizeEndY,
+        sizeSmooth: b("sizeSmooth"),
+        angle, toAngle: n("toAngle", 0), rotate: b("rotate"), rotateWithCamera: b("rotateWithCamera"),
+        fadeIn: b("fadeIn"), fadeOut: b("fadeOut"),
+        sparkling: b("sparkling"), sparkNumber,
+        startDelayMs: (n("delayStart", 0) + timeBetweenDupli * id) || undefined,
+      },
+    });
+  }
+  return out;
+}
+
 /** Fetch + texture-load one parsed .str by gateway file name. Nested STRs (the
  *  modern "new_*" effect rework lives in per-effect subdirs) reference their
  *  textures by bare name relative to the STR's own directory — resolve them
@@ -411,23 +560,28 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
       if (modern) return loadParts(modern);
       const table = await effectTable();
       const entries = table[String(effectId)] ?? [];
-      const others = entries.filter((e) => e.type && e.type !== "STR" && e.type !== "CYLINDER");
+      const SUPPORTED = new Set(["STR", "CYLINDER", "3D"]);
+      const others = entries.filter((e) => e.type && !SUPPORTED.has(e.type));
       if (others.length) {
         console.debug(
           `[effects] effect ${effectId}: skipping unsupported entries`,
           others.map((e) => e.type),
         );
       }
+      // Each entry yields 0..n parts (3D expands its `duplicate` instances);
+      // flatten, preserving table order so a ground ring under a flash stays below.
       const loaded = await Promise.all(
-        entries.map((e) =>
+        entries.map((e): LoadedPart | LoadedPart[] | null | Promise<LoadedPart | null> =>
           e.type === "STR"
             ? loadStrEntry(e)
             : e.type === "CYLINDER"
               ? loadCylinderEntry(e)
-              : null,
+              : e.type === "3D"
+                ? loadThreeDEntry(e)
+                : null,
         ),
       );
-      return loaded.filter((x): x is LoadedPart => x != null);
+      return loaded.flat().filter((x): x is LoadedPart => x != null);
     })();
     effectCache.set(effectId, p);
   }
