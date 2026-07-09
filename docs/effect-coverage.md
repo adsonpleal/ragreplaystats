@@ -26,7 +26,19 @@ current ragassets `/effect/*` mirror.
     effect 165 (banjjakii). The gateway now builds a bundle per SPR id (extract-grf.mjs
     `sprites/eff_<id>/`, verified byte-identical to the proven build); **full 69-id coverage
     needs one `--effects` run + deploy.**
-  - **Remaining data-driven: QuadHorn (4 ids, pyramid mesh), RSM (19, 3D models).**
+  - `src/sim/render/quadHornEffect.ts` renders the "QuadHorn" ground-spike type (4 ids:
+    Frost Diver / Storm Gust ice pillars, Heaven's Drive & earth-spike stone spikes) — a
+    unit-pyramid mesh scaled/rotated/placed with the shader's grow/rise animation. Verified on
+    the golden stage (effect 74 ice grows; effect 132 Heaven's Drive stands 3 spikes).
+  - **RSM (19 ids): deferred — it's a trap-model subsystem, not a billboard renderer.** All 19
+    are Hunter/Ranger **trap** `.rsm` models (`ef_trap_*`), string-keyed and referenced by
+    ground-unit type — so they belong to the 0x09ca persistent-unit path (Phase 4), not the
+    skill→effectId flow. They need: (a) gateway extraction of the trap models + textures from
+    the GRF (not in the local extraction) and a new effect-model serving endpoint; (b) a viewer
+    RSM-effect renderer (reusing `buildModelGeometries` with a synthetic anchor placement);
+    (c) a ground-unit-type → trap-RSM-key map (roBrowser has it). None are buildable/verifiable
+    in the current offline environment (models absent, no deploy), so RSM lands with the
+    Phase-4 ground-unit work rather than as a standalone renderer.
 - **Phases 2–4 — FUNC procedurals (cast circle, auras), EXE deep-dive, cast/EFST/aura wiring:
   not started.**
 
