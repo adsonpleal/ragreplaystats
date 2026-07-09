@@ -54,11 +54,14 @@ current ragassets `/effect/*` mirror.
     level ≥ 99 (local from session chunk 1016; others from the spawn packet) — spawns the aura,
     follows the actor, disposes on vanish / rewind / layer rebuild. `levelAuraParts()` builds
     the components table-independently so it works before the Phase-0 table deploys.
-  - Verified in isolation (glow + rising rotating swirl compose into the 99 aura).
+  - Verified in isolation (glow + rising rotating swirl compose into the 99 aura) **and
+    in-replay** (`?r=wGzeHZtz5w` injected into dev: the level-181 Arch Bishop shows the aura
+    glowing at her feet and following her; the other visible entities correctly show none).
   - **Enrichment deferred: `Level99Bubble` (EF_LEVEL99_3) rising sparkles — a 654-line
     frame-based particle sim, hard to make scrub-safe for a subtle detail. Level-150/175 auras
-    also pending (roBrowser only implements 99). In-replay confirmation of the level trigger
-    (needs a prod recording injected into dev) is a quick follow-up.**
+    also pending (roBrowser only implements 99). The swirl ribbons read clearly on a neutral
+    stage but are washed out / occluded by the sprite against a bright map — a later blend/
+    render-order tweak could lift them.**
 - **Remaining FUNC: magic-ring cast auras, weather, songs, screen-shake, etc.**
 - **Phases 3–4 — EXE deep-dive, EFST-buff visuals, RSM traps: not started.**
 
