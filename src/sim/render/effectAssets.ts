@@ -636,6 +636,13 @@ function loadQuadHornEntry(entry: EffectTableEntry): LoadedPart {
   return { kind: "quadHorn", quad };
 }
 
+/** The lock-on cast-circle texture (effect/lockon128.tga), for CastCircleEffect —
+ *  a FUNC effect with no table entry, so it's loaded directly. Cached like every
+ *  other effect texture. */
+export function loadLockOnTexture(): Texture {
+  return loadEffectTexture("lockon128.tga");
+}
+
 // Load a GPU texture from a full URL (sprite-effect frame PNGs, which — unlike STR
 // layer textures — already carry a complete gateway path). Cached by URL.
 function loadTextureByUrl(url: string): Texture {

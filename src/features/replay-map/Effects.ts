@@ -17,11 +17,24 @@ import { CylinderEffect } from "../../sim/render/cylinderEffect";
 import { ThreeDEffect } from "../../sim/render/threeDEffect";
 import { SprAnimEffect } from "../../sim/render/sprAnimEffect";
 import { QuadHornEffect } from "../../sim/render/quadHornEffect";
-import { type LoadedPart, loadEffect, loadSkillMainEffect } from "../../sim/render/effectAssets";
+import { CastCircleEffect } from "../../sim/render/castCircleEffect";
+import {
+  type LoadedPart,
+  loadEffect,
+  loadLockOnTexture,
+  loadSkillMainEffect,
+} from "../../sim/render/effectAssets";
 import type { EntityTable } from "./Entities";
+import type { Texture } from "three";
 
 /** Any renderer — all share update(elapsedMs, camera, anchor, loop) + dispose. */
-type EffectRenderer = StrEffect | CylinderEffect | ThreeDEffect | SprAnimEffect | QuadHornEffect;
+type EffectRenderer =
+  | StrEffect
+  | CylinderEffect
+  | ThreeDEffect
+  | SprAnimEffect
+  | QuadHornEffect
+  | CastCircleEffect;
 
 interface LiveEffect {
   effect: EffectRenderer;
@@ -53,6 +66,8 @@ export class EffectsLayer {
   private readonly live: LiveEffect[] = [];
   private readonly followTmp = new Vector3();
   private disposed = false;
+  /** Lazily-loaded lock-on cast-circle texture, shared across every cast circle. */
+  private lockOnTex: Texture | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -60,6 +75,26 @@ export class EffectsLayer {
     /** World units per map tile — CylinderEffect converts its tile-unit sizes. */
     private readonly cellSize: number,
   ) {}
+
+  /** Spawn the lock-on cast circle under a caster for the cast's duration — the
+   *  rotating ground targeting ring (EF_LOCKON). Attached to `aid` so it follows,
+   *  culled when the cast ends. A no-op for instant casts (castMs ≤ 0) or a missing
+   *  anchor. Synchronous: the texture is cached, the renderer carries no table data. */
+  spawnCastCircle(aid: number, anchor: Vector3 | null, nowMs: number, castMs: number): void {
+    if (this.disposed || !anchor || castMs <= 0) return;
+    if (!this.lockOnTex) this.lockOnTex = loadLockOnTexture();
+    const effect = new CastCircleEffect(this.scene, this.lockOnTex, this.cellSize);
+    this.live.push({
+      effect,
+      spawnMs: nowMs,
+      delayMs: 0,
+      attached: true,
+      aid,
+      anchor: anchor.clone(),
+      loop: true,
+      durationMs: castMs,
+    });
+  }
 
   /** Spawn `effectId`'s STR animation(s) at `anchor` (world space). `attached`
    *  effects follow `aid`'s position each frame; others stay at `anchor`. `loop`

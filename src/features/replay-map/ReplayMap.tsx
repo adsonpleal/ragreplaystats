@@ -323,9 +323,12 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           const name = db?.resolveSkill(ev.skillId) ?? `skill#${ev.skillId}`;
           castNames.spawn(ev.source, name, nowMs, ev.castMs);
           castBars.spawn(ev.source, nowMs, ev.castMs);
-          // The cast only drives the caster's pose + cast bar; the skill's main
-          // effect belongs on the TARGET and is spawned when the skill lands (its
-          // skill-use / damage packet below), not on the caster at cast start.
+          // The lock-on cast circle spins on the ground under the caster while the
+          // bar fills (EF_LOCKON). The skill's MAIN effect, by contrast, belongs on
+          // the TARGET and is spawned when the skill lands (skill-use / damage
+          // packet below), not on the caster at cast start.
+          const casterPos = entities!.worldPosOf(ev.source, castWorldTmp);
+          if (casterPos) effectsLayer!.spawnCastCircle(ev.source, casterPos, nowMs, ev.castMs);
         });
         useCursor!.advanceTo(nowMs, (ev) => {
           // No-damage skills (heals/buffs) land via skill-use: play the main
