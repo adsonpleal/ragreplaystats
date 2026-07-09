@@ -46,6 +46,7 @@ import { ThreeDEffect } from "../sim/render/threeDEffect";
 import { SprAnimEffect } from "../sim/render/sprAnimEffect";
 import { QuadHornEffect } from "../sim/render/quadHornEffect";
 import { GroundAuraEffect } from "../sim/render/groundAuraEffect";
+import { SwirlingAuraEffect } from "../sim/render/swirlingAuraEffect";
 
 const SIZE = 512;
 const CELL_SIZE = 1; // world units per tile — must match the map scene (cellSize=1)
@@ -53,7 +54,7 @@ const GROUND_TILES = 16;
 
 /** One renderer over a loaded part; both share update(...)/dispose(). */
 interface StageEffect {
-  kind: "str" | "cylinder" | "threeD" | "sprAnim" | "quadHorn" | "groundAura";
+  kind: "str" | "cylinder" | "threeD" | "sprAnim" | "quadHorn" | "groundAura" | "swirlingAura";
   update(elapsedMs: number, camera: PerspectiveCamera, anchor: Vector3, loop: boolean): boolean;
   dispose(): void;
 }
@@ -208,7 +209,9 @@ async function createStage(seed = 1): Promise<Stage> {
         return Object.assign(new SprAnimEffect(scene, p.spr, CELL_SIZE) as unknown as StageEffect, { kind: "sprAnim" as const });
       if (p.kind === "quadHorn")
         return Object.assign(new QuadHornEffect(scene, p.quad, CELL_SIZE) as unknown as StageEffect, { kind: "quadHorn" as const });
-      return Object.assign(new GroundAuraEffect(scene, p.aura, CELL_SIZE) as unknown as StageEffect, { kind: "groundAura" as const });
+      if (p.kind === "groundAura")
+        return Object.assign(new GroundAuraEffect(scene, p.aura, CELL_SIZE) as unknown as StageEffect, { kind: "groundAura" as const });
+      return Object.assign(new SwirlingAuraEffect(scene, p.texture, CELL_SIZE) as unknown as StageEffect, { kind: "swirlingAura" as const });
     });
     delays = parts.map((p) =>
       (p.kind === "str"
@@ -302,12 +305,14 @@ export async function mount(effectIds: number | number[], seed = 1): Promise<Loa
           bottomSize: p.quad.bottomSize,
           animation: p.quad.animation,
         };
-      return {
-        kind: "groundAura",
-        texture: p.aura.texture ? "loaded" : null,
-        size: p.aura.size,
-        distance: p.aura.distance,
-      };
+      if (p.kind === "groundAura")
+        return {
+          kind: "groundAura",
+          texture: p.aura.texture ? "loaded" : null,
+          size: p.aura.size,
+          distance: p.aura.distance,
+        };
+      return { kind: "swirlingAura", texture: p.texture ? "loaded" : null };
     }),
   };
   return parts;

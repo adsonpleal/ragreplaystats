@@ -19,8 +19,10 @@ import { SprAnimEffect } from "../../sim/render/sprAnimEffect";
 import { QuadHornEffect } from "../../sim/render/quadHornEffect";
 import { CastCircleEffect } from "../../sim/render/castCircleEffect";
 import { GroundAuraEffect } from "../../sim/render/groundAuraEffect";
+import { SwirlingAuraEffect } from "../../sim/render/swirlingAuraEffect";
 import {
   type LoadedPart,
+  levelAuraParts,
   loadEffect,
   loadLockOnTexture,
   loadSkillMainEffect,
@@ -36,7 +38,8 @@ type EffectRenderer =
   | SprAnimEffect
   | QuadHornEffect
   | CastCircleEffect
-  | GroundAuraEffect;
+  | GroundAuraEffect
+  | SwirlingAuraEffect;
 
 interface LiveEffect {
   effect: EffectRenderer;
@@ -70,6 +73,10 @@ export class EffectsLayer {
   private disposed = false;
   /** Lazily-loaded lock-on cast-circle texture, shared across every cast circle. */
   private lockOnTex: Texture | null = null;
+  /** Persistent level-99 auras, one per qualifying actor (aid → its part renderers +
+   *  spawn time). Managed by syncAuras, not the live list — they live for as long as
+   *  the actor is present and qualifying, following it each frame. */
+  private readonly auras = new Map<number, { effects: EffectRenderer[]; spawnMs: number }>();
 
   constructor(
     private readonly scene: Scene,
@@ -147,27 +154,7 @@ export class EffectsLayer {
       .then((parts) => {
         if (this.disposed || !parts.length) return;
         for (const part of parts) {
-          let effect: EffectRenderer;
-          let delayMs: number;
-          if (part.kind === "str") {
-            effect = new StrEffect(this.scene, part.str);
-            delayMs = part.str.startDelayMs ?? 0;
-          } else if (part.kind === "cylinder") {
-            effect = new CylinderEffect(this.scene, part.cyl, this.cellSize);
-            delayMs = part.cyl.startDelayMs ?? 0;
-          } else if (part.kind === "threeD") {
-            effect = new ThreeDEffect(this.scene, part.three, this.cellSize);
-            delayMs = part.three.startDelayMs ?? 0;
-          } else if (part.kind === "sprAnim") {
-            effect = new SprAnimEffect(this.scene, part.spr, this.cellSize);
-            delayMs = part.spr.startDelayMs ?? 0;
-          } else if (part.kind === "quadHorn") {
-            effect = new QuadHornEffect(this.scene, part.quad, this.cellSize);
-            delayMs = part.quad.startDelayMs ?? 0;
-          } else {
-            effect = new GroundAuraEffect(this.scene, part.aura, this.cellSize);
-            delayMs = 0;
-          }
+          const { effect, delayMs } = this.buildRenderer(part);
           this.live.push({
             effect,
             spawnMs: nowMs,
@@ -183,9 +170,58 @@ export class EffectsLayer {
       .catch((err) => console.warn("[effects] spawn failed", label, err));
   }
 
+  /** Construct the renderer for one loaded part, plus its part-stagger delay. */
+  private buildRenderer(part: LoadedPart): { effect: EffectRenderer; delayMs: number } {
+    switch (part.kind) {
+      case "str":
+        return { effect: new StrEffect(this.scene, part.str), delayMs: part.str.startDelayMs ?? 0 };
+      case "cylinder":
+        return { effect: new CylinderEffect(this.scene, part.cyl, this.cellSize), delayMs: part.cyl.startDelayMs ?? 0 };
+      case "threeD":
+        return { effect: new ThreeDEffect(this.scene, part.three, this.cellSize), delayMs: part.three.startDelayMs ?? 0 };
+      case "sprAnim":
+        return { effect: new SprAnimEffect(this.scene, part.spr, this.cellSize), delayMs: part.spr.startDelayMs ?? 0 };
+      case "quadHorn":
+        return { effect: new QuadHornEffect(this.scene, part.quad, this.cellSize), delayMs: part.quad.startDelayMs ?? 0 };
+      case "groundAura":
+        return { effect: new GroundAuraEffect(this.scene, part.aura, this.cellSize), delayMs: 0 };
+      case "swirlingAura":
+        return { effect: new SwirlingAuraEffect(this.scene, part.texture, this.cellSize), delayMs: 0 };
+    }
+  }
+
+  /** Reconcile the persistent level-99 auras with the set of actor ids that
+   *  currently qualify (present + base level ≥ 99). Idempotent per frame: spawns an
+   *  aura for a newly-qualifying actor, disposes it when the actor drops out
+   *  (vanished / rewound before it appeared). The aura then follows its actor and
+   *  renders in `update`. Called each frame from the map's render loop. */
+  syncAuras(qualifying: Set<number>, nowMs: number): void {
+    if (this.disposed) return;
+    for (const [aid, a] of this.auras) {
+      if (!qualifying.has(aid)) {
+        for (const e of a.effects) e.dispose();
+        this.auras.delete(aid);
+      }
+    }
+    for (const aid of qualifying) {
+      if (this.auras.has(aid)) continue;
+      const effects = levelAuraParts().map((p) => this.buildRenderer(p).effect);
+      this.auras.set(aid, { effects, spawnMs: nowMs });
+    }
+  }
+
   /** Advance every live effect to `nowMs`, culling finished ones. Drives
    *  keyframes off elapsed recording time so pause/scrub behave. */
   update(nowMs: number, camera: PerspectiveCamera): void {
+    // Persistent auras: follow their actor and render. Clamp elapsed ≥ 0 so a
+    // backward scrub (nowMs < spawnMs) keeps the aura up rather than hiding it —
+    // it's a level-driven, always-on visual, not a timed one.
+    for (const [aid, a] of this.auras) {
+      const p = this.entities.worldPosOf(aid, this.followTmp);
+      if (!p) continue; // actor not placed this frame; syncAuras will cull if gone
+      const elapsed = Math.max(0, nowMs - a.spawnMs);
+      for (const e of a.effects) e.update(elapsed, camera, p, true);
+    }
     for (let i = this.live.length - 1; i >= 0; i--) {
       const l = this.live[i];
       const elapsed = nowMs - l.spawnMs;
@@ -223,5 +259,7 @@ export class EffectsLayer {
     this.disposed = true;
     for (const l of this.live) l.effect.dispose();
     this.live.length = 0;
+    for (const a of this.auras.values()) for (const e of a.effects) e.dispose();
+    this.auras.clear();
   }
 }

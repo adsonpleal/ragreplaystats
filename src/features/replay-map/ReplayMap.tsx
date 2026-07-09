@@ -293,6 +293,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     const groundWorldTmp = new Vector3();
     const mainEffectTmp = new Vector3();
     const camUpTmp = new Vector3();
+    // Reused each frame to reconcile level-99 auras (see syncAuras below).
+    const auraAids = new Set<number>();
     const feetTmp = new Vector3();
     const screenXY = { x: 0, y: 0 };
     // Throttled React update so the scrubber/time text don't re-render every
@@ -465,6 +467,17 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       };
       castBars.update(nowMs, projectCaster);
       castNames.update(nowMs, projectCaster);
+
+      // Level-99 aura: every visible player at base level ≥ 99 gets the persistent
+      // swirling/ground aura (roBrowser's defaultLv). Reconciled each frame so it
+      // follows spawns, vanishes and backward-seek rebuilds. (roBrowser only defines
+      // the 99 aura; 150/175 chars show it too until those land.)
+      auraAids.clear();
+      for (const v of entities!.visibleActors()) {
+        const ent = replay.entities.get(v.aid);
+        if (ent?.kind === "pc" && (ent.level ?? 0) >= 99) auraAids.add(v.aid);
+      }
+      effectsLayer!.syncAuras(auraAids, nowMs);
 
       // Hover — raycast against every visible actor billboard, then reject
       // hits that land in the sprite's transparent padding (each billboard is

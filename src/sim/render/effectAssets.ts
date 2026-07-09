@@ -165,7 +165,8 @@ export type LoadedPart =
   | { kind: "threeD"; three: LoadedThreeD }
   | { kind: "sprAnim"; spr: LoadedSprAnim }
   | { kind: "quadHorn"; quad: LoadedQuadHorn }
-  | { kind: "groundAura"; aura: LoadedGroundAura };
+  | { kind: "groundAura"; aura: LoadedGroundAura }
+  | { kind: "swirlingAura"; texture: Texture | null };
 
 /** A skill's effect ids from the SkillEffect table. */
 interface SkillEffectEntry {
@@ -646,6 +647,17 @@ function loadQuadHornEntry(entry: EffectTableEntry): LoadedPart {
   return { kind: "quadHorn", quad };
 }
 
+/** The level-99 aura's component parts, built directly (not via the effect table) so
+ *  the aura wiring works before the Phase-0 func-tagged table is deployed. Mirrors
+ *  roBrowser's EF_LEVEL99 + EF_LEVEL99_2 (the swirl + the ground glow); the rising
+ *  bubbles (EF_LEVEL99_3) join here once ported. */
+export function levelAuraParts(): LoadedPart[] {
+  return [
+    { kind: "swirlingAura", texture: loadEffectTexture("ring_blue.tga") },
+    { kind: "groundAura", aura: { texture: loadEffectTexture("pikapika2.bmp"), size: 100, distance: 15 } },
+  ];
+}
+
 /** The lock-on cast-circle texture (effect/lockon128.tga), for CastCircleEffect —
  *  a FUNC effect with no table entry, so it's loaded directly. Cached like every
  *  other effect texture. */
@@ -661,6 +673,8 @@ function loadFuncEntry(entry: EffectTableEntry): LoadedPart | null {
   switch ((entry as { func?: string }).func) {
     case "GroundAura": // EF_LEVEL99_2 — new GroundAura(pos, 100, 15, 'pikapika2.bmp')
       return { kind: "groundAura", aura: { texture: loadEffectTexture("pikapika2.bmp"), size: 100, distance: 15 } };
+    case "SwirlingAura": // EF_LEVEL99 — new SwirlingAura(pos, 'ring_blue.tga', tick)
+      return { kind: "swirlingAura", texture: loadEffectTexture("ring_blue.tga") };
     default:
       return null;
   }
