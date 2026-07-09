@@ -109,6 +109,8 @@ export interface LoadedThreeD {
   angle: number; toAngle: number; rotate: boolean; rotateWithCamera: boolean;
   fadeIn: boolean; fadeOut: boolean;
   sparkling: boolean; sparkNumber: number;
+  /** 2D variant: offsets rotate with the camera (screen-facing overlay). */
+  twoD: boolean;
   /** Duplicate stagger (ms) — same staging role as LoadedStr.startDelayMs. */
   startDelayMs?: number;
 }
@@ -413,15 +415,25 @@ function randBetween(min: number, max: number): number {
   return parseFloat(Math.min(min + Math.random() * (max - min), max).toFixed(3));
 }
 
-/** Resolve one "3D" table entry into `duplicate` LoadedThreeD instances, faithfully
- *  porting roBrowser ThreeDEffect's constructor (pos/size variant collapse, random
- *  jitter, `*Delta` scaling by duplicateID) and EffectManager's duplicate stagger
- *  (`timeBetweenDupli*id`). Advanced roBrowser paths not yet ported — projectile
- *  travel (fromSrc/toSrc, needs a target position), circlePattern, soulStrike/
- *  drainPattern, and sprite-textured 3D (spriteName/absoluteSpriteName/shadowTexture,
- *  needs .spr/.act) — are skipped: the part still renders its base `file` billboard,
- *  or nothing if it has no plain texture (never a wrong stand-in). */
-function loadThreeDEntry(entry: EffectTableEntry): LoadedPart[] {
+// roBrowser getRandomIntInclusive — the 2D variant's integer jitter (angle,
+// circle radius). Inclusive of both bounds.
+function randInt(min: number, max: number): number {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+/** Resolve one "3D" (or "2D") table entry into `duplicate` LoadedThreeD instances,
+ *  faithfully porting roBrowser ThreeDEffect/TwoDEffect's constructor (pos/size
+ *  variant collapse, random jitter, `*Delta` scaling by duplicateID) and
+ *  EffectManager's duplicate stagger (`timeBetweenDupli*id`). `twoD` selects the 2D
+ *  variant: its offsets rotate with the camera (screen-facing overlay), sizeRand is
+ *  +100-based, and `circlePattern` lays duplicates around a ring. Advanced 3D paths
+ *  not yet ported — projectile travel (fromSrc/toSrc, needs a target position),
+ *  soulStrike/drainPattern, and sprite-textured effects (spriteName/absoluteSpriteName/
+ *  shadowTexture, need .spr/.act) — are skipped: the part still renders its base
+ *  `file` billboard, or nothing if it has no plain texture (never a wrong stand-in). */
+function loadThreeDEntry(entry: EffectTableEntry, twoD = false): LoadedPart[] {
   const e = entry as unknown as Record<string, number | number[] | boolean | string | undefined>;
   const n = (k: string, d: number): number => {
     const v = e[k];
@@ -459,9 +471,21 @@ function loadThreeDEntry(entry: EffectTableEntry): LoadedPart[] {
     if (has("sizeStartY")) sizeStartY = n("sizeStartY", 1);
     if (has("sizeEndX")) sizeEndX = n("sizeEndX", 1);
     if (has("sizeEndY")) sizeEndY = n("sizeEndY", 1);
-    if (has("sizeRand")) { const s = n("size", 0) + randBetween(-n("sizeRand", 0), n("sizeRand", 0)); sizeStartX = sizeStartY = sizeEndX = sizeEndY = s; }
+    if (has("sizeRand")) {
+      // 2D jitters around 100 with integer steps; 3D jitters around `size`.
+      const s = twoD
+        ? randInt(-n("sizeRand", 0), n("sizeRand", 0)) + 100
+        : n("size", 0) + randBetween(-n("sizeRand", 0), n("sizeRand", 0));
+      sizeStartX = sizeStartY = sizeEndX = sizeEndY = s;
+    }
     if (has("sizeRandX")) { const m = n("sizeRandXMiddle", 100); sizeStartX = sizeEndX = randBetween(m - n("sizeRandX", 0), m + n("sizeRandX", 0)); }
     if (has("sizeRandY")) { const m = n("sizeRandYMiddle", 100); sizeStartY = sizeEndY = randBetween(m - n("sizeRandY", 0), m + n("sizeRandY", 0)); }
+    // 2D per-corner size ranges (roBrowser TwoDEffect; a lens flare grows from a
+    // small start rect into a long streak). Arrays of [min,max].
+    if (Array.isArray(e.sizeRandStartX)) sizeStartX = randInt(e.sizeRandStartX[0], e.sizeRandStartX[1]);
+    if (Array.isArray(e.sizeRandStartY)) sizeStartY = randInt(e.sizeRandStartY[0], e.sizeRandStartY[1]);
+    if (Array.isArray(e.sizeRandEndX)) sizeEndX = randInt(e.sizeRandEndX[0], e.sizeRandEndX[1]);
+    if (Array.isArray(e.sizeRandEndY)) sizeEndY = randInt(e.sizeRandEndY[0], e.sizeRandEndY[1]);
 
     // --- one axis's start/end position variant collapse ---------------------
     const axis = (ax: "x" | "y" | "z"): [number, number] => {
@@ -474,8 +498,8 @@ function loadThreeDEntry(entry: EffectTableEntry): LoadedPart[] {
       if (has(`pos${ax}EndRand`)) { const m = n(`pos${ax}EndRandMiddle`, 0); end = randBetween(m - n(`pos${ax}EndRand`, 0), m + n(`pos${ax}EndRand`, 0)); }
       return [start, end];
     };
-    const [posxStart, posxEnd] = axis("x");
-    const [posyStart, posyEnd] = axis("y");
+    let [posxStart, posxEnd] = axis("x");
+    let [posyStart, posyEnd] = axis("y");
     const [poszStart, poszEnd] = axis("z");
 
     let alphaMax = has("alphaMax") ? Math.max(Math.min(n("alphaMax", 1), 1), 0) : 1;
@@ -486,11 +510,23 @@ function loadThreeDEntry(entry: EffectTableEntry): LoadedPart[] {
     else if (Array.isArray(e.sparkNumberRand)) sparkNumber = randBetween(e.sparkNumberRand[0], e.sparkNumberRand[1]);
 
     let angle = n("angle", 0);
-    if (b("rotateToTarget")) {
-      // Without a target vector we can't aim; keep the base angle (documented gap).
-      angle += 0;
+    let toAngle = n("toAngle", 0);
+    if (twoD) {
+      if (has("angleDelta")) { const d = n("angleDelta", 0) * id; angle += d; toAngle += d; }
+      if (Array.isArray(e.angleRand)) angle = randInt(e.angleRand[0], e.angleRand[1]);
+      // circlePattern: fan the duplicates onto a ring, each flying inner→outer along
+      // its own angle (roBrowser TwoDEffect).
+      if (b("circlePattern") && Array.isArray(e.circleOuterSizeRand)) {
+        const dist = randInt(e.circleOuterSizeRand[0], e.circleOuterSizeRand[1]);
+        const inner = n("circleInnerSize", 0);
+        const rad = (angle * Math.PI) / 180;
+        posxStart = Math.sin(rad) * inner;
+        posyStart = Math.cos(rad) * inner;
+        posxEnd = Math.sin(rad) * dist;
+        posyEnd = Math.cos(rad) * dist;
+      }
     }
-    const duration = has("durationRand") && Array.isArray(e.durationRand)
+    const duration = Array.isArray(e.durationRand)
       ? randBetween(e.durationRand[0], e.durationRand[1])
       : n("duration", 1000);
 
@@ -517,9 +553,10 @@ function loadThreeDEntry(entry: EffectTableEntry): LoadedPart[] {
         arc: n("arc", 0),
         sizeStartX, sizeEndX, sizeStartY, sizeEndY,
         sizeSmooth: b("sizeSmooth"),
-        angle, toAngle: n("toAngle", 0), rotate: b("rotate"), rotateWithCamera: b("rotateWithCamera"),
+        angle, toAngle, rotate: b("rotate"), rotateWithCamera: b("rotateWithCamera"),
         fadeIn: b("fadeIn"), fadeOut: b("fadeOut"),
         sparkling: b("sparkling"), sparkNumber,
+        twoD,
         startDelayMs: (n("delayStart", 0) + timeBetweenDupli * id) || undefined,
       },
     });
@@ -560,7 +597,7 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
       if (modern) return loadParts(modern);
       const table = await effectTable();
       const entries = table[String(effectId)] ?? [];
-      const SUPPORTED = new Set(["STR", "CYLINDER", "3D"]);
+      const SUPPORTED = new Set(["STR", "CYLINDER", "3D", "2D"]);
       const others = entries.filter((e) => e.type && !SUPPORTED.has(e.type));
       if (others.length) {
         console.debug(
@@ -578,7 +615,9 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
               ? loadCylinderEntry(e)
               : e.type === "3D"
                 ? loadThreeDEntry(e)
-                : null,
+                : e.type === "2D"
+                  ? loadThreeDEntry(e, true)
+                  : null,
         ),
       );
       return loaded.flat().filter((x): x is LoadedPart => x != null);

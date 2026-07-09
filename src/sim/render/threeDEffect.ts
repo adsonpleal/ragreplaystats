@@ -187,6 +187,16 @@ export class ThreeDEffect {
     let pz = interp(e.poszStart, e.poszEnd, steps, e.poszSmooth);
     if (e.arc !== 0) pz += e.arc * Math.sin((steps * Math.PI) / 100); // parabolic hop
 
+    // 2D variant: rotate the (px,py) ground offset by the camera azimuth so the
+    // pattern stays screen-facing (roBrowser TwoDEffect rotates by Camera.angle[1]).
+    if (e.twoD) {
+      const cRad = Math.atan2(camera.position.x - anchor.x, camera.position.z - anchor.z);
+      const rx = px * Math.cos(cRad) - py * Math.sin(cRad);
+      const ry = py * Math.cos(cRad) + px * Math.sin(cRad);
+      px = rx;
+      py = ry;
+    }
+
     this.center
       .copy(anchor)
       .add(this.tmpOffset(MIRROR_X * px * this.cellSize, pz * this.cellSize, py * this.cellSize));
