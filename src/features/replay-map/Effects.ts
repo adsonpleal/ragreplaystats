@@ -21,15 +21,21 @@ import { CastCircleEffect } from "../../sim/render/castCircleEffect";
 import { GroundAuraEffect } from "../../sim/render/groundAuraEffect";
 import { SwirlingAuraEffect } from "../../sim/render/swirlingAuraEffect";
 import { Level99BubbleEffect } from "../../sim/render/level99BubbleEffect";
+import { MaxLevelAuraEffect } from "../../sim/render/maxLevelAuraEffect";
 import {
+  AURA_GOLD,
   type LoadedPart,
   levelAuraParts,
   loadEffect,
   loadLockOnTexture,
   loadSkillMainEffect,
+  maxLevelAuraParts,
 } from "../../sim/render/effectAssets";
 import type { EntityTable } from "./Entities";
 import type { Texture } from "three";
+
+/** Level-aura tier: the base-99 aura, or the EXE-recovered base-250 4th-job aura. */
+export type AuraTier = "l99" | "max";
 
 /** Any renderer — all share update(elapsedMs, camera, anchor, loop) + dispose. */
 type EffectRenderer =
@@ -41,7 +47,8 @@ type EffectRenderer =
   | CastCircleEffect
   | GroundAuraEffect
   | SwirlingAuraEffect
-  | Level99BubbleEffect;
+  | Level99BubbleEffect
+  | MaxLevelAuraEffect;
 
 interface LiveEffect {
   effect: EffectRenderer;
@@ -75,10 +82,10 @@ export class EffectsLayer {
   private disposed = false;
   /** Lazily-loaded lock-on cast-circle texture, shared across every cast circle. */
   private lockOnTex: Texture | null = null;
-  /** Persistent level-99 auras, one per qualifying actor (aid → its part renderers +
-   *  spawn time). Managed by syncAuras, not the live list — they live for as long as
-   *  the actor is present and qualifying, following it each frame. */
-  private readonly auras = new Map<number, { effects: EffectRenderer[]; spawnMs: number }>();
+  /** Persistent level auras, one per qualifying actor (aid → its part renderers,
+   *  spawn time, and tier). Managed by syncAuras, not the live list — they live for
+   *  as long as the actor is present and qualifying, following it each frame. */
+  private readonly auras = new Map<number, { effects: EffectRenderer[]; spawnMs: number; tier: AuraTier }>();
 
   constructor(
     private readonly scene: Scene,
@@ -191,26 +198,33 @@ export class EffectsLayer {
         return { effect: new SwirlingAuraEffect(this.scene, part.texture, this.cellSize), delayMs: 0 };
       case "levelBubble":
         return { effect: new Level99BubbleEffect(this.scene, part.texture, this.cellSize), delayMs: 0 };
+      case "maxLevelAura":
+        return {
+          effect: new MaxLevelAuraEffect(this.scene, part.max.frames, part.max.rings, part.max.color, this.cellSize),
+          delayMs: 0,
+        };
     }
   }
 
-  /** Reconcile the persistent level-99 auras with the set of actor ids that
-   *  currently qualify (present + base level ≥ 99). Idempotent per frame: spawns an
-   *  aura for a newly-qualifying actor, disposes it when the actor drops out
-   *  (vanished / rewound before it appeared). The aura then follows its actor and
-   *  renders in `update`. Called each frame from the map's render loop. */
-  syncAuras(qualifying: Set<number>, nowMs: number): void {
+  /** Reconcile the persistent level auras with the actors that currently qualify,
+   *  keyed by tier: "l99" = the base-99 aura (glow/swirl/bubbles), "max" = the
+   *  EXE-recovered gold base-250 4th-job aura (CLevel150Effect). Idempotent per
+   *  frame: spawns an aura for a newly-qualifying actor, re-spawns if its tier
+   *  changed, and disposes it when the actor drops out (vanished / rewound). Called
+   *  each frame from the map's render loop. */
+  syncAuras(qualifying: Map<number, AuraTier>, nowMs: number): void {
     if (this.disposed) return;
     for (const [aid, a] of this.auras) {
-      if (!qualifying.has(aid)) {
+      if (qualifying.get(aid) !== a.tier) {
         for (const e of a.effects) e.dispose();
         this.auras.delete(aid);
       }
     }
-    for (const aid of qualifying) {
+    for (const [aid, tier] of qualifying) {
       if (this.auras.has(aid)) continue;
-      const effects = levelAuraParts().map((p) => this.buildRenderer(p).effect);
-      this.auras.set(aid, { effects, spawnMs: nowMs });
+      const parts = tier === "max" ? maxLevelAuraParts(AURA_GOLD) : levelAuraParts();
+      const effects = parts.map((p) => this.buildRenderer(p).effect);
+      this.auras.set(aid, { effects, spawnMs: nowMs, tier });
     }
   }
 

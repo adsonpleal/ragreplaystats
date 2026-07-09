@@ -167,7 +167,17 @@ export type LoadedPart =
   | { kind: "quadHorn"; quad: LoadedQuadHorn }
   | { kind: "groundAura"; aura: LoadedGroundAura }
   | { kind: "swirlingAura"; texture: Texture | null }
-  | { kind: "levelBubble"; texture: Texture | null };
+  | { kind: "levelBubble"; texture: Texture | null }
+  | { kind: "maxLevelAura"; max: LoadedMaxAura };
+
+/** The EXE-recovered max-level (150/160/185/250) aura's assets: the 27 W_bubble
+ *  frames, the two flat ring textures (cir0002, emp shock), and the tier color
+ *  (gold for the base-250 4th-job aura). See project memory aura-150-exe-recovery. */
+export interface LoadedMaxAura {
+  frames: (Texture | null)[];
+  rings: (Texture | null)[];
+  color: [number, number, number];
+}
 
 /** A skill's effect ids from the SkillEffect table. */
 interface SkillEffectEntry {
@@ -659,6 +669,20 @@ export function levelAuraParts(): LoadedPart[] {
     { kind: "levelBubble", texture: loadEffectTexture("whitelight.tga") },
   ];
 }
+
+/** The EXE-recovered max-level aura (CLevel150Effect): gold W_bubble billboard rings
+ *  + two flat ground rings. `color` picks the tier (base-250 4th-job = gold). Built
+ *  directly (this aura has no roBrowser effect-table entry). */
+export function maxLevelAuraParts(color: [number, number, number]): LoadedPart[] {
+  const frames = Array.from({ length: 27 }, (_, i) =>
+    loadEffectTexture(`w_bubble${String(i + 1).padStart(2, "0")}.tga`),
+  );
+  const rings = [loadEffectTexture("cir0002.tga"), loadEffectTexture("emp shock.tga")];
+  return [{ kind: "maxLevelAura", max: { frames, rings, color } }];
+}
+
+/** The base-250 4th-job aura tint recovered from the EXE (EF_LEVEL4TH → gold). */
+export const AURA_GOLD: [number, number, number] = [1, 0x9b / 255, 0];
 
 /** The lock-on cast-circle texture (effect/lockon128.tga), for CastCircleEffect —
  *  a FUNC effect with no table entry, so it's loaded directly. Cached like every
