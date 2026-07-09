@@ -135,6 +135,15 @@ export interface LoadedQuadHorn {
   startDelayMs?: number;
 }
 
+/** The level-99 ground aura glow (FUNC EF_LEVEL99_2). Params are hardcoded in
+ *  roBrowser's func body (`new GroundAura(pos, 100, 15, 'pikapika2.bmp')`); we carry
+ *  the resolved texture + those sizes. */
+export interface LoadedGroundAura {
+  texture: Texture | null;
+  size: number;
+  distance: number;
+}
+
 /** A played .spr/.act sprite animation, resolved to its composited frame textures
  *  + timing (from the gateway's /effects/sprites/<key>/ bundle). SprAnimEffect
  *  swaps the frame texture on `delayMs` and sizes the quad to each frame's pixels. */
@@ -155,7 +164,8 @@ export type LoadedPart =
   | { kind: "cylinder"; cyl: LoadedCylinder }
   | { kind: "threeD"; three: LoadedThreeD }
   | { kind: "sprAnim"; spr: LoadedSprAnim }
-  | { kind: "quadHorn"; quad: LoadedQuadHorn };
+  | { kind: "quadHorn"; quad: LoadedQuadHorn }
+  | { kind: "groundAura"; aura: LoadedGroundAura };
 
 /** A skill's effect ids from the SkillEffect table. */
 interface SkillEffectEntry {
@@ -643,6 +653,19 @@ export function loadLockOnTexture(): Texture {
   return loadEffectTexture("lockon128.tga");
 }
 
+/** Resolve a FUNC (procedural) effect entry to a LoadedPart by its `func` dispatch
+ *  name (see the ragassets generator). Only the procedurals we've ported render;
+ *  the rest resolve to null (nothing) — never a wrong stand-in. Params are the ones
+ *  hardcoded in roBrowser's func body. */
+function loadFuncEntry(entry: EffectTableEntry): LoadedPart | null {
+  switch ((entry as { func?: string }).func) {
+    case "GroundAura": // EF_LEVEL99_2 — new GroundAura(pos, 100, 15, 'pikapika2.bmp')
+      return { kind: "groundAura", aura: { texture: loadEffectTexture("pikapika2.bmp"), size: 100, distance: 15 } };
+    default:
+      return null;
+  }
+}
+
 // Load a GPU texture from a full URL (sprite-effect frame PNGs, which — unlike STR
 // layer textures — already carry a complete gateway path). Cached by URL.
 function loadTextureByUrl(url: string): Texture {
@@ -737,7 +760,7 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
       if (modern) return loadParts(modern);
       const table = await effectTable();
       const entries = table[String(effectId)] ?? [];
-      const SUPPORTED = new Set(["STR", "CYLINDER", "3D", "2D", "SPR", "QuadHorn"]);
+      const SUPPORTED = new Set(["STR", "CYLINDER", "3D", "2D", "SPR", "QuadHorn", "FUNC"]);
       const others = entries.filter((e) => e.type && !SUPPORTED.has(e.type));
       if (others.length) {
         console.debug(
@@ -761,7 +784,9 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
                     ? loadSprEntry(effectId, e)
                     : e.type === "QuadHorn"
                       ? loadQuadHornEntry(e)
-                      : null,
+                      : e.type === "FUNC"
+                        ? loadFuncEntry(e)
+                        : null,
         ),
       );
       return loaded.flat().filter((x): x is LoadedPart => x != null);

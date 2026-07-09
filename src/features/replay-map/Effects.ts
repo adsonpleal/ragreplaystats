@@ -18,6 +18,7 @@ import { ThreeDEffect } from "../../sim/render/threeDEffect";
 import { SprAnimEffect } from "../../sim/render/sprAnimEffect";
 import { QuadHornEffect } from "../../sim/render/quadHornEffect";
 import { CastCircleEffect } from "../../sim/render/castCircleEffect";
+import { GroundAuraEffect } from "../../sim/render/groundAuraEffect";
 import {
   type LoadedPart,
   loadEffect,
@@ -34,7 +35,8 @@ type EffectRenderer =
   | ThreeDEffect
   | SprAnimEffect
   | QuadHornEffect
-  | CastCircleEffect;
+  | CastCircleEffect
+  | GroundAuraEffect;
 
 interface LiveEffect {
   effect: EffectRenderer;
@@ -159,9 +161,12 @@ export class EffectsLayer {
           } else if (part.kind === "sprAnim") {
             effect = new SprAnimEffect(this.scene, part.spr, this.cellSize);
             delayMs = part.spr.startDelayMs ?? 0;
-          } else {
+          } else if (part.kind === "quadHorn") {
             effect = new QuadHornEffect(this.scene, part.quad, this.cellSize);
             delayMs = part.quad.startDelayMs ?? 0;
+          } else {
+            effect = new GroundAuraEffect(this.scene, part.aura, this.cellSize);
+            delayMs = 0;
           }
           this.live.push({
             effect,
