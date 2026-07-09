@@ -45,16 +45,20 @@ current ragassets `/effect/*` mirror.
   `EffectsLayer.spawnCastCircle`, attached to the caster for the cast duration). The first
   effect wired to a live replay event, not just skill→effectId. Verified with an isolated
   ground render (the circle-plus-square reticle closing in).
-- **Phase 2 — level-99 aura: GroundAura DONE (renderer).** `src/sim/render/groundAuraEffect.ts`
-  renders EF_LEVEL99_2's two additive pikapika2 ground-glow discs (the per-frame breathing
-  accumulator reformulated as a scrub-safe sine). Reached via FUNC dispatch (`loadFuncEntry`,
-  keyed by the Phase-0 `func` tag). Verified isolated (blue sparkle disc, flat, breathing).
-  **Remaining aura renderers: `SwirlingAura` spiral ribbons (EF_LEVEL99) + `Level99Bubble`
-  rising bubbles (EF_LEVEL99_3) — both large dynamic-geometry ports — plus level-150/175
-  (roBrowser only implements 99).**
-- **Aura wiring (Phase 4): not started.** A persistent per-actor spawn keyed on `clevel ≥ 99`
-  (local player from session chunk 1016; others from the spawn packet `level`), attached +
-  culled on the actor's vanish and re-spawned on a backward-seek layer rebuild.
+- **Phase 2 — level-99 aura: DONE end-to-end (glow + swirl + level wiring).**
+  - `groundAuraEffect.ts` — EF_LEVEL99_2's two additive pikapika2 ground-glow discs (breathing
+    reformulated as a scrub-safe sine).
+  - `swirlingAuraEffect.ts` — EF_LEVEL99's three rising, rotating blue ribbon bands (dynamic
+    per-band geometry; build-up/spin recomputed from the recording clock for scrub-safety).
+  - **Wiring:** `EffectsLayer.syncAuras` reconciles a per-frame set of visible players at base
+    level ≥ 99 (local from session chunk 1016; others from the spawn packet) — spawns the aura,
+    follows the actor, disposes on vanish / rewind / layer rebuild. `levelAuraParts()` builds
+    the components table-independently so it works before the Phase-0 table deploys.
+  - Verified in isolation (glow + rising rotating swirl compose into the 99 aura).
+  - **Enrichment deferred: `Level99Bubble` (EF_LEVEL99_3) rising sparkles — a 654-line
+    frame-based particle sim, hard to make scrub-safe for a subtle detail. Level-150/175 auras
+    also pending (roBrowser only implements 99). In-replay confirmation of the level trigger
+    (needs a prod recording injected into dev) is a quick follow-up.**
 - **Remaining FUNC: magic-ring cast auras, weather, songs, screen-shake, etc.**
 - **Phases 3–4 — EXE deep-dive, EFST-buff visuals, RSM traps: not started.**
 
