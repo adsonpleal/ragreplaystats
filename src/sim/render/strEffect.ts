@@ -266,6 +266,15 @@ export class StrEffect {
         blendEquation: AddEquation,
         blendSrc: SrcAlphaFactor,
         blendDst: OneFactor,
+        // Discard fully-transparent texels, mirroring the RO client's alpha test.
+        // Effect BMPs carry their colour-keyed background as a real (usually
+        // brown/magenta) RGB at alpha 0. Layers that draw with an OPAQUE blend
+        // (D3DBLEND ONE/ZERO — e.g. the swinging bell in the "angelus"/Blessing
+        // STR) take blendSrc=One, which ignores that alpha and writes the bg RGB
+        // across the whole quad → a solid brown square. Additive layers hide the
+        // bg for free (alpha 0 contributes nothing), but opaque ones need this.
+        // A tiny threshold clips only alpha≈0 texels, leaving soft glow edges.
+        alphaTest: 0.01,
       });
       const mesh = new Mesh(geometry, material);
       mesh.frustumCulled = false; // rebuilt every frame; avoid stale-sphere culling

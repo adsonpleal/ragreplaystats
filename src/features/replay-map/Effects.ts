@@ -80,6 +80,11 @@ export class EffectsLayer {
   private readonly live: LiveEffect[] = [];
   private readonly followTmp = new Vector3();
   private disposed = false;
+  /** Skill/world effects toggle (cast circles, hit/main/ground STR — NOT level
+   *  auras, which the map reconciles separately via syncAuras). When off, spawns
+   *  are dropped and any live effects are cleared so toggling mid-playback hides
+   *  them at once. Default on. */
+  private effectsEnabled = true;
   /** Lazily-loaded lock-on cast-circle texture, shared across every cast circle. */
   private lockOnTex: Texture | null = null;
   /** Persistent level auras, one per qualifying actor (aid → its part renderers,
@@ -94,12 +99,23 @@ export class EffectsLayer {
     private readonly cellSize: number,
   ) {}
 
+  /** Enable/disable skill & world effects (not level auras). Turning it off clears
+   *  every live effect so the toggle takes hold immediately, mid-playback. */
+  setEffectsEnabled(enabled: boolean): void {
+    if (enabled === this.effectsEnabled) return;
+    this.effectsEnabled = enabled;
+    if (!enabled) {
+      for (const l of this.live) l.effect.dispose();
+      this.live.length = 0;
+    }
+  }
+
   /** Spawn the lock-on cast circle under a caster for the cast's duration — the
    *  rotating ground targeting ring (EF_LOCKON). Attached to `aid` so it follows,
    *  culled when the cast ends. A no-op for instant casts (castMs ≤ 0) or a missing
    *  anchor. Synchronous: the texture is cached, the renderer carries no table data. */
   spawnCastCircle(aid: number, anchor: Vector3 | null, nowMs: number, castMs: number): void {
-    if (this.disposed || !anchor || castMs <= 0) return;
+    if (this.disposed || !this.effectsEnabled || !anchor || castMs <= 0) return;
     if (!this.lockOnTex) this.lockOnTex = loadLockOnTexture();
     const effect = new CastCircleEffect(this.scene, this.lockOnTex, this.cellSize);
     this.live.push({
@@ -126,7 +142,7 @@ export class EffectsLayer {
     nowMs: number,
     opts: SpawnOpts = {},
   ): void {
-    if (effectId == null || !anchor) return;
+    if (effectId == null || !anchor || !this.effectsEnabled) return;
     this.instantiate(loadEffect(effectId), aid, anchor, nowMs, opts, `effect ${effectId}`);
   }
 
@@ -140,7 +156,7 @@ export class EffectsLayer {
     nowMs: number,
     opts: SpawnOpts = {},
   ): void {
-    if (!skillId || !anchor) return;
+    if (!skillId || !anchor || !this.effectsEnabled) return;
     this.instantiate(loadSkillMainEffect(skillId), aid, anchor, nowMs, opts, `skill ${skillId}`);
   }
 
@@ -161,7 +177,8 @@ export class EffectsLayer {
     const durationMs = opts.durationMs ?? 0;
     partsPromise
       .then((parts) => {
-        if (this.disposed || !parts.length) return;
+        // Re-check enabled: the toggle may have flipped off during the async load.
+        if (this.disposed || !this.effectsEnabled || !parts.length) return;
         for (const part of parts) {
           const { effect, delayMs } = this.buildRenderer(part);
           this.live.push({

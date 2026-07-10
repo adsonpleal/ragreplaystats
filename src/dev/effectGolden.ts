@@ -89,6 +89,26 @@ export const GOLDEN_CASES: GoldenCase[] = [
   },
   { skillId: 362, name: "Basílica", effects: [374], times: [800], note: "ground CYLINDER dome" },
   { skillId: 2040, name: "Adoramus", effects: [721], times: [400, 200, 700] },
+  {
+    skillId: 34,
+    name: "Angelus",
+    // effect 42: a pok2.tga glow dome (3D) — the two particle6 sprite-3D layers
+    // have no texture and must render NOTHING (regression guard for the "full
+    // square" bug where a null-texture billboard drew a solid quad).
+    effects: [42],
+    times: [600, 300, 1000],
+  },
+  {
+    skillId: 33,
+    name: "Blessing (bell)",
+    // effect 41: the "angelus" STR — a swinging bell (jong*.bmp) + wings + ring.
+    // The bell layer draws with an OPAQUE blend (D3DBLEND ONE/ZERO), so without
+    // the material's alphaTest the bell BMP's colour-keyed brown background fills
+    // the whole quad as a solid square. Regression guard for that fix; the 2500ms
+    // frame also exercises the additive wings/ring (must NOT be clipped).
+    effects: [41],
+    times: [800, 300, 2500],
+  },
   // --- Renders nothing (documented expectations) ------------------------------
   { skillId: 661, name: "Golpe Avassalador", effects: [], times: [], note: "409 = 3D + sound (no STR/CYLINDER)" },
   { skillId: 2046, name: "Oratio", effects: [], times: [], note: "755 has no effect-table row" },

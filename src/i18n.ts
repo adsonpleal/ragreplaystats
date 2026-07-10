@@ -93,6 +93,9 @@ export const t = {
   replayMapPause: "Pausar",
   replayMapRestart: "Recomeçar",
   replayMapSpeedLabel: "Velocidade",
+  replayMapSettings: "Configurações",
+  replayMapAura: "Aura",
+  replayMapEffects: "Efeitos",
   replayMapCredit: "Renderização inspirada no roBrowser",
   replayMapIntroTitle: "Recurso experimental",
   replayMapIntroBody:

@@ -140,6 +140,13 @@ export class ThreeDEffect {
    *  place the billboard. Returns false once past its duration (one-shot); `loop`
    *  wraps it for persistent emitters (the caller culls those on their lifetime). */
   update(elapsedMs: number, camera: PerspectiveCamera, anchor: Vector3, loop = false): boolean {
+    // No texture → nothing to draw. A MeshBasicMaterial with map=null renders a
+    // solid colored quad (the "full square" bug), so stay invisible instead. The
+    // load path already drops these parts; this guards direct construction too.
+    if (!this.e.texture) {
+      this.mesh.visible = false;
+      return loop; // one-shot: cull immediately; looped: harmless no-op
+    }
     const dur = this.e.duration > 0 ? this.e.duration : 1000;
     let ms = elapsedMs;
     if (loop) ms = ((ms % dur) + dur) % dur;

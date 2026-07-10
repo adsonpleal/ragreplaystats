@@ -540,6 +540,13 @@ function loadThreeDEntry(entry: EffectTableEntry, twoD = false): LoadedPart[] {
   const texture = file && !e.spriteName && !e.absoluteSpriteName && !e.shadowTexture
     ? loadEffectTexture(file)
     : null;
+  // A billboard with no resolvable texture MUST render nothing: a MeshBasicMaterial
+  // with map=null draws a SOLID colored quad — the "full square" that showed over
+  // e.g. Angelus (effect 42, whose particle6 sprite-3D layers have no file). Drop
+  // these parts here so they contribute nothing rather than a wrong stand-in. (No
+  // table entry carries both a `file` and a spriteName, so this never drops a real
+  // billboard.)
+  if (!texture) return [];
 
   let duplicate = n("duplicate", 1);
   if (duplicate === -1) duplicate = 999;

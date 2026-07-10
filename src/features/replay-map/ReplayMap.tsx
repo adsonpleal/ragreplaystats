@@ -72,6 +72,29 @@ type Phase = "loading" | "ready" | "error";
 
 const SPEEDS = [0.5, 1, 2, 4] as const;
 
+// Viewer display toggles persisted across sessions (localStorage). Level auras
+// default OFF (they clutter the scene and most viewers don't want them); skill/
+// world effects default ON. Read defensively so a corrupt/blocked store just
+// yields the defaults.
+const SETTINGS_KEY = "ragreplay.map.settings";
+interface MapSettings {
+  aura: boolean;
+  effects: boolean;
+}
+function loadMapSettings(): MapSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<MapSettings>;
+      // aura defaults false, effects defaults true (only an explicit false disables).
+      return { aura: p.aura === true, effects: p.effects !== false };
+    }
+  } catch {
+    /* storage unavailable / malformed — fall through to defaults */
+  }
+  return { aura: false, effects: true };
+}
+
 function mapBaseName(raw: string): string {
   // Replay map names land as e.g. "prontera.gat" — the asset server's tree is
   // keyed by the bare map name.
@@ -137,6 +160,24 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   // "Highly experimental" intro shown over the viewer on open. Dismissing it
   // starts playback.
   const [showIntro, setShowIntro] = useState(true);
+
+  // Persisted display toggles. State drives the button UI + localStorage; refs
+  // feed the imperative render loop (which reads them each frame without a
+  // re-subscribe). aura OFF / effects ON by default.
+  const initialSettings = useMemo(loadMapSettings, []);
+  const [auraEnabled, setAuraEnabled] = useState(initialSettings.aura);
+  const [effectsEnabled, setEffectsEnabled] = useState(initialSettings.effects);
+  const auraEnabledRef = useRef(auraEnabled);
+  const effectsEnabledRef = useRef(effectsEnabled);
+  useEffect(() => {
+    auraEnabledRef.current = auraEnabled;
+    effectsEnabledRef.current = effectsEnabled;
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ aura: auraEnabled, effects: effectsEnabled }));
+    } catch {
+      /* storage blocked — the toggle still works for this session */
+    }
+  }, [auraEnabled, effectsEnabled]);
 
   useEffect(() => {
     if (!playerLook) {
@@ -308,6 +349,11 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       if (!world || !entities || !damageLayer) return;
       world.update(dt);
 
+      // Apply the skill/world-effects toggle before draining cursors (so a
+      // disabled state drops this frame's spawns instead of clearing them after).
+      // Cheap: setEffectsEnabled early-returns when the flag is unchanged.
+      effectsLayer?.setEffectsEnabled(effectsEnabledRef.current);
+
       const advanced = timelineRef.current.tick(dt);
       const nowMs = timelineRef.current.time;
       if (advanced || !primed) {
@@ -474,11 +520,15 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       // follows spawns, vanishes and backward-seek rebuilds. (The exact 150/160/185
       // tiers between 99 and 250 still show the 99 aura — a known simplification.)
       auraTiers.clear();
-      for (const v of entities!.visibleActors()) {
-        const ent = replay.entities.get(v.aid);
-        const lvl = ent?.kind === "pc" ? (ent.level ?? 0) : 0;
-        if (lvl >= 250) auraTiers.set(v.aid, "max");
-        else if (lvl >= 99) auraTiers.set(v.aid, "l99");
+      // When auras are toggled off, leave the tier map empty so syncAuras disposes
+      // any that were showing — the toggle takes hold immediately, mid-playback.
+      if (auraEnabledRef.current) {
+        for (const v of entities!.visibleActors()) {
+          const ent = replay.entities.get(v.aid);
+          const lvl = ent?.kind === "pc" ? (ent.level ?? 0) : 0;
+          if (lvl >= 250) auraTiers.set(v.aid, "max");
+          else if (lvl >= 99) auraTiers.set(v.aid, "l99");
+        }
       }
       effectsLayer!.syncAuras(auraTiers, nowMs);
 
@@ -708,6 +758,29 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       <button type="button" className="replay-map-close" title={t.replayMapClose} onClick={onClose}>
         ×
       </button>
+      {/* Left-side display toggles (persisted): level auras + skill/world effects.
+          The coloured dot signals on/off for sighted users; aria-pressed carries
+          the state to assistive tech. */}
+      <div className="replay-map-settings" role="group" aria-label={t.replayMapSettings}>
+        <button
+          type="button"
+          className={`replay-map-toggle${auraEnabled ? " is-on" : ""}`}
+          aria-pressed={auraEnabled}
+          onClick={() => setAuraEnabled((v) => !v)}
+        >
+          <span className="replay-map-toggle-dot" aria-hidden="true" />
+          {t.replayMapAura}
+        </button>
+        <button
+          type="button"
+          className={`replay-map-toggle${effectsEnabled ? " is-on" : ""}`}
+          aria-pressed={effectsEnabled}
+          onClick={() => setEffectsEnabled((v) => !v)}
+        >
+          <span className="replay-map-toggle-dot" aria-hidden="true" />
+          {t.replayMapEffects}
+        </button>
+      </div>
       <div className="replay-map-controls">
         <button
           type="button"
