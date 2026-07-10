@@ -4,15 +4,22 @@ All notable user-facing changes to RagnaRecap. Newest first.
 
 ## 2026-07-09
 
+- Visualizador de replay: **auras de nível** — o personagem agora exibe o visual de **nível 99** (o brilho no chão, as fitas de luz que sobem girando e as bolhas cintilantes) e a **aura dourada de nível máximo (250, 4ª classe)**, que aparecem automaticamente conforme o nível de quem está no replay. A aura de 250 foi recuperada diretamente do cliente do jogo.
+- Visualizador de replay: personagens conjurando agora mostram o **círculo de conjuração** (o anel giratório de mira sob quem está lançando a habilidade), como no cliente.
 - Visualizador de replay: **7 habilidades que antes não mostravam nenhum efeito** agora aparecem com o visual reformulado do próprio cliente — Cross Ripper Slasher, Axe Boomerang, Repair Weapon, Jack Frost, Wall of Thorns, Poison Smoke e Earth Grave. Esses efeitos foram recuperados diretamente do cliente do jogo (o roBrowser não os incluía) e usam os arquivos `.str` originais. Habilidades sem efeito conhecido continuam sem efeito — nada de placeholders genéricos.
 
 ## 2026-07-08
 
-- Visualizador de replay: efeitos visuais de habilidades agora incluem os **efeitos de área no chão** (tipo "cilindro" do cliente) — o pilar vermelho do Magnus Exorcismus, anéis, domos e auras de área de ~150 efeitos, renderizados fielmente como no jogo (porte do renderer de cilindros do roBrowser). Complementa os efeitos de habilidade em `.str` já suportados; habilidades sem efeito conhecido continuam sem efeito (nada de placeholders genéricos).
+- Visualizador de replay: efeitos visuais de habilidades agora incluem os **efeitos de área no chão** (tipo "cilindro" do cliente) — o pilar vermelho do Magnus Exorcismus, anéis, domos e auras de área de ~150 efeitos, renderizados fielmente como no jogo (porte do renderer de cilindros do roBrowser).
+- Visualizador de replay: mais tipos de efeito de habilidade passam a renderizar, além dos `.str` e cilindros — **partículas 3D e 2D** (brilhos, faíscas e clarões), **efeitos em sprite animado (SPR)** e os **picos no chão (QuadHorn)** —, ampliando quantas habilidades mostram seu visual real. Habilidades sem efeito conhecido continuam sem efeito (nada de placeholders genéricos).
 
 ## 2026-07-07
 
 - Base de itens atualizada com o último patch do cliente: **389 itens novos** (equipamentos Sombrios, conjuntos de Sakray, munições de canhão, entre outros) e diversos nomes corrigidos. Os replays passam a mostrar o nome correto desses itens em vez de exibir só o ID.
+
+## 2026-07-05
+
+- Visualizador de replay: habilidades agora exibem seus **efeitos visuais** (os arquivos `.str` do cliente) — bolas de fogo, cruzes sagradas, tempestades e afins aparecem quando a habilidade é usada, portados do roBrowser. É a base sobre a qual os demais tipos de efeito foram adicionados nos dias seguintes.
 
 ## 2026-07-02
 
