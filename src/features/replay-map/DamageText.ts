@@ -40,11 +40,13 @@ const BASE_LIFT = 2;
 // Multi-hit skills, matching the RO client: each hit spawns its own white
 // number that flies up the target in a gentle OPEN ARCH (rising while curving
 // out to one side), staggered a beat apart so successive hits fan open — older
-// ones higher, smaller and fading. Above them a small yellow RUNNING TOTAL pins
-// over the monster: it starts at the first hit's value and grows — in value and
-// size — as each subsequent hit lands. Timing is quick, matching the client:
-// the hits pop ≈180ms apart and each clears in ≈600ms (not the lazy 1.5s of a
-// single auto-attack number).
+// ones higher, smaller and fading. Above them a single yellow RUNNING TOTAL pins
+// over the monster (one persistent label per target, reused across events): it
+// starts at the first hit's value and counts up as each hit lands, and on EVERY
+// hit it re-pops from small back to full size — so a fresh hit (or a whole new
+// multi-hit event) restarts the zoom-in animation from the top, like the client.
+// Timing is quick: the hits pop ≈180ms apart and each clears in ≈600ms (not the
+// lazy 1.5s of a single auto-attack number).
 const HIT_STAGGER_MS = 180; // gap between hits — tight, like the client's rapid combo
 const HIT_LIFETIME_MS = 600; // a single hit number's life — quick pop-and-fade
 const COLUMN_BASE_WORLD = 0.8; // where a hit number starts (low, on the monster body)
@@ -55,10 +57,20 @@ const HIT_SPREAD_WORLD = 2.6; // how far a hit number curves out sideways (the a
 const COMBO_ABOVE_WORLD = 3.6; // yellow total's height above the target anchor —
 //                               just over the monster's head, clear of the hits
 const COMBO_FONT_PX = 24; // yellow total glyphs — smaller than the white hits (26)
-const COMBO_GROW_FROM = 0.55; // running-total scale at the first hit…
-const COMBO_GROW_TO = 1; //      …grown to this by the last hit
+const COMBO_GROW_FROM = 0.45; // yellow total's scale the instant it (re)appears…
+const COMBO_GROW_TO = 1; //      …popped up to full size over COMBO_POP_MS
+const COMBO_POP_MS = 160; // scale-in time: the yellow total zooms small→full on
+//                          every fresh multi-hit, then holds — a quick client-like pop
 const COMBO_LINGER_MS = 1200; // how long the total holds after the last hit
 const COMBO_COLOR = "#e6e626"; // RO combo yellow rgb(0.9,0.9,0.15)
+
+/** Ease-out with a small overshoot so the yellow total "pops" past full size
+ *  then settles — the snappy zoom-in the RO client uses for combo damage. */
+function easeOutBack(t: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
+}
 
 // Critical hits get the client's spiky red starburst drawn behind the digits.
 // The RO client renders this in code (there's no sprite for it in the GRF — the
@@ -277,8 +289,8 @@ class Float {
 
     // Running total: pinned just above the monster. It counts up one `perHit`
     // per hit that has landed by the stagger clock (so it starts at the first
-    // hit's value and grows to the full sum) and scales up as it counts,
-    // starting small. Fades out in the last 25%.
+    // hit's value and grows to the full sum) and RE-POPS small→full on every hit
+    // (see the pop clock below). Fades out in the last 25%.
     if (this.runningTotal && this.baseSpec) {
       const { perHit, count } = this.runningTotal;
       const landed = Math.min(count, Math.floor(age / HIT_STAGGER_MS) + 1);
@@ -287,8 +299,15 @@ class Float {
         drawText(this.canvas, { ...this.baseSpec, text: formatDamage(perHit * landed) });
         this.texture.needsUpdate = true;
       }
-      const grow =
-        count > 1 ? COMBO_GROW_FROM + (COMBO_GROW_TO - COMBO_GROW_FROM) * ((landed - 1) / (count - 1)) : COMBO_GROW_TO;
+      // Scale is a time-based pop (small → full over COMBO_POP_MS) measured from
+      // the CURRENT hit's landing moment, so EVERY hit in the combo — not just the
+      // first — zooms the label back up from small. `landed - 1` is the index of
+      // the hit now showing, and hit i lands at age i*HIT_STAGGER_MS, so the pop
+      // clock resets at each landing. A brand-new multi-hit event also restarts it
+      // (bornAtMs was reset on respawn), matching the client.
+      const landAge = (landed - 1) * HIT_STAGGER_MS;
+      const popT = Math.min(1, (age - landAge) / COMBO_POP_MS);
+      const grow = COMBO_GROW_FROM + (COMBO_GROW_TO - COMBO_GROW_FROM) * easeOutBack(popT);
       const alpha = perc < 0.75 ? 1 : Math.max(0, (1 - perc) / 0.25);
       (this.mesh.material as MeshBasicMaterial).opacity = alpha;
       this.mesh.scale.set(grow, grow, 1);
@@ -346,9 +365,18 @@ export class DamageTextLayer {
   /** Per-target stack: successive hits inside STACK_WINDOW_MS pop above the
    *  previous one so a multi-hit combo doesn't overlap into a blob. */
   private readonly stacks = new Map<number, { count: number; lastMs: number }>();
+  /** Dedicated pool for the yellow multi-hit running totals, kept apart from the
+   *  white-hit pool so a hit number can never steal a live combo label. One label
+   *  is bound per target (comboByTarget) and reused: a new multi-hit on the same
+   *  target restarts that label's pop-and-fade in place rather than stacking a
+   *  second one. */
+  private readonly comboPool: Float[] = [];
+  private readonly COMBO_POOL_SIZE = 32;
+  private readonly comboByTarget = new Map<number, Float>();
 
   constructor(scene: Scene) {
     for (let i = 0; i < this.POOL_SIZE; i++) this.pool.push(new Float(scene));
+    for (let i = 0; i < this.COMBO_POOL_SIZE; i++) this.comboPool.push(new Float(scene));
   }
 
   spawn(
@@ -364,7 +392,7 @@ export class DamageTextLayer {
     // staggered, then a yellow combo total that sums them. A miss is never a
     // multi-hit.
     if (count > 1 && hit !== "miss") {
-      this.spawnMultiHit(targetPos, damage, hit, fromPlayer, nowMs, count);
+      this.spawnMultiHit(targetAid, targetPos, damage, hit, fromPlayer, nowMs, count);
       return;
     }
     const free = this.pool.find((f) => !f.active);
@@ -375,6 +403,7 @@ export class DamageTextLayer {
   /** One rising white number per hit (each ≈ total/count) on the target's
    *  vertical line, then the yellow sum pinned above the monster. */
   private spawnMultiHit(
+    targetAid: number,
     targetPos: Vector3,
     total: number,
     hit: HitType,
@@ -396,11 +425,25 @@ export class DamageTextLayer {
       const spec = { ...specFor(hitType, perHit, fromPlayer), lifeMs: HIT_LIFETIME_MS, star: false };
       free.spawn(targetPos, spec, nowMs + i * HIT_STAGGER_MS, { column: true });
     }
-    // The yellow running total appears up front (with the first hit) showing
-    // that first hit's value, then counts up + grows as each hit lands beneath
-    // it, pinned above the monster.
-    const totalFloat = this.pool.find((f) => !f.active);
+    // The yellow running total is a SINGLE persistent label per target: a fresh
+    // multi-hit reuses the same float (comboFor) and restarts its pop-and-fade
+    // from the top. It appears with the first hit, counts up + re-pops small→full
+    // as each hit lands beneath it, holds, then fades — pinned above the monster.
+    const totalFloat = this.comboFor(targetAid);
     if (totalFloat) totalFloat.spawn(targetPos, runningTotalSpec(perHit, count), nowMs, { runningTotal: { perHit, count } });
+  }
+
+  /** The yellow running-total label for a target. While a label is still alive it
+   *  is reused so a new multi-hit restarts its animation in place; once it has
+   *  faded (its binding is pruned in `update`) the next multi-hit grabs a fresh
+   *  free label from the combo pool. */
+  private comboFor(targetAid: number): Float | null {
+    const existing = this.comboByTarget.get(targetAid);
+    if (existing) return existing;
+    const free = this.comboPool.find((f) => !f.active);
+    if (!free) return null;
+    this.comboByTarget.set(targetAid, free);
+    return free;
   }
 
   /** Vertical tier for separate single hits landing on the same target within a
@@ -419,10 +462,17 @@ export class DamageTextLayer {
 
   update(nowMs: number, camera: PerspectiveCamera): void {
     for (const f of this.pool) f.update(nowMs, camera);
+    for (const f of this.comboPool) f.update(nowMs, camera);
+    // Drop bindings for combo labels that have faded out, freeing them for other
+    // targets and letting a re-hit on this target start a brand-new label.
+    for (const [aid, f] of this.comboByTarget) if (!f.active) this.comboByTarget.delete(aid);
   }
 
   dispose(): void {
     for (const f of this.pool) f.dispose();
+    for (const f of this.comboPool) f.dispose();
     this.pool.length = 0;
+    this.comboPool.length = 0;
+    this.comboByTarget.clear();
   }
 }

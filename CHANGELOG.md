@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-07-11
+
+- Visualizador de replay: o **número amarelo de dano múltiplo** (o total que aparece sobre o monstro nos golpes multi-hit) agora anima como no cliente do jogo — surge pequeno e cresce até o tamanho cheio com um leve estouro. **Cada golpe da sequência reinicia essa animação** (o total pula de novo do pequeno ao cheio enquanto vai somando), o rótulo some depois de um instante e, se um novo dano múltiplo acontece, recomeça a animação do início. Antes, cada golpe empilhava um rótulo novo em vez de reutilizar um único que se reanima.
+
 ## 2026-07-09
 
 - Visualizador de replay: **auras de nível** — o personagem agora exibe o visual de **nível 99** (o brilho no chão, as fitas de luz que sobem girando e as bolhas cintilantes) e a **aura dourada de nível máximo (250, 4ª classe)**, que aparecem automaticamente conforme o nível de quem está no replay. A aura de 250 foi recuperada diretamente do cliente do jogo.
