@@ -260,6 +260,14 @@ class Actor {
     return out;
   }
 
+  /** Equipped weapon sprite-view id (PlayerLook.weapon), for the auto-attack
+   *  swing-sound lookup — null for a mob/NPC actor OR a bare-handed player;
+   *  callers distinguish the two via the replay entity's `kind` (mobs shouldn't
+   *  get a player's fist-swing sound). */
+  weaponView(): number | null {
+    return this.src.kind === "player" ? this.src.look!.weapon : null;
+  }
+
   /** The look the URL builders should render — the base look on foot, or the
    *  same look with the warg-mount job id swapped in while riding (so gear still
    *  composites onto the mounted body). */

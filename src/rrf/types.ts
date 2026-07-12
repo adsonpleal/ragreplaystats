@@ -108,6 +108,18 @@ export type VanishEvent = {
   kind: number;
 };
 
+/** A server-pushed visual effect on an entity (0x01f3 ZC_NOTIFY_EFFECT, the
+ *  `clif_specialeffect` packet). `effectId` is an EF_* id straight from the
+ *  effect table — the client renders + sounds it. This is how item-use effects
+ *  (a Concentration/Awakening potion's sparkle, a Berry's flash, …) and many
+ *  other script `specialeffect` visuals reach the client, so it covers item
+ *  consumption effects generically, not per-item. */
+export type NotifyEffectEvent = {
+  time: number;
+  aid: number;
+  effectId: number;
+};
+
 /** An entity's OPTION/effectState bitmask changed mid-recording (ZC_STATE_CHANGE3
  *  0x0229). Carries mounts/summons (Falcon, Warg) AND visibility (cloakonnpc /
  *  hideonnpc set OPTION_HIDE/CLOAK to make a script NPC vanish and reappear). */
@@ -290,6 +302,9 @@ export type Replay = {
   /** Ground-skill-unit placements with cells + attributed skill id, in packet
    *  order. Drives the map viewer's ground effects. */
   groundSkillUnits: GroundSkillUnit[];
+  /** Server-pushed visual effects (0x01f3) — item-use sparkles and other
+   *  `specialeffect` visuals. Drives the map viewer's item/effect layer. */
+  notifyEffects: NotifyEffectEvent[];
   totals: {
     packetCount: number;
     handledPackets: number;

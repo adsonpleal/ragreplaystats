@@ -20,7 +20,7 @@ import {
   decodeSkillNoDamage09cb,
   type GroundSkillEntry,
 } from "./skill.js";
-import { decodeMapChange, decodeMobHp, decodeStateChange0229, decodeVanish } from "./misc.js";
+import { decodeMapChange, decodeMobHp, decodeNotifyEffect, decodeStateChange0229, decodeVanish } from "./misc.js";
 import { decodeFixPos, decodeMoveOther, decodeMoveSelf } from "./movement.js";
 import {
   decodeItemAdd,
@@ -47,6 +47,7 @@ import type {
   MapChange,
   MobHpUpdate,
   MoveEvent,
+  NotifyEffectEvent,
   OptionChangeEvent,
   ParamChangeEvent,
   SkillCast,
@@ -83,6 +84,7 @@ export const PacketIds = {
   STATUS_043F: 0x043f,
   STATUS_0983: 0x0983,
   GROUND_SKILL_ENTRY: 0x09ca,
+  NOTIFY_EFFECT: 0x01f3,
   SELF_CHAT: 0x008e,
   MOVE_OTHER: 0x0086,
   MOVE_SELF: 0x0087,
@@ -105,6 +107,7 @@ export type DecodedPacket =
   | { type: "paramChange"; data: ParamChangeEvent }
   | { type: "status"; data: StatusEvent }
   | { type: "groundSkillEntry"; data: GroundSkillEntry }
+  | { type: "notifyEffect"; data: NotifyEffectEvent }
   | { type: "chat"; data: ChatEvent }
   | { type: "moveOther"; data: MoveEvent }
   | { type: "moveSelfRaw"; data: { time: number; startTime: number; from: { gx: number; gy: number }; to: { gx: number; gy: number } } }
@@ -174,6 +177,8 @@ export function decodePacket(
         return { type: "status", data: decodeStatus0983(reader, time) };
       case PacketIds.GROUND_SKILL_ENTRY:
         return { type: "groundSkillEntry", data: decodeSkillEntry09ca(reader, time) };
+      case PacketIds.NOTIFY_EFFECT:
+        return { type: "notifyEffect", data: decodeNotifyEffect(reader, time) };
       case PacketIds.SELF_CHAT:
         return { type: "chat", data: decodeSelfChat(raw, time) };
       case PacketIds.MOVE_OTHER:

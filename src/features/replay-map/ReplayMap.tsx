@@ -17,12 +17,20 @@ import type { ReferenceDb } from "../../db/loader";
 import type { Replay } from "../../rrf/types";
 import { Engine } from "../../sim/render/engine";
 import { buildWorld, type MapManifest, type World } from "../../sim/render/scene";
-import { MAPS_ROOT } from "../../sim/ragassets";
+import { MAPS_ROOT, bgmIndexUrl, bgmTrackUrl } from "../../sim/ragassets";
 import { findPath } from "../../sim/pathfind";
 import { CursorAnimator } from "../../sim/cursor";
 import { DamageTextLayer } from "./DamageText";
 import { type AuraTier, EffectsLayer } from "./Effects";
-import { hasSkillEffect, preloadSkillMap, skillEntry } from "../../sim/render/effectAssets";
+import {
+  hasSkillEffect,
+  preloadSkillMap,
+  skillEntry,
+  soundsForEffect,
+  soundsForSkill,
+} from "../../sim/render/effectAssets";
+import { AudioManager } from "../../sim/render/audio";
+import { weaponSwingSound } from "../../sim/render/weaponSound";
 import { EntityTable } from "./Entities";
 import { EventCursor, Timeline } from "./Timeline";
 import { BuffBar, CastBarLayer, CastNameLayer, HoverTooltip, VitalBars, projectToScreen } from "./HudOverlay";
@@ -67,6 +75,17 @@ const GROUND_DEDUP_MS = 600;
 // Collapse a skill activation's repeated result packets (multi-hit damage, or a
 // cast+use pair) into a single main-effect spawn.
 const MAIN_EFFECT_DEDUP_MS = 500;
+// Collapse a doubled server-effect (0x01f3) packet, while still letting a genuine
+// re-use (a potion used again seconds later) spawn again.
+const NOTIFY_DEDUP_MS = 200;
+
+// A played sound can't be un-played, so SFX fire ONLY for events crossing the
+// playhead during normal forward playback. A per-frame `audible` flag gates them;
+// part of it is that the recording clock stepped forward by a *small* amount —
+// this cap (ms of recording time) suppresses the initial priming drain (0 → now),
+// a tab-refocus rAF spike, and any future scrub, all of which jump the clock far.
+// Visuals still spawn on those frames; only audio is gated.
+const AUDIBLE_STEP_CAP = 250;
 
 type Phase = "loading" | "ready" | "error";
 
@@ -80,19 +99,38 @@ const SETTINGS_KEY = "ragreplay.map.settings";
 interface MapSettings {
   aura: boolean;
   effects: boolean;
+  /** Skill/effect sound effects. */
+  sfx: boolean;
+  /** Background music (governed by the same master; no BGM source in this repo yet). */
+  bgm: boolean;
 }
 function loadMapSettings(): MapSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const p = JSON.parse(raw) as Partial<MapSettings>;
-      // aura defaults false, effects defaults true (only an explicit false disables).
-      return { aura: p.aura === true, effects: p.effects !== false };
+      // aura defaults false; effects/sfx/bgm default true (only an explicit false disables).
+      return { aura: p.aura === true, effects: p.effects !== false, sfx: p.sfx !== false, bgm: p.bgm !== false };
     }
   } catch {
     /* storage unavailable / malformed — fall through to defaults */
   }
-  return { aura: false, effects: true };
+  return { aura: false, effects: true, sfx: true, bgm: true };
+}
+
+// The map→BGM-track catalogue (bgm/index.json), fetched once per app load and
+// memoized so every viewer open reuses it. Never rejects (falls back to {} so a
+// failed fetch just means no music, silently). Keys match `mapBaseName` output
+// (instance maps as "1@<base>").
+let bgmTablePromise: Promise<Record<string, string>> | null = null;
+function loadBgmTable(): Promise<Record<string, string>> {
+  if (!bgmTablePromise) {
+    bgmTablePromise = fetch(bgmIndexUrl())
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { maps?: Record<string, string> } | null) => j?.maps ?? {})
+      .catch(() => ({}));
+  }
+  return bgmTablePromise;
 }
 
 function mapBaseName(raw: string): string {
@@ -137,6 +175,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       casts: by(replay.skillCasts),
       uses: by(replay.skillUses),
       ground: by(replay.groundSkillUnits),
+      notify: by(replay.notifyEffects),
       params: by(replay.paramChanges),
       // Local player's status changes only — drives the buff strip.
       status: by(replay.statusEvents.filter((e) => e.aid === playerAid)),
@@ -167,17 +206,31 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   const initialSettings = useMemo(loadMapSettings, []);
   const [auraEnabled, setAuraEnabled] = useState(initialSettings.aura);
   const [effectsEnabled, setEffectsEnabled] = useState(initialSettings.effects);
+  const [sfxEnabled, setSfxEnabled] = useState(initialSettings.sfx);
+  const [bgmEnabled, setBgmEnabled] = useState(initialSettings.bgm);
   const auraEnabledRef = useRef(auraEnabled);
   const effectsEnabledRef = useRef(effectsEnabled);
+  const sfxEnabledRef = useRef(sfxEnabled);
+  const bgmEnabledRef = useRef(bgmEnabled);
+  // The audio manager for this viewer (created by the setup effect). The SFX/BGM
+  // toggles drive it through this ref, mirroring effectsEnabledRef.
+  const audioRef = useRef<AudioManager | null>(null);
   useEffect(() => {
     auraEnabledRef.current = auraEnabled;
     effectsEnabledRef.current = effectsEnabled;
+    sfxEnabledRef.current = sfxEnabled;
+    bgmEnabledRef.current = bgmEnabled;
+    audioRef.current?.setSfxMuted(!sfxEnabled);
+    audioRef.current?.setBgmMuted(!bgmEnabled);
     try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ aura: auraEnabled, effects: effectsEnabled }));
+      localStorage.setItem(
+        SETTINGS_KEY,
+        JSON.stringify({ aura: auraEnabled, effects: effectsEnabled, sfx: sfxEnabled, bgm: bgmEnabled }),
+      );
     } catch {
       /* storage blocked — the toggle still works for this session */
     }
-  }, [auraEnabled, effectsEnabled]);
+  }, [auraEnabled, effectsEnabled, sfxEnabled, bgmEnabled]);
 
   useEffect(() => {
     if (!playerLook) {
@@ -212,12 +265,43 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     let castCursor: EventCursor<typeof events.casts[number]> | null = null;
     let useCursor: EventCursor<typeof events.uses[number]> | null = null;
     let groundCursor: EventCursor<typeof events.ground[number]> | null = null;
+    let notifyCursor: EventCursor<typeof events.notify[number]> | null = null;
     let paramCursor: EventCursor<typeof events.params[number]> | null = null;
     let statusCursor: EventCursor<typeof events.status[number]> | null = null;
     // Drain the cursors once even while paused so the starting frame (player +
     // entities placed at t=0, camera on them) shows behind/after the intro
     // dialog, before the user presses play. Reset by buildRuntime on restart.
     let primed = false;
+    // Previous frame's recording time, for the SFX `audible` gate's step check
+    // (a small forward step = normal playback; a big jump = prime/scrub/refocus).
+    // Reset with the cursors on rebuild so nothing bleeds across a restart.
+    let lastNowMs = 0;
+
+    // Web Audio SFX/BGM manager (one per mount). The left-side SFX/BGM toggles
+    // drive it via audioRef; unlocked on the first play gesture (browsers block
+    // audio until then). Muted state seeded from the current toggle refs.
+    const audio = new AudioManager();
+    audio.setSfxMuted(!sfxEnabledRef.current);
+    audio.setBgmMuted(!bgmEnabledRef.current);
+    audioRef.current = audio;
+    // The map's looping BGM: resolve mapName → track via the catalogue, then set it
+    // (starts on the first play gesture, governed by the "Música" toggle). A map
+    // with no track / a failed index fetch just stays silent.
+    loadBgmTable().then((table) => {
+      const track = table[mapName];
+      if (track && !disposed) audio.setBgm(bgmTrackUrl(track));
+    });
+
+    // Play a resolved sound-name list (from soundsForSkill/soundsForEffect) as
+    // SFX. v1 is flat: master volume, no distance/pan (the spatial pass is a
+    // follow-up). Guarded so a rejected lookup never breaks the drain.
+    const playSounds = (names: Promise<string[]>): void => {
+      names
+        .then((list) => {
+          for (const n of list) audio.play(n);
+        })
+        .catch(() => {});
+    };
 
     // Local player's active buffs: EFST id → expiry time (ms, recording clock;
     // Infinity when the status has no timed duration). Rebuilt on restart. The
@@ -232,21 +316,30 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     // Same idea for a skill's MAIN effect (effectId): `${skillId}:${targetAid}` →
     // last spawn ms, so a multi-hit / cast+use activation only spawns it once.
     const lastMainEffect = new Map<string, number>();
+    // Server-effect (0x01f3) dedup: `${aid}:${effectId}` → last spawn ms, to
+    // collapse a packet that arrives doubled while still letting a genuine re-use
+    // (a potion used again seconds later) fire again. Cleared on restart.
+    const lastNotifyEffect = new Map<string, number>();
 
-    // Spawn a skill's main effect ON THE TARGET, attached (follows it). This is
-    // the arrow-rain / bolt / heal-sparkle that belongs over the entity the skill
-    // was used on — NOT on the caster. Deduped per activation. Self-cast skills
-    // pass the caster as the target. No-op for skills with no renderable effect,
-    // an unknown target, or before the skill-map loads.
-    const spawnMainEffect = (skillId: number, targetAid: number, nowMs: number): void => {
-      if (!skillId || !targetAid || !effectsLayer || !entities || !hasSkillEffect(skillId)) return;
+    // Spawn a skill's main effect ON THE TARGET, attached (follows it), and play
+    // its main sound. This is the arrow-rain / bolt / heal-sparkle that belongs
+    // over the entity the skill was used on — NOT on the caster. Deduped per
+    // activation (one shared window for visual + sound, so a skill that fires both
+    // useCursor and damageCursor doesn't double up). Self-cast skills pass the
+    // caster as the target. `audible` gates ONLY the sound (visuals always spawn).
+    // The sound is resolved straight from the effect table — NOT gated on
+    // hasSkillEffect — because many skills have a sound but no visual we render.
+    const spawnMainEffect = (skillId: number, targetAid: number, nowMs: number, audible: boolean): void => {
+      if (!skillId || !targetAid || !entities) return;
       const key = `${skillId}:${targetAid}`;
       const last = lastMainEffect.get(key);
       if (last != null && nowMs - last < MAIN_EFFECT_DEDUP_MS) return;
       lastMainEffect.set(key, nowMs);
-      effectsLayer.spawnSkillMain(skillId, targetAid, entities.worldPosOf(targetAid, mainEffectTmp), nowMs, {
-        attached: true,
-      });
+      const pos = entities.worldPosOf(targetAid, mainEffectTmp);
+      if (effectsLayer && hasSkillEffect(skillId)) {
+        effectsLayer.spawnSkillMain(skillId, targetAid, pos, nowMs, { attached: true });
+      }
+      if (audible) playSounds(soundsForSkill(skillId));
     };
 
     // Player vitals — updated as paramChange events drain. Kept in refs so the
@@ -278,10 +371,19 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       else if (e.key === " " && !(e.target instanceof HTMLInputElement)) {
         e.preventDefault();
         timelineRef.current.togglePlay();
+        if (timelineRef.current.isPlaying) audio.resume(); // keyboard toggle is a gesture
         setIsPlaying(timelineRef.current.isPlaying);
       }
     };
     window.addEventListener("keydown", onKey);
+
+    // Tab visibility: suspend the audio context when hidden (the `audible` gate
+    // already drops the refocus rAF spike, so returning resumes without a backlog).
+    const onVisibility = () => {
+      if (document.hidden) audio.suspend();
+      else if (timelineRef.current.isPlaying) audio.resume();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     // Right-drag rotates the camera. Left-click is intentionally disabled —
     // the map viewer is a playback, not an interactive sim. The cursor swaps
@@ -333,6 +435,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     const castWorldTmp = new Vector3();
     const groundWorldTmp = new Vector3();
     const mainEffectTmp = new Vector3();
+    const notifyWorldTmp = new Vector3();
     const camUpTmp = new Vector3();
     // Reused each frame to reconcile level auras by tier (see syncAuras below).
     const auraTiers = new Map<number, AuraTier>();
@@ -356,6 +459,20 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
 
       const advanced = timelineRef.current.tick(dt);
       const nowMs = timelineRef.current.time;
+      // Scrub-safety gate for SFX: sounds fire ONLY for events crossing the
+      // playhead during normal forward playback. `primed` here is the PREVIOUS
+      // frame's value (read before the drain flips it), so the priming drain
+      // itself is silent. Big clock jumps (prime 0→now, tab-refocus rAF spike,
+      // any future scrub) exceed the step cap and are silent too. Visuals are NOT
+      // gated — only this boolean guards the sound plays inside the seams.
+      const stepMs = nowMs - lastNowMs;
+      const audible =
+        timelineRef.current.isPlaying &&
+        advanced &&
+        primed &&
+        stepMs >= 0 &&
+        stepMs <= AUDIBLE_STEP_CAP &&
+        !document.hidden;
       if (advanced || !primed) {
         primed = true;
         // Drain cursors up to the playback time, applying each event to the
@@ -380,8 +497,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         });
         useCursor!.advanceTo(nowMs, (ev) => {
           // No-damage skills (heals/buffs) land via skill-use: play the main
-          // effect on the target it was used on (self for a buff).
-          spawnMainEffect(ev.skillId, ev.target || ev.source, nowMs);
+          // effect + sound on the target it was used on (self for a buff).
+          spawnMainEffect(ev.skillId, ev.target || ev.source, nowMs, audible);
         });
         groundCursor!.advanceTo(nowMs, (ev) => {
           // Persistent ground effect (Storm Gust/Arrow Storm/…) at the unit's
@@ -402,6 +519,22 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
             loop: true,
             durationMs: GROUND_EFFECT_MS,
           });
+          // Ground effect sound once per activation (already deduped above).
+          if (audible) playSounds(soundsForEffect(eff.groundEffectId));
+        });
+        notifyCursor!.advanceTo(nowMs, (ev) => {
+          // Server-pushed effect (0x01f3): item-use sparkle + other specialeffects.
+          // Render effectId ON the entity (attached, follows it) and play its sound.
+          // Deduped so a doubled packet spawns once; a genuine re-use fires again.
+          if (!ev.effectId || !effectsLayer || !entities) return;
+          const key = `${ev.aid}:${ev.effectId}`;
+          const last = lastNotifyEffect.get(key);
+          if (last != null && nowMs - last < NOTIFY_DEDUP_MS) return;
+          lastNotifyEffect.set(key, nowMs);
+          const pos = entities.worldPosOf(ev.aid, notifyWorldTmp);
+          if (!pos) return; // entity not placed this frame → nothing to anchor to
+          effectsLayer.spawn(ev.effectId, ev.aid, pos, nowMs, { attached: true });
+          if (audible) playSounds(soundsForEffect(ev.effectId));
         });
         damageCursor!.advanceTo(nowMs, (ev) => {
           entities!.applyDamage(nowMs, ev.source, ev.target, ev.skillId);
@@ -411,10 +544,24 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
             // Damage skills land via their damage packet: the main effect once on
             // the target (Arrow Storm rain, bolt impact), plus the per-hit effect
             // pinned where each hit landed (a quick flash, not attached).
-            spawnMainEffect(ev.skillId, ev.target, nowMs);
+            spawnMainEffect(ev.skillId, ev.target, nowMs, audible);
             const eff = skillEntry(ev.skillId);
             if (eff?.hitEffectId != null) {
               effectsLayer!.spawn(eff.hitEffectId, ev.target, pos, nowMs);
+              // Hit-spark sound once per damage event — not per hit (ev.hits is a
+              // single multi-hit packet; the same-name throttle collapses any
+              // rapid repeats at speed).
+              if (audible) playSounds(soundsForEffect(eff.hitEffectId));
+            }
+            // Auto-attack (skillId 0): the weapon's swing sound, resolved from the
+            // ATTACKER's equipped weapon — a sword's clash, a bow's twang, bare
+            // fists otherwise. Only for a player attacker (entities.actor().
+            // weaponView() reads PlayerLook, which only exists for player actors);
+            // a mob's auto-attack has no client-side sound to draw on yet, so it
+            // stays silent rather than borrowing a player's fist swing.
+            if (!ev.skillId && audible && replay.entities.get(ev.source)?.kind === "pc") {
+              const name = weaponSwingSound(entities!.actor(ev.source)?.weaponView() ?? null);
+              if (name) audio.play(name);
             }
           }
         });
@@ -445,6 +592,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           }
         });
       }
+      // Record this frame's playhead for the next frame's `audible` step check.
+      lastNowMs = nowMs;
 
       entities.update(dt, nowMs, engine.cam.direction, engine.cam.camera);
       damageLayer.update(nowMs, engine.cam.camera);
@@ -648,14 +797,18 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           castCursor = new EventCursor(events.casts);
           useCursor = new EventCursor(events.uses);
           groundCursor = new EventCursor(events.ground);
+          notifyCursor = new EventCursor(events.notify);
           paramCursor = new EventCursor(events.params);
           statusCursor = new EventCursor(events.status);
           vitals.hp = vitals.maxHp = vitals.sp = vitals.maxSp = vitals.ap = vitals.maxAp = 0;
           activeBuffs.clear();
           lastGroundSpawn.clear();
           lastMainEffect.clear();
+          lastNotifyEffect.clear();
           buffsDirty = true; // force one reconcile so a rewind clears the strip
           primed = false; // re-drain the starting frame for the fresh cursors
+          lastNowMs = 0; // reset the SFX step baseline so nothing bleeds across
+          audio.stopAll(); // cut any live voices before the fresh drain
         };
         buildRuntime();
         // Open paused behind the intro dialog — pressing "Entendi" starts it.
@@ -664,9 +817,31 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           buildRuntime();
           timelineRef.current.seek(0);
           timelineRef.current.setPlaying(true);
+          audio.resume(); // restart is a user gesture — (re)unlock audio
           forceRender((n) => n + 1);
           setIsPlaying(true);
         };
+        // Warm the session's frequent sounds so the first cast of each skill isn't
+        // dropped by the late-play window (fetch+decode > 150ms on a cold buffer).
+        // preload() before the first gesture just queues names; audio.resume()
+        // fetches them once the context unlocks. Best-effort, never blocks ready.
+        void (async () => {
+          await skillMapReady;
+          const ids = new Set<number>();
+          for (const e of events.casts) if (e.skillId) ids.add(e.skillId);
+          for (const e of events.uses) if (e.skillId) ids.add(e.skillId);
+          for (const e of events.damage) if (e.skillId) ids.add(e.skillId);
+          const names = new Set<string>();
+          await Promise.all(
+            [...ids].map(async (id) => {
+              for (const n of await soundsForSkill(id)) names.add(n);
+              const eff = skillEntry(id);
+              if (eff?.hitEffectId != null) for (const n of await soundsForEffect(eff.hitEffectId)) names.add(n);
+              if (eff?.groundEffectId != null) for (const n of await soundsForEffect(eff.groundEffectId)) names.add(n);
+            }),
+          );
+          if (!disposed) audio.preload([...names]);
+        })().catch(() => {});
         // Wait for Galmuri11 before unblocking playback — the first damage /
         // cast label / tooltip text draws its Canvas texture once at spawn, so
         // late-arrival of the font would leave those first labels frozen in
@@ -693,6 +868,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
                 castNames,
                 castBars,
                 buffBar,
+                audio,
                 timeline: timelineRef.current,
                 get cursors() { return { damageCursor, vanishCursor, moveCursor, posCursor, castCursor, paramCursor }; },
                 tick(ms: number) {
@@ -713,6 +889,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       disposed = true;
       ro.disconnect();
       window.removeEventListener("keydown", onKey);
+      document.removeEventListener("visibilitychange", onVisibility);
       canvas.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("mousemove", onPointerMove);
       window.removeEventListener("mouseup", onPointerUp);
@@ -729,6 +906,8 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       entities?.dispose();
       world?.dispose();
       engine.dispose();
+      audio.dispose();
+      audioRef.current = null;
       canvas.removeEventListener("mouseleave", onPointerLeave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -736,6 +915,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
 
   const togglePlay = () => {
     timelineRef.current.togglePlay();
+    if (timelineRef.current.isPlaying) audioRef.current?.resume(); // play click is a gesture
     setIsPlaying(timelineRef.current.isPlaying);
   };
 
@@ -779,6 +959,24 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         >
           <span className="replay-map-toggle-dot" aria-hidden="true" />
           {t.replayMapEffects}
+        </button>
+        <button
+          type="button"
+          className={`replay-map-toggle${sfxEnabled ? " is-on" : ""}`}
+          aria-pressed={sfxEnabled}
+          onClick={() => setSfxEnabled((v) => !v)}
+        >
+          <span className="replay-map-toggle-dot" aria-hidden="true" />
+          {t.replayMapSfx}
+        </button>
+        <button
+          type="button"
+          className={`replay-map-toggle${bgmEnabled ? " is-on" : ""}`}
+          aria-pressed={bgmEnabled}
+          onClick={() => setBgmEnabled((v) => !v)}
+        >
+          <span className="replay-map-toggle-dot" aria-hidden="true" />
+          {t.replayMapBgm}
         </button>
       </div>
       <div className="replay-map-controls">
@@ -864,6 +1062,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
               onClick={() => {
                 setShowIntro(false);
                 timelineRef.current.setPlaying(true);
+                audioRef.current?.resume(); // first gesture unlocks Web Audio
                 setIsPlaying(true);
               }}
             >

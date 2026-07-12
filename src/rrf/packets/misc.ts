@@ -1,5 +1,19 @@
 import { ByteReader, readKoreanZ } from "../reader.js";
-import type { MapChange, MobHpUpdate, OptionChangeEvent, VanishEvent } from "../types.js";
+import type { MapChange, MobHpUpdate, NotifyEffectEvent, OptionChangeEvent, VanishEvent } from "../types.js";
+
+/**
+ * 0x01f3 — ZC_NOTIFY_EFFECT (`clif_specialeffect`, 10 bytes incl. pkt id).
+ *   AID u32, type u32
+ * `type` is an EF_* effect id the client renders on the entity. Item-use
+ * effects (a Concentration/Awakening potion sparkle, a Berry flash) and many
+ * other server `specialeffect` visuals arrive this way — so it covers item
+ * consumption effects generically.
+ */
+export function decodeNotifyEffect(reader: ByteReader, time: number): NotifyEffectEvent {
+  const aid = reader.u32();
+  const effectId = reader.u32();
+  return { time, aid, effectId };
+}
 
 /**
  * 0x0229 — ZC_STATE_CHANGE3: an entity's OPTION/effectState changed. This is how

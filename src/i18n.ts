@@ -96,6 +96,8 @@ export const t = {
   replayMapSettings: "Configurações",
   replayMapAura: "Aura",
   replayMapEffects: "Efeitos",
+  replayMapSfx: "Sons",
+  replayMapBgm: "Música",
   replayMapCredit: "Renderização inspirada no roBrowser",
   replayMapIntroTitle: "Recurso experimental",
   replayMapIntroBody:

@@ -184,6 +184,12 @@ interface SkillEffectEntry {
   effectId?: number;
   hitEffectId?: number;
   groundEffectId?: number;
+  /** Gateway-resolved sound names for the skill's own audio (server-verified
+   *  against the extracted data/wav/ tree — covers the ~380 3rd/4th-class skills
+   *  whose main effect has no table `wav`, e.g. Windhawk/Warg Strike/Jack Frost).
+   *  Scoped to the skill itself; hit/ground-effect sounds still come from
+   *  soundsForEffect via hitEffectId/groundEffectId. */
+  wav?: string[];
 }
 
 /** One EffectTable row entry. `type:"STR"` (keyframe files) and `type:"CYLINDER"`
@@ -193,6 +199,8 @@ interface EffectTableEntry {
   type?: string; // "STR" | "CYLINDER" | "SPR" | "FUNC" | "3D" | undefined (sound-only)
   file?: string; // STR file name; may contain a "%d" variant placeholder
   rand?: number[]; // [min, max] for the "%d" variant (client picks one)
+  wav?: string; // GRF-relative effect sound name (may contain a "%d" variant);
+  //              present on many rows, INCLUDING sound-only rows with no `type`.
   // --- CYLINDER attributes (all optional; defaults applied on load) ----------
   textureName?: string;
   topSize?: number;
@@ -440,6 +448,61 @@ export function loadSkillMainEffect(skillId: number): Promise<LoadedPart[]> {
   const eff = skillEntry(skillId);
   if (eff?.effectId != null) return loadEffect(eff.effectId);
   return Promise.resolve([]);
+}
+
+// --- Effect sounds (effectId/skillId → wav names) ------------------------
+// Audio is resolved straight from the effect-table rows, INDEPENDENT of the
+// visual LoadedPart pipeline: ~half the `wav` rows are sound-only (a `wav` with
+// no `type`), and many effects have a sound even when we render no visual. So we
+// read every row's `wav` (not just the ones that yield a renderer). `%d` variants
+// (ef_firearrow%d, _hit_fist%d) resolve with the same rand logic the STR `file`
+// field uses — a fresh pick per call, matching the client's per-cast randomness.
+
+/** Strip a STR file's directory, leaving its bare base name — the sound file the
+ *  GRF serves for that effect (data/wav/<base>.wav) shares the STR's base name. */
+function strFileSoundName(file: string): string {
+  const slash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+  return slash >= 0 ? file.slice(slash + 1) : file;
+}
+
+/** effectId → its distinct resolved wav names (all rows, %d resolved, deduped).
+ *  [] when the effect has no table row or no sounds.
+ *
+ *  Fallback for the many older 3rd-class effects roBrowser's table gives a STR
+ *  `file` but no `wav`: the GRF serves the sound under the STR file's bare base
+ *  name (file "arrowstorm" → sound "arrowstorm", "aimed" → "aimed"). Only used
+ *  when NO row carries a real `wav`; a miss 404s to silence, so it never adds a
+ *  wrong sound — only a genuinely matching one. */
+export async function soundsForEffect(effectId: number): Promise<string[]> {
+  const table = await effectTable();
+  const entries = table[String(effectId)];
+  if (!entries?.length) return [];
+  const out = new Set<string>();
+  for (const e of entries) {
+    if (e.wav) out.add(resolveFileName(e.wav, e.rand));
+  }
+  if (out.size === 0) {
+    for (const e of entries) {
+      if (e.type === "STR" && e.file) out.add(strFileSoundName(resolveFileName(e.file, e.rand)));
+    }
+  }
+  return [...out];
+}
+
+/** skillId → its sound names: the gateway's server-resolved `wav` (verified
+ *  against the extracted data/wav/ tree — covers the 3rd/4th-class skills whose
+ *  main effect has no table `wav`, e.g. Windhawk/Warg Strike/Jack Frost) unioned
+ *  with the MAIN effect's own table/fallback sounds via soundsForEffect. The
+ *  latter is kept as defense-in-depth for a skill whose gateway `wav` came back
+ *  empty, and is the only source once hit/ground effects are added by the
+ *  caller (skill-map `wav` is scoped to the skill's own sound only). [] if none. */
+export async function soundsForSkill(skillId: number): Promise<string[]> {
+  const eff = skillEntry(skillId);
+  const out = new Set<string>(eff?.wav ?? []);
+  if (eff?.effectId != null) {
+    for (const n of await soundsForEffect(eff.effectId)) out.add(n);
+  }
+  return [...out];
 }
 
 /** Substitute a "%d" file variant using the entry's `rand` range (the client

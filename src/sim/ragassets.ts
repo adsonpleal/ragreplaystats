@@ -109,7 +109,10 @@ export function statusIconUrl(efstId: number): string {
 // All are immutable + CORS-enabled; fetch the tables once and cache (effectAssets).
 
 /** roBrowser's SkillEffect table: skillId → { effectId?, hitEffectId?,
- *  groundEffectId? }. One fetch for the whole map. */
+ *  groundEffectId?, wav? }. `wav` is the gateway's own resolved sound names for
+ *  the skill (server-verified against the extracted data/wav/ tree — covers the
+ *  many 3rd/4th-class skills whose EffectTable row carries no sound). One fetch
+ *  for the whole map. */
 export function effectSkillMapUrl(): string {
   return `${RAGASSETS_BASE}/effect/skill-map`;
 }
@@ -142,6 +145,30 @@ export function effectSpriteUrl(key: string): string {
 /** One composited frame PNG of a played-sprite effect bundle. */
 export function effectSpriteFrameUrl(key: string, img: string): string {
   return `${RAGASSETS_BASE}/effects/sprites/${encodeURIComponent(key)}/${img}`;
+}
+
+/** One effect/skill sound (browser-playable audio) by GRF-relative wav name
+ *  (e.g. "effect/ef_bash", "_heal_effect") — the `wav` field of an effect-table
+ *  row. Immutable + CORS-enabled; 404s on a name the gateway has no sound for
+ *  (the AudioManager caches that miss to silence). */
+export function effectSoundUrl(file: string): string {
+  return `${RAGASSETS_BASE}/effect/sound?file=${encodeURIComponent(file)}`;
+}
+
+// Per-map background music. Ragassets serves a map→track table at /bgm/index.json
+// ({ maps: { "<mapname>": "<NN.mp3>" } }, keyed by the same name the scene builder
+// uses — instance maps as "1@<base>") and the audio at /bgm/<NN.mp3> (audio/mpeg,
+// wildcard CORS). Rooted off MAPS_ROOT so VITE_MAPS_URL overrides both.
+const BGM_ROOT = new URL("../bgm/", MAPS_ROOT).href;
+
+/** The map→track catalogue: `{ maps: { "<mapname>": "<track>.mp3" } }`. */
+export function bgmIndexUrl(): string {
+  return `${BGM_ROOT}index.json`;
+}
+
+/** One looping background-music track (`<NN>.mp3`), from the index's values. */
+export function bgmTrackUrl(file: string): string {
+  return `${BGM_ROOT}${file}`;
 }
 
 /** Mob/monster billboard canvas. Sized like the latamvisuais pet canvas — the

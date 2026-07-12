@@ -22,6 +22,7 @@ import type {
   MapChange,
   MobHpUpdate,
   MoveEvent,
+  NotifyEffectEvent,
   OptionChangeEvent,
   ParamChangeEvent,
   RandomOption,
@@ -179,6 +180,8 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
   // attribute it from the caster's most recent skill use/cast (the AoE's own
   // activation packet, sent just before its units) — see lastSkillByCaster.
   const groundSkillUnits: GroundSkillUnit[] = [];
+  // Server-pushed visual effects (0x01f3) — item-use sparkles + other specialeffects.
+  const notifyEffects: NotifyEffectEvent[] = [];
   const lastSkillByCaster = new Map<number, { skillId: number; time: number }>();
   // Widest cast we care to bridge (a long channel like Storm Gust) — beyond this
   // the "last skill" is too stale to trust as this unit's source.
@@ -409,6 +412,9 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
         });
         break;
       }
+      case "notifyEffect":
+        notifyEffects.push(decoded.data);
+        break;
       case "chat":
         chats.push(decoded.data);
         break;
@@ -580,6 +586,7 @@ export function decodeReplay(buf: ArrayBuffer): Replay {
     chats,
     groundUnits,
     groundSkillUnits,
+    notifyEffects,
     totals: {
       packetCount,
       handledPackets,

@@ -2,7 +2,17 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-07-12
+
+- Visualizador de replay: **som de ataque básico** — o golpe normal (sem habilidade) de jogadores agora toca o som da arma equipada: o baque da espada, o zunido do arco, o soco à mão nua, e por aí vai, igual ao cliente do jogo. Respeita o botão **Sons**.
+- Visualizador de replay: **sons de habilidades de 3ª/4ª classe** — muitas habilidades mais novas (Tempestade de Flechas, Tiro Certeiro, Investida de Worg, entre outras) não tocavam som porque a tabela de efeitos herdada não trazia o nome do áudio. O servidor de assets agora resolve e confirma esses sons diretamente (cobrindo ~380 habilidades), então esses golpes passam a soar como no jogo — incluindo uma correção nos sons de 4ª classe do Falcão do Vento (Mergulho Aéreo, Vendaval de Flechas, Tiro Crescente), que estavam silenciosos por um nome de arquivo incorreto.
+- Visualizador de replay: **música de fundo do mapa** — o visualizador agora toca a **BGM do mapa** em loop, no volume de fundo (como no jogo), controlada pelo botão **Música** (liga/desliga, lembrado entre sessões). A faixa certa de cada mapa vem do servidor de assets, e a música começa junto com a reprodução.
+- Visualizador de replay: **efeitos de itens consumíveis** — ao usar itens que mostram um efeito (poções de Concentração/Berserk, alguns pergaminhos e afins), o brilho/efeito agora aparece sobre o personagem **com o som correspondente**, em sincronia com a reprodução. Isso vale genericamente para os efeitos que o servidor envia ao cliente (não só itens), então outros "specialeffects" da gravação também passam a aparecer. Respeitam os botões **Efeitos** (visual) e **Sons** (áudio).
+
 ## 2026-07-11
+
+- Visualizador de replay: **efeitos sonoros** — as habilidades e efeitos agora têm **som** (o congelamento do Frost Diver, o Provoke, o portal, o toque de cura, as faíscas de acerto e afins), tocados em sincronia com o visual e com a linha do tempo. Os sons só disparam durante a reprodução normal para frente: pausar, recomeçar e trocar de aba **não** geram um estouro de sons antigos. O primeiro clique em "Assistir" libera o áudio (os navegadores bloqueiam som até uma interação). Efeitos que têm som mas nenhum visual continuam tocando o som; habilidades sem som ficam em silêncio, sem erros.
+- Visualizador de replay: novos botões **"Sons"** e **"Música"** na coluna da esquerda ligam/desligam os efeitos sonoros e a música de fundo. A escolha é lembrada entre sessões, como os botões de Aura e Efeitos.
 
 - Visualizador de replay: o **número amarelo de dano múltiplo** (o total que aparece sobre o monstro nos golpes multi-hit) agora anima como no cliente do jogo — surge pequeno e cresce até o tamanho cheio com um leve estouro. **Cada golpe da sequência reinicia essa animação** (o total pula de novo do pequeno ao cheio enquanto vai somando), o rótulo some depois de um instante e, se um novo dano múltiplo acontece, recomeça a animação do início. Antes, cada golpe empilhava um rótulo novo em vez de reutilizar um único que se reanima.
 
