@@ -2,6 +2,14 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-07-19
+
+- Visualizador de replay: **linha do tempo navegável** — a barra de progresso agora é **arrastável**: dá para pular para qualquer momento da gravação, para frente ou para trás, e a cena é reconstruída naquele instante (posições, vida, buffs, quem já morreu). Clicar em qualquer ponto da barra também pula direto para lá. Ao soltar, a reprodução volta a rodar se já estava rodando. Ao cair no meio de uma luta, os últimos segundos de números de dano, efeitos e barras de conjuração são refeitos para que a cena não apareça congelada — mas **sem som**, para não disparar uma enxurrada de efeitos sonoros antigos. A música de fundo continua tocando normalmente durante a navegação.
+- Visualizador de replay: **atalhos de teclado** — `←`/`→` avançam ou voltam 5 segundos, e com `Shift` pulam 30 segundos. `Espaço` continua pausando/retomando.
+- Visualizador de replay: correção — a **velocidade de reprodução** agora também acelera os personagens. Em ×2 ou ×4, os eventos corriam mais rápido mas os sprites continuavam andando e animando na velocidade normal, o que dessincronizava o movimento do que estava acontecendo.
+- Visualizador de replay: correção — **barras e nomes de conjuração** que estavam no ar não eram limpos ao recomeçar a reprodução, e ficavam presos na tela.
+- Visualizador de replay: com a reprodução **pausada**, os personagens agora ficam parados no quadro exato em que a pausa aconteceu, em vez de continuarem com a animação de "parado" no lugar. Isso deixa o quadro pausado igual ao que a linha do tempo aponta, o que importa ao navegar pela gravação.
+
 ## 2026-07-12
 
 - Visualizador de replay: **som de ataque básico** — o golpe normal (sem habilidade) de jogadores agora toca o som da arma equipada: o baque da espada, o zunido do arco, o soco à mão nua, e por aí vai, igual ao cliente do jogo. Respeita o botão **Sons**.

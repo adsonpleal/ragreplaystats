@@ -87,6 +87,21 @@ const NOTIFY_DEDUP_MS = 200;
 // Visuals still spawn on those frames; only audio is gated.
 const AUDIBLE_STEP_CAP = 250;
 
+// A seek replays the event streams rather than jumping them, in slices this
+// wide. The slice size is what interleaves the eleven cursors: drained in one
+// shot, every fix-pos in the recording would land before any vanish, and
+// Actor.setPos revives the dead — so killed mobs would come back. 250ms matches
+// AUDIBLE_STEP_CAP and costs a few thousand no-op comparisons on a long replay.
+const SEEK_SLICE_MS = 250;
+// After a seek, the last stretch before the target is replayed WITH visuals (but
+// still muted) so damage floats, effects and cast bars that should be mid-flight
+// at the target actually are — landing on a busy fight shows the fight, not a
+// frozen tableau. Everything before this window is applied for state only.
+const SEEK_WINDOW_MS = 2000;
+// Arrow-key seek steps (plain / with shift).
+const SEEK_STEP_MS = 5000;
+const SEEK_STEP_BIG_MS = 30000;
+
 type Phase = "loading" | "ready" | "error";
 
 const SPEEDS = [0.5, 1, 2, 4] as const;
@@ -188,11 +203,21 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   const timelineRef = useRef<Timeline>(
     new Timeline(Math.max(1, replay.sessionInfo.durationMs), PLAYBACK_TAIL_MS),
   );
-  // Rebuilds the entity table + cursors from scratch so a rewind past their
-  // internal cursor position starts clean (dead mobs alive again, damage floats
-  // cleared). Wired by the setup effect once the world lands.
+  // Rewinds to t=0 and resumes. Wired by the setup effect once the world lands.
   const restartRef = useRef<(() => void) | null>(null);
+  // Jumps the playhead to an arbitrary time, reconstructing the scene there.
+  // Wired by the setup effect; the scrubber and the arrow keys both go through
+  // it, which is why it's a ref — the key listener is registered long before the
+  // async world load defines the function.
+  const seekRef = useRef<((tMs: number) => void) | null>(null);
   const [speed, setSpeed] = useState(1);
+  // Non-null while the user is dragging the scrubber: React owns the input's
+  // value for the duration, so the loop's throttled re-render can't snap the
+  // thumb back to the playhead mid-drag.
+  const [scrubMs, setScrubMs] = useState<number | null>(null);
+  const wasPlayingRef = useRef(false);
+  const pendingSeekRef = useRef<number | null>(null);
+  const seekRafRef = useRef(0);
   // Playback starts PAUSED behind the intro dialog; dismissing it (below) is
   // what kicks off the replay, so the user reads the warning before it plays.
   const [isPlaying, setIsPlaying] = useState(false);
@@ -231,6 +256,32 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       /* storage blocked — the toggle still works for this session */
     }
   }, [auraEnabled, effectsEnabled, sfxEnabled, bgmEnabled]);
+
+  // A drag can end with the pointer outside the input (or off the window
+  // entirely), which never fires the element's own pointerup — without this the
+  // scrubber would stay latched and playback would never resume.
+  useEffect(() => {
+    if (scrubMs == null) return;
+    const onUp = () => {
+      setScrubMs(null);
+      if (wasPlayingRef.current) {
+        timelineRef.current.setPlaying(true);
+        audioRef.current?.resume();
+        setIsPlaying(true);
+      }
+    };
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [scrubMs]);
+
+  // Drop a queued seek if the viewer closes mid-drag.
+  useEffect(() => () => {
+    if (seekRafRef.current) cancelAnimationFrame(seekRafRef.current);
+  }, []);
 
   useEffect(() => {
     if (!playerLook) {
@@ -276,6 +327,10 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     // (a small forward step = normal playback; a big jump = prime/scrub/refocus).
     // Reset with the cursors on rebuild so nothing bleeds across a restart.
     let lastNowMs = 0;
+    // How far the cursors have actually been drained. Tracks the playhead during
+    // normal playback; seekTo compares against it to decide whether a target is
+    // reachable by draining forward or needs a rewind + replay from zero.
+    let drainedToMs = 0;
 
     // Web Audio SFX/BGM manager (one per mount). The left-side SFX/BGM toggles
     // drive it via audioRef; unlocked on the first play gesture (browsers block
@@ -329,15 +384,24 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     // caster as the target. `audible` gates ONLY the sound (visuals always spawn).
     // The sound is resolved straight from the effect table — NOT gated on
     // hasSkillEffect — because many skills have a sound but no visual we render.
-    const spawnMainEffect = (skillId: number, targetAid: number, nowMs: number, audible: boolean): void => {
+    // `visuals` is false during a seek's silent catch-up: the dedup window still
+    // advances (so the state matches normal playback) but nothing is spawned.
+    const spawnMainEffect = (
+      skillId: number,
+      targetAid: number,
+      atMs: number,
+      audible: boolean,
+      visuals: boolean,
+    ): void => {
       if (!skillId || !targetAid || !entities) return;
       const key = `${skillId}:${targetAid}`;
       const last = lastMainEffect.get(key);
-      if (last != null && nowMs - last < MAIN_EFFECT_DEDUP_MS) return;
-      lastMainEffect.set(key, nowMs);
+      if (last != null && atMs - last < MAIN_EFFECT_DEDUP_MS) return;
+      lastMainEffect.set(key, atMs);
+      if (!visuals) return;
       const pos = entities.worldPosOf(targetAid, mainEffectTmp);
       if (effectsLayer && hasSkillEffect(skillId)) {
-        effectsLayer.spawnSkillMain(skillId, targetAid, pos, nowMs, { attached: true });
+        effectsLayer.spawnSkillMain(skillId, targetAid, pos, atMs, { attached: true });
       }
       if (audible) playSounds(soundsForSkill(skillId));
     };
@@ -367,12 +431,22 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     ro.observe(wrap);
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === " " && !(e.target instanceof HTMLInputElement)) {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // The scrubber is an <input>: when it has focus it handles space and the
+      // arrows itself, so don't double-drive the timeline from here.
+      if (e.target instanceof HTMLInputElement) return;
+      if (e.key === " ") {
         e.preventDefault();
         timelineRef.current.togglePlay();
         if (timelineRef.current.isPlaying) audio.resume(); // keyboard toggle is a gesture
         setIsPlaying(timelineRef.current.isPlaying);
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const step = e.shiftKey ? SEEK_STEP_BIG_MS : SEEK_STEP_MS;
+        seekRef.current?.(timelineRef.current.time + (e.key === "ArrowLeft" ? -step : step));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -446,6 +520,167 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     // read it (engine.start renders one frame synchronously to avoid a blank).
     let tickSinceUiPush = 0;
 
+    /** How the drain should treat the events it consumes.
+     *  - `visuals`: spawn damage floats / effects / cast bars. False during a
+     *    seek's silent catch-up, where only the state matters — spawning there
+     *    would queue thousands of async effect loads and litter the scene with
+     *    transients that belong to a moment already passed.
+     *  - `audible`: play SFX. Always false during a seek (a sound can't be
+     *    un-played).
+     *  - `catchUpTo`: absolute time to fast-forward walkers to. Set during a
+     *    seek, where nothing advances the walkers frame-by-frame; undefined
+     *    during normal playback, where entities.update does that job. */
+    type DrainOpts = { visuals: boolean; audible: boolean; catchUpTo?: number };
+
+    /** Apply every event up to `untilMs` to the entity table and the visual
+     *  layers. Each handler stamps its work with `ev.time`, not the playhead, so
+     *  animations that should already be over (a kill four minutes ago, a stale
+     *  pose) land expired rather than replaying at the seek target. */
+    const drainTo = (untilMs: number, o: DrainOpts): void => {
+      posCursor!.advanceTo(untilMs, (ev) => {
+        entities!.applyFixPos(ev);
+      });
+      moveCursor!.advanceTo(untilMs, (ev) => {
+        if (o.catchUpTo != null) entities!.applyMoveAt(ev, o.catchUpTo, (from, to) => findPath(world!.gat, from, to));
+        else entities!.applyMove(ev, (from, to) => findPath(world!.gat, from, to));
+      });
+      castCursor!.advanceTo(untilMs, (ev) => {
+        entities!.applyCast(ev.time, ev.source, ev.target, ev.castMs, ev.skillId);
+        if (!o.visuals) return;
+        const name = db?.resolveSkill(ev.skillId) ?? `skill#${ev.skillId}`;
+        castNames.spawn(ev.source, name, ev.time, ev.castMs);
+        castBars.spawn(ev.source, ev.time, ev.castMs);
+        // The lock-on cast circle spins on the ground under the caster while the
+        // bar fills (EF_LOCKON). The skill's MAIN effect, by contrast, belongs on
+        // the TARGET and is spawned when the skill lands (skill-use / damage
+        // packet below), not on the caster at cast start.
+        const casterPos = entities!.worldPosOf(ev.source, castWorldTmp);
+        if (casterPos) effectsLayer!.spawnCastCircle(ev.source, casterPos, ev.time, ev.castMs);
+      });
+      useCursor!.advanceTo(untilMs, (ev) => {
+        // No-damage skills (heals/buffs) land via skill-use: play the main
+        // effect + sound on the target it was used on (self for a buff).
+        spawnMainEffect(ev.skillId, ev.target || ev.source, ev.time, o.audible, o.visuals);
+      });
+      groundCursor!.advanceTo(untilMs, (ev) => {
+        // Persistent ground effect (Storm Gust/Arrow Storm/…) at the unit's
+        // cell. The skill is attributed from the caster's recent use/cast; one
+        // effect per activation (the cell burst is deduped), looped for a fixed
+        // lifetime. Anchored in scene space (X/Y negated like the actors).
+        if (!ev.skillId) return;
+        const eff = skillEntry(ev.skillId);
+        if (eff?.groundEffectId == null) return;
+        const key = `${ev.casterAid}:${ev.skillId}`;
+        const last = lastGroundSpawn.get(key);
+        if (last != null && ev.time - last < GROUND_DEDUP_MS) return;
+        // The dedup window advances even with visuals off, so a silent catch-up
+        // leaves the map in the state normal playback would have reached.
+        lastGroundSpawn.set(key, ev.time);
+        if (!o.visuals) return;
+        const cs = world!.cellSize;
+        const h = world!.gat.heightAt(ev.gx, ev.gy, 0.5, 0.5);
+        groundWorldTmp.set(-((ev.gx + 0.5) * cs), -h, (ev.gy + 0.5) * cs);
+        effectsLayer!.spawn(eff.groundEffectId, ev.casterAid, groundWorldTmp, ev.time, {
+          loop: true,
+          durationMs: GROUND_EFFECT_MS,
+        });
+        // Ground effect sound once per activation (already deduped above).
+        if (o.audible) playSounds(soundsForEffect(eff.groundEffectId));
+      });
+      notifyCursor!.advanceTo(untilMs, (ev) => {
+        // Server-pushed effect (0x01f3): item-use sparkle + other specialeffects.
+        // Render effectId ON the entity (attached, follows it) and play its sound.
+        // Deduped so a doubled packet spawns once; a genuine re-use fires again.
+        if (!ev.effectId || !effectsLayer || !entities) return;
+        const key = `${ev.aid}:${ev.effectId}`;
+        const last = lastNotifyEffect.get(key);
+        if (last != null && ev.time - last < NOTIFY_DEDUP_MS) return;
+        lastNotifyEffect.set(key, ev.time);
+        if (!o.visuals) return;
+        const pos = entities.worldPosOf(ev.aid, notifyWorldTmp);
+        if (!pos) return; // entity not placed this frame → nothing to anchor to
+        effectsLayer.spawn(ev.effectId, ev.aid, pos, ev.time, { attached: true });
+        if (o.audible) playSounds(soundsForEffect(ev.effectId));
+      });
+      damageCursor!.advanceTo(untilMs, (ev) => {
+        entities!.applyDamage(ev.time, ev.source, ev.target, ev.skillId);
+        if (!o.visuals) return;
+        const pos = entities!.worldPosOf(ev.target, targetWorldTmp);
+        if (pos) {
+          damageLayer!.spawn(ev.target, pos, ev.damage, ev.hitType, ev.source === playerAid, ev.time, ev.hits);
+          // Damage skills land via their damage packet: the main effect once on
+          // the target (Arrow Storm rain, bolt impact), plus the per-hit effect
+          // pinned where each hit landed (a quick flash, not attached).
+          spawnMainEffect(ev.skillId, ev.target, ev.time, o.audible, o.visuals);
+          const eff = skillEntry(ev.skillId);
+          if (eff?.hitEffectId != null) {
+            effectsLayer!.spawn(eff.hitEffectId, ev.target, pos, ev.time);
+            // Hit-spark sound once per damage event — not per hit (ev.hits is a
+            // single multi-hit packet; the same-name throttle collapses any
+            // rapid repeats at speed).
+            if (o.audible) playSounds(soundsForEffect(eff.hitEffectId));
+          }
+          // Auto-attack (skillId 0): the weapon's swing sound, resolved from the
+          // ATTACKER's equipped weapon — a sword's clash, a bow's twang, bare
+          // fists otherwise. Only for a player attacker (entities.actor().
+          // weaponView() reads PlayerLook, which only exists for player actors);
+          // a mob's auto-attack has no client-side sound to draw on yet, so it
+          // stays silent rather than borrowing a player's fist swing.
+          if (!ev.skillId && o.audible && replay.entities.get(ev.source)?.kind === "pc") {
+            const name = weaponSwingSound(entities!.actor(ev.source)?.weaponView() ?? null);
+            if (name) audio.play(name);
+          }
+        }
+      });
+      vanishCursor!.advanceTo(untilMs, (ev) => {
+        entities!.applyVanish(ev.time, ev.aid, ev.kind);
+      });
+      optionCursor!.advanceTo(untilMs, (ev) => {
+        entities!.applyOption(ev.aid, ev.option);
+      });
+      statusCursor!.advanceTo(untilMs, (ev) => {
+        if (ev.isOn) {
+          // leftMs is the remaining duration at this event; 0 = no timer.
+          activeBuffs.set(ev.statusId, ev.leftMs > 0 ? ev.time + ev.leftMs : Infinity);
+        } else {
+          activeBuffs.delete(ev.statusId);
+        }
+        buffsDirty = true;
+      });
+      paramCursor!.advanceTo(untilMs, (ev) => {
+        const n = Number(ev.value);
+        switch (ev.type) {
+          case SP_HP: vitals.hp = n; break;
+          case SP_MAXHP: vitals.maxHp = n; break;
+          case SP_SP: vitals.sp = n; break;
+          case SP_MAXSP: vitals.maxSp = n; break;
+          case SP_AP: vitals.ap = n; break;
+          case SP_MAXAP: vitals.maxAp = n; break;
+        }
+      });
+    };
+
+    /** Drain `fromMs`→`toMs` in fixed slices instead of one jump.
+     *
+     *  drainTo runs each cursor to completion in turn, which is harmless across
+     *  a single frame but wrong across a long span: every fix-pos in the replay
+     *  would be applied before any vanish, and Actor.setPos REVIVES the dead —
+     *  so mobs killed mid-session would come back. Slicing interleaves the
+     *  streams at a fixed granularity, which is all the ordering guarantee the
+     *  playback itself ever had. */
+    const sliceDrain = (fromMs: number, toMs: number, o: DrainOpts): void => {
+      let t = fromMs;
+      while (t < toMs) {
+        t = Math.min(toMs, t + SEEK_SLICE_MS);
+        drainTo(t, o);
+      }
+      // Always finish on the target itself. Without this a zero-width span
+      // (notably seekTo(0), which the restart button takes) would drain nothing
+      // at all and miss the synthetic t=0 position/OPTION seeds decode injects
+      // ahead of the packet stream. A no-op when the loop already got there.
+      drainTo(toMs, o);
+    };
+
     engine.start((dt) => {
       engine.cam.tickZoom(dt);
       cursor?.update(dt);
@@ -463,8 +698,9 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       // playhead during normal forward playback. `primed` here is the PREVIOUS
       // frame's value (read before the drain flips it), so the priming drain
       // itself is silent. Big clock jumps (prime 0→now, tab-refocus rAF spike,
-      // any future scrub) exceed the step cap and are silent too. Visuals are NOT
-      // gated — only this boolean guards the sound plays inside the seams.
+      // any future scrub) exceed the step cap and are silent too. This is a
+      // second line of defence for scrubs — seekTo already drains with
+      // `audible: false` — but it still covers the prime and refocus seams.
       const stepMs = nowMs - lastNowMs;
       const audible =
         timelineRef.current.isPlaying &&
@@ -475,127 +711,20 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         !document.hidden;
       if (advanced || !primed) {
         primed = true;
-        // Drain cursors up to the playback time, applying each event to the
-        // entity table / damage / cast layers.
-        posCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyFixPos(ev);
-        });
-        moveCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyMove(ev, (from, to) => findPath(world!.gat, from, to));
-        });
-        castCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyCast(nowMs, ev.source, ev.target, ev.castMs, ev.skillId);
-          const name = db?.resolveSkill(ev.skillId) ?? `skill#${ev.skillId}`;
-          castNames.spawn(ev.source, name, nowMs, ev.castMs);
-          castBars.spawn(ev.source, nowMs, ev.castMs);
-          // The lock-on cast circle spins on the ground under the caster while the
-          // bar fills (EF_LOCKON). The skill's MAIN effect, by contrast, belongs on
-          // the TARGET and is spawned when the skill lands (skill-use / damage
-          // packet below), not on the caster at cast start.
-          const casterPos = entities!.worldPosOf(ev.source, castWorldTmp);
-          if (casterPos) effectsLayer!.spawnCastCircle(ev.source, casterPos, nowMs, ev.castMs);
-        });
-        useCursor!.advanceTo(nowMs, (ev) => {
-          // No-damage skills (heals/buffs) land via skill-use: play the main
-          // effect + sound on the target it was used on (self for a buff).
-          spawnMainEffect(ev.skillId, ev.target || ev.source, nowMs, audible);
-        });
-        groundCursor!.advanceTo(nowMs, (ev) => {
-          // Persistent ground effect (Storm Gust/Arrow Storm/…) at the unit's
-          // cell. The skill is attributed from the caster's recent use/cast; one
-          // effect per activation (the cell burst is deduped), looped for a fixed
-          // lifetime. Anchored in scene space (X/Y negated like the actors).
-          if (!ev.skillId) return;
-          const eff = skillEntry(ev.skillId);
-          if (eff?.groundEffectId == null) return;
-          const key = `${ev.casterAid}:${ev.skillId}`;
-          const last = lastGroundSpawn.get(key);
-          if (last != null && nowMs - last < GROUND_DEDUP_MS) return;
-          lastGroundSpawn.set(key, nowMs);
-          const cs = world!.cellSize;
-          const h = world!.gat.heightAt(ev.gx, ev.gy, 0.5, 0.5);
-          groundWorldTmp.set(-((ev.gx + 0.5) * cs), -h, (ev.gy + 0.5) * cs);
-          effectsLayer!.spawn(eff.groundEffectId, ev.casterAid, groundWorldTmp, nowMs, {
-            loop: true,
-            durationMs: GROUND_EFFECT_MS,
-          });
-          // Ground effect sound once per activation (already deduped above).
-          if (audible) playSounds(soundsForEffect(eff.groundEffectId));
-        });
-        notifyCursor!.advanceTo(nowMs, (ev) => {
-          // Server-pushed effect (0x01f3): item-use sparkle + other specialeffects.
-          // Render effectId ON the entity (attached, follows it) and play its sound.
-          // Deduped so a doubled packet spawns once; a genuine re-use fires again.
-          if (!ev.effectId || !effectsLayer || !entities) return;
-          const key = `${ev.aid}:${ev.effectId}`;
-          const last = lastNotifyEffect.get(key);
-          if (last != null && nowMs - last < NOTIFY_DEDUP_MS) return;
-          lastNotifyEffect.set(key, nowMs);
-          const pos = entities.worldPosOf(ev.aid, notifyWorldTmp);
-          if (!pos) return; // entity not placed this frame → nothing to anchor to
-          effectsLayer.spawn(ev.effectId, ev.aid, pos, nowMs, { attached: true });
-          if (audible) playSounds(soundsForEffect(ev.effectId));
-        });
-        damageCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyDamage(nowMs, ev.source, ev.target, ev.skillId);
-          const pos = entities!.worldPosOf(ev.target, targetWorldTmp);
-          if (pos) {
-            damageLayer!.spawn(ev.target, pos, ev.damage, ev.hitType, ev.source === playerAid, nowMs, ev.hits);
-            // Damage skills land via their damage packet: the main effect once on
-            // the target (Arrow Storm rain, bolt impact), plus the per-hit effect
-            // pinned where each hit landed (a quick flash, not attached).
-            spawnMainEffect(ev.skillId, ev.target, nowMs, audible);
-            const eff = skillEntry(ev.skillId);
-            if (eff?.hitEffectId != null) {
-              effectsLayer!.spawn(eff.hitEffectId, ev.target, pos, nowMs);
-              // Hit-spark sound once per damage event — not per hit (ev.hits is a
-              // single multi-hit packet; the same-name throttle collapses any
-              // rapid repeats at speed).
-              if (audible) playSounds(soundsForEffect(eff.hitEffectId));
-            }
-            // Auto-attack (skillId 0): the weapon's swing sound, resolved from the
-            // ATTACKER's equipped weapon — a sword's clash, a bow's twang, bare
-            // fists otherwise. Only for a player attacker (entities.actor().
-            // weaponView() reads PlayerLook, which only exists for player actors);
-            // a mob's auto-attack has no client-side sound to draw on yet, so it
-            // stays silent rather than borrowing a player's fist swing.
-            if (!ev.skillId && audible && replay.entities.get(ev.source)?.kind === "pc") {
-              const name = weaponSwingSound(entities!.actor(ev.source)?.weaponView() ?? null);
-              if (name) audio.play(name);
-            }
-          }
-        });
-        vanishCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyVanish(nowMs, ev.aid, ev.kind);
-        });
-        optionCursor!.advanceTo(nowMs, (ev) => {
-          entities!.applyOption(ev.aid, ev.option);
-        });
-        statusCursor!.advanceTo(nowMs, (ev) => {
-          if (ev.isOn) {
-            // leftMs is the remaining duration at this event; 0 = no timer.
-            activeBuffs.set(ev.statusId, ev.leftMs > 0 ? ev.time + ev.leftMs : Infinity);
-          } else {
-            activeBuffs.delete(ev.statusId);
-          }
-          buffsDirty = true;
-        });
-        paramCursor!.advanceTo(nowMs, (ev) => {
-          const n = Number(ev.value);
-          switch (ev.type) {
-            case SP_HP: vitals.hp = n; break;
-            case SP_MAXHP: vitals.maxHp = n; break;
-            case SP_SP: vitals.sp = n; break;
-            case SP_MAXSP: vitals.maxSp = n; break;
-            case SP_AP: vitals.ap = n; break;
-            case SP_MAXAP: vitals.maxAp = n; break;
-          }
-        });
+        // Drain up to the playhead with visuals on. Sound follows the gate above.
+        drainTo(nowMs, { visuals: true, audible });
+        drainedToMs = nowMs;
       }
-      // Record this frame's playhead for the next frame's `audible` step check.
+      // Advance the simulation by the PLAYHEAD delta, not the wall-clock frame
+      // time: the event clock is speed-scaled, so feeding raw dt made sprites
+      // walk and animate at 1x while events fired at Nx. Clamped to the same
+      // 250ms the audible gate uses, so a tab refocus (or the frame right after
+      // a seek, which already positioned the walkers) doesn't teleport anyone.
+      const simDt = Math.max(0, Math.min(0.25, (nowMs - lastNowMs) / 1000));
+      // Record this frame's playhead for the next frame's audible step check.
       lastNowMs = nowMs;
 
-      entities.update(dt, nowMs, engine.cam.direction, engine.cam.camera);
+      entities.update(simDt, nowMs, engine.cam.direction, engine.cam.camera);
       damageLayer.update(nowMs, engine.cam.camera);
       // Skill/world STR effects. Guarded so a bad effect never breaks playback.
       try {
@@ -778,14 +907,9 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         cursor.add("default", manifest.ui?.cursor);
         cursor.add("rotate", manifest.ui?.cursorRotate);
         cursor.set("default");
-        // Extracted so restartRef can re-run it: EntityTable and DamageTextLayer
-        // hold per-actor pose/dead state and the pool of active floats, none of
-        // which can be un-applied by seeking cursors alone. Disposing +
-        // recreating them is the simplest guaranteed-clean rewind.
+        // One-time allocation of the runtime layers + cursors. Rewinding does NOT
+        // go through here — see resetRuntime.
         const buildRuntime = () => {
-          entities?.dispose();
-          damageLayer?.dispose();
-          effectsLayer?.dispose();
           entities = new EntityTable(engine.scene, world!, replay, playerAid, playerLook, db);
           damageLayer = new DamageTextLayer(engine.scene);
           effectsLayer = new EffectsLayer(engine.scene, entities, world!.cellSize);
@@ -800,25 +924,75 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           notifyCursor = new EventCursor(events.notify);
           paramCursor = new EventCursor(events.params);
           statusCursor = new EventCursor(events.status);
+        };
+
+        // Rewind to t=0 in place. Deliberately does NOT dispose the entity table:
+        // re-creating it would build a fresh Character + re-probe sprite frames
+        // for every AID in the session, which a leftward drag would pay on every
+        // frame. Everything here is state a replay from zero re-derives.
+        const resetRuntime = () => {
+          entities!.reset();
+          damageLayer!.clear();
+          effectsLayer!.clear();
+          castBars.clear();
+          castNames.clear();
+          damageCursor!.reset();
+          vanishCursor!.reset();
+          optionCursor!.reset();
+          moveCursor!.reset();
+          posCursor!.reset();
+          castCursor!.reset();
+          useCursor!.reset();
+          groundCursor!.reset();
+          notifyCursor!.reset();
+          paramCursor!.reset();
+          statusCursor!.reset();
           vitals.hp = vitals.maxHp = vitals.sp = vitals.maxSp = vitals.ap = vitals.maxAp = 0;
           activeBuffs.clear();
           lastGroundSpawn.clear();
           lastMainEffect.clear();
           lastNotifyEffect.clear();
           buffsDirty = true; // force one reconcile so a rewind clears the strip
-          primed = false; // re-drain the starting frame for the fresh cursors
-          lastNowMs = 0; // reset the SFX step baseline so nothing bleeds across
+          drainedToMs = 0;
           audio.stopAll(); // cut any live voices before the fresh drain
         };
+
+        /** Jump the playhead to `rawT` and reconstruct the scene there.
+         *
+         *  Two phases. Everything up to (T - SEEK_WINDOW_MS) is drained for STATE
+         *  ONLY — no floats, no effects, no sound — because those transients
+         *  belong to moments already passed and spawning them would both litter
+         *  the scene and queue thousands of async effect loads. The final window
+         *  is then replayed with visuals (still muted), so anything that should
+         *  be mid-flight at T actually is. */
+        const seekTo = (rawT: number) => {
+          const T = Math.max(0, Math.min(timelineRef.current.endMs, rawT));
+          audio.stopAll();
+          // Cursors only move forward, so a backward target means replaying from
+          // zero. Forward stays where it is and just keeps draining.
+          if (T < drainedToMs) resetRuntime();
+          const windowStart = Math.max(0, T - SEEK_WINDOW_MS);
+          if (windowStart > drainedToMs) {
+            sliceDrain(drainedToMs, windowStart, { visuals: false, audible: false, catchUpTo: T });
+            drainedToMs = windowStart;
+          }
+          sliceDrain(drainedToMs, T, { visuals: true, audible: false, catchUpTo: T });
+          drainedToMs = T;
+          timelineRef.current.seek(T);
+          // Keep the SFX step gate and the sim delta from seeing this jump.
+          lastNowMs = T;
+          primed = true;
+          forceRender((n) => n + 1);
+        };
+        seekRef.current = seekTo;
+
         buildRuntime();
         // Open paused behind the intro dialog — pressing "Entendi" starts it.
         timelineRef.current.setPlaying(false);
         restartRef.current = () => {
-          buildRuntime();
-          timelineRef.current.seek(0);
+          seekTo(0);
           timelineRef.current.setPlaying(true);
           audio.resume(); // restart is a user gesture — (re)unlock audio
-          forceRender((n) => n + 1);
           setIsPlaying(true);
         };
         // Warm the session's frequent sounds so the first cast of each skill isn't
@@ -871,6 +1045,25 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
                 audio,
                 timeline: timelineRef.current,
                 get cursors() { return { damageCursor, vanishCursor, moveCursor, posCursor, castCursor, paramCursor }; },
+                seekTo,
+                resetRuntime,
+                get drainedToMs() { return drainedToMs; },
+                /** Per-actor state digest — compare across seeks to check that a
+                 *  seek lands where frame-by-frame playback would have. */
+                snapshot() {
+                  return (entities?.visibleActors() ?? [])
+                    .map((v) => {
+                      const a = entities!.actor(v.aid)!;
+                      return {
+                        aid: v.aid,
+                        px: +a.walker.px.toFixed(2),
+                        py: +a.walker.py.toFixed(2),
+                        pose: a.pose,
+                        visible: a.visible,
+                      };
+                    })
+                    .sort((x, y) => x.aid - y.aid);
+                },
                 tick(ms: number) {
                   const dt = ms / 1000;
                   engine.renderOnce(dt);
@@ -896,6 +1089,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
       restartRef.current = null;
+      seekRef.current = null;
       tooltip.dispose();
       vitalBars.dispose();
       castBars.dispose();
@@ -922,6 +1116,38 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
   const setSpeedClamped = (s: number) => {
     timelineRef.current.setSpeed(s);
     setSpeed(s);
+  };
+
+  // Coalesce scrub input to one seek per animation frame. The range input fires
+  // change far faster than a seek can run on a long replay, and without this a
+  // fast drag would queue a backlog of reconstructions the user never sees.
+  const requestSeek = (tMs: number) => {
+    pendingSeekRef.current = tMs;
+    if (seekRafRef.current) return;
+    seekRafRef.current = requestAnimationFrame(() => {
+      seekRafRef.current = 0;
+      const v = pendingSeekRef.current;
+      pendingSeekRef.current = null;
+      if (v != null) seekRef.current?.(v);
+    });
+  };
+
+  // Dragging pauses playback and hands the input's value to React, so the
+  // render loop can't fight the thumb; releasing restores the prior play state.
+  const beginScrub = () => {
+    wasPlayingRef.current = timelineRef.current.isPlaying;
+    timelineRef.current.setPlaying(false);
+    setIsPlaying(false);
+  };
+
+  const endScrub = () => {
+    if (scrubMs == null) return;
+    setScrubMs(null);
+    if (wasPlayingRef.current) {
+      timelineRef.current.setPlaying(true);
+      audioRef.current?.resume(); // releasing the drag is a gesture
+      setIsPlaying(true);
+    }
   };
 
   const totalMs = replay.sessionInfo.durationMs;
@@ -1016,21 +1242,25 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         <span className="replay-map-time">
           {formatMs(nowMs)} / {formatMs(totalMs)}
         </span>
-        {/* View-only progress indicator — dragging is disabled while the
-            cursors are still forward-only (rewinding events isn't implemented
-            yet, so an interactive scrubber would let you seek to a time whose
-            state can't actually be reconstructed). Re-enable once seek-back
-            rebuilds the entity table + damage pool cleanly. */}
+        {/* Drag (or click) to seek. While dragging, `scrubMs` owns the value so
+            the loop's throttled re-render can't fight the thumb; each change
+            requests a seek, coalesced to one per frame. A native range input
+            also gives click-to-position for free. */}
         <input
           type="range"
           className="replay-map-scrub"
           min={0}
           max={totalMs}
           step={100}
-          value={nowMs}
-          readOnly
-          disabled
-          aria-label={`${formatMs(nowMs)} / ${formatMs(totalMs)}`}
+          value={scrubMs ?? nowMs}
+          onPointerDown={beginScrub}
+          onPointerUp={endScrub}
+          onChange={(e) => {
+            const t = Number(e.target.value);
+            setScrubMs(t);
+            requestSeek(t);
+          }}
+          aria-label={`${t.replayMapScrub}: ${formatMs(nowMs)} / ${formatMs(totalMs)}`}
         />
         <label className="replay-map-speed">
           {t.replayMapSpeedLabel}

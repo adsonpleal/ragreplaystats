@@ -18,6 +18,33 @@ export class EventCursor<T extends EventTime> {
       this.i++;
     }
   }
+
+  /** Rewind to before the first event. Cheaper than re-allocating the cursor,
+   *  and the basis of a backward seek (replay from 0 to the new time). */
+  reset(): void {
+    this.i = 0;
+  }
+
+  /** Jump the index to the first event after `tMs` WITHOUT calling back for the
+   *  ones skipped. Only valid for streams where the skipped events don't matter
+   *  (pure last-write-wins folds) — anything that mutates entity state must be
+   *  drained through advanceTo instead. */
+  seekTo(tMs: number): void {
+    let lo = 0;
+    let hi = this.events.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.events[mid].time <= tMs) lo = mid + 1;
+      else hi = mid;
+    }
+    this.i = lo;
+  }
+
+  /** Time of the next un-drained event, or Infinity when the stream is spent.
+   *  Lets a slicing drain skip dead air instead of stepping through it. */
+  get nextTime(): number {
+    return this.i < this.events.length ? this.events[this.i].time : Infinity;
+  }
 }
 
 export class Timeline {
@@ -39,6 +66,12 @@ export class Timeline {
 
   get isPlaying(): boolean {
     return this.playing;
+  }
+
+  /** Upper bound for seeking — the recording plus the animation tail. Exposed so
+   *  callers clamp against the same bound `seek` does. */
+  get endMs(): number {
+    return this.playbackEndMs;
   }
 
   setSpeed(s: number): void {

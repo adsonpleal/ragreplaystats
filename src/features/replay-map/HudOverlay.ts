@@ -253,6 +253,14 @@ export class CastBarLayer {
     }
   }
 
+  /** Drop every in-flight bar, keeping the pooled elements. Needed on a seek:
+   *  bars expire by comparing `expiresAtMs` to the playhead, so a rewind past a
+   *  bar's start would otherwise leave it stuck until the clock caught up again. */
+  clear(): void {
+    for (const b of this.byAid.values()) b.hide();
+    this.byAid.clear();
+  }
+
   dispose(): void {
     for (const b of this.pool) b.dispose();
     this.pool.length = 0;
@@ -365,6 +373,13 @@ export class CastNameLayer {
       n.setScreenXY(out.x, out.y);
       n.setVisible(true);
     }
+  }
+
+  /** Drop every in-flight label, keeping the pooled elements — see
+   *  CastBarLayer.clear for why a seek needs this. */
+  clear(): void {
+    for (const n of this.byAid.values()) n.hide();
+    this.byAid.clear();
   }
 
   dispose(): void {

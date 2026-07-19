@@ -46,6 +46,12 @@ export class Walker {
     this.py = spawn.gy + 0.5;
   }
 
+  /** Walk pace in cells per second — lets a seek bound how long a queued path
+   *  can possibly take, so a move that already finished can skip pathfinding. */
+  get cellsPerSec(): number {
+    return this.speed;
+  }
+
   get cellX(): number {
     return Math.floor(this.px);
   }

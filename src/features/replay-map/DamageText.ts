@@ -264,6 +264,12 @@ class Float {
     this.mesh.visible = false; // shown on the first update once bornAtMs passes
   }
 
+  /** Retire immediately, regardless of age — the seek rewind's reset path. */
+  deactivate(): void {
+    this.active = false;
+    this.mesh.visible = false;
+  }
+
   update(nowMs: number, camera: PerspectiveCamera): void {
     if (!this.active) return;
     const age = nowMs - this.bornAtMs;
@@ -466,6 +472,17 @@ export class DamageTextLayer {
     // Drop bindings for combo labels that have faded out, freeing them for other
     // targets and letting a re-hit on this target start a brand-new label.
     for (const [aid, f] of this.comboByTarget) if (!f.active) this.comboByTarget.delete(aid);
+  }
+
+  /** Retire every live float and drop the per-target bookkeeping, keeping the
+   *  pooled meshes. Used by a seek rewind: floats fade by comparing `bornAtMs`
+   *  to the playhead, and `stacks` is a genuine accumulator that no amount of
+   *  clock movement un-counts. */
+  clear(): void {
+    for (const f of this.pool) f.deactivate();
+    for (const f of this.comboPool) f.deactivate();
+    this.comboByTarget.clear();
+    this.stacks.clear();
   }
 
   dispose(): void {

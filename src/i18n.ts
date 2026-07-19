@@ -93,6 +93,7 @@ export const t = {
   replayMapPause: "Pausar",
   replayMapRestart: "Recomeçar",
   replayMapSpeedLabel: "Velocidade",
+  replayMapScrub: "Linha do tempo",
   replayMapSettings: "Configurações",
   replayMapAura: "Aura",
   replayMapEffects: "Efeitos",

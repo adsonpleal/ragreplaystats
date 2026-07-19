@@ -91,6 +91,11 @@ export class EffectsLayer {
    *  spawn time, and tier). Managed by syncAuras, not the live list — they live for
    *  as long as the actor is present and qualifying, following it each frame. */
   private readonly auras = new Map<number, { effects: EffectRenderer[]; spawnMs: number; tier: AuraTier }>();
+  /** Bumped by clear(). Spawning is async (the part list is fetched), so an
+   *  effect requested before a seek can resolve after it — captured here at
+   *  request time and re-checked on resolve, the stale instance is dropped
+   *  instead of materialising at a spawnMs the playhead has long since passed. */
+  private generation = 0;
 
   constructor(
     private readonly scene: Scene,
@@ -175,10 +180,14 @@ export class EffectsLayer {
     const attached = opts.attached ?? false;
     const loop = opts.loop ?? false;
     const durationMs = opts.durationMs ?? 0;
+    const gen = this.generation;
     partsPromise
       .then((parts) => {
         // Re-check enabled: the toggle may have flipped off during the async load.
+        // Re-check the generation too: a seek may have cleared the layer, in which
+        // case this spawn belongs to a timeline position we've left behind.
         if (this.disposed || !this.effectsEnabled || !parts.length) return;
+        if (gen !== this.generation) return;
         for (const part of parts) {
           const { effect, delayMs } = this.buildRenderer(part);
           this.live.push({
@@ -288,6 +297,18 @@ export class EffectsLayer {
         this.live.splice(i, 1);
       }
     }
+  }
+
+  /** Drop every live effect and aura without retiring the layer — the seek
+   *  rewind's reset. Bumping the generation also disowns any spawn whose parts
+   *  are still loading, so it can't land after the playhead has moved on.
+   *  (Auras aren't stale state, but syncAuras re-adds them on the next frame.) */
+  clear(): void {
+    this.generation++;
+    for (const l of this.live) l.effect.dispose();
+    this.live.length = 0;
+    for (const a of this.auras.values()) for (const e of a.effects) e.dispose();
+    this.auras.clear();
   }
 
   dispose(): void {

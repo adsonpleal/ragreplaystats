@@ -1640,6 +1640,10 @@ td.num, th.num {
 
 .replay-map-scrub {
   width: 280px;
+  /* Interactive since seek landed — the pointer is the affordance that this is
+     draggable and click-to-position, not just a progress readout. */
+  cursor: pointer;
+  color-scheme: dark;
 }
 
 .replay-map-speed {

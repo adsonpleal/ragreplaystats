@@ -167,7 +167,7 @@ class Actor {
     scene: Scene,
     world: World,
     private readonly src: ActorSource,
-    spawn: { gx: number; gy: number },
+    private readonly spawn: { gx: number; gy: number },
   ) {
     this.walker = new Walker(world.gat, world.cellSize, spawn);
     this.attackAction =
@@ -274,6 +274,31 @@ class Actor {
   private renderLook(): PlayerLook {
     const look = this.src.look!;
     return this.mountJob != null ? { ...look, jobView: this.mountJob } : look;
+  }
+
+  /** Return to the t=0 state without discarding the sprite (which would cost a
+   *  fresh Character + probeFrames per actor — far too slow to do on every frame
+   *  of a leftward scrub). Everything an apply/trigger call mutates is undone
+   *  here; the loaded frames and probed metrics are deliberately kept.
+   *  `optionHidden` resets to false because the drain re-applies the t=0 OPTION
+   *  seed that decode injects ahead of the packet stream. */
+  reset(): void {
+    this.walker.stop();
+    this.walker.px = this.spawn.gx + 0.5;
+    this.walker.py = this.spawn.gy + 0.5;
+    this.walker.dir = 0;
+    this.visible = false;
+    this.pose = "idle";
+    this.poseUntil = 0;
+    this.dead = false;
+    this.deadHideAt = Infinity;
+    this.optionHidden = false;
+    this.castHoldFrame = null;
+    this.aClock = 0;
+    this.aAction = -1; // force the animator to rebuild on the next frame
+    this.aDir = -1;
+    this.setMount(null);
+    this.billboard.setVisible(false);
   }
 
   /** Switch the player between the on-foot sprite and a warg-mount sprite
@@ -508,6 +533,42 @@ export class EntityTable {
     }
   }
 
+  /** Apply a move as of absolute recording time `atMs` — the seek catch-up path.
+   *
+   *  Walker position is integrated per frame, not addressable by time, so a bulk
+   *  drain would leave every actor parked at the start of its last path. Two
+   *  cases: a walk that provably finished by `atMs` snaps straight to `ev.to`
+   *  (no pathfinding at all — this is what keeps a full rewind cheap, since
+   *  findPath's open set is a linear scan); one still in flight paths normally
+   *  and is then advanced by the elapsed time, which lands it exactly where
+   *  frame-by-frame playback would have. */
+  applyMoveAt(
+    ev: MoveEvent,
+    atMs: number,
+    findPath: (from: { gx: number; gy: number }, to: { gx: number; gy: number }) => { gx: number; gy: number }[],
+  ): void {
+    const a = this.ensure(ev.aid, ev.from);
+    if (!a) return;
+    const elapsed = atMs - ev.time;
+    // Generous upper bound on the walk: 3x the straight-line cell count (the
+    // real path detours around obstacles) plus a few cells of slack. Only moves
+    // within this window of `atMs` pay for pathfinding.
+    const cells = Math.max(Math.abs(ev.to.gx - ev.from.gx), Math.abs(ev.to.gy - ev.from.gy));
+    const maxWalkMs = ((cells * 3 + 4) / a.walker.cellsPerSec) * 1000;
+    if (elapsed >= maxWalkMs) {
+      // Snap to the origin first so face() reads the true travel direction (it
+      // measures from the walker's current cell), then snap to the destination —
+      // setPos clears the path and revives, but leaves `dir` alone.
+      a.setPos(ev.from.gx, ev.from.gy);
+      a.walker.face(ev.to.gx, ev.to.gy);
+      a.setPos(ev.to.gx, ev.to.gy);
+      a.visible = true;
+      return;
+    }
+    this.applyMove(ev, findPath);
+    if (elapsed > 0) a.walker.update(elapsed / 1000);
+  }
+
   /** Source attacked target — face & swing. A companion skill from the local
    *  player also sends the warg/falcon lunging at the target. */
   applyDamage(nowMs: number, sourceAid: number, targetAid: number, skillId = 0): void {
@@ -651,6 +712,22 @@ export class EntityTable {
 
   actor(aid: number): Actor | null {
     return this.actors.get(aid) ?? null;
+  }
+
+  /** Rewind every actor to its t=0 state, keeping the actors themselves. A seek
+   *  backwards has to undo accumulated state (who's dead, who's walking where),
+   *  but re-creating the table would re-run probeFrames for every AID in the
+   *  session — far too slow for a live scrub. The drain that follows re-applies
+   *  the events from 0, including decode's synthetic t=0 position/OPTION seeds. */
+  reset(): void {
+    for (const a of this.actors.values()) a.reset();
+    this.lastFix.clear();
+    this.playerMountJob = null;
+    this.wargStrike = null;
+    this.falconStrike = null;
+    this.falcon?.dispose();
+    this.warg?.dispose();
+    this.falcon = this.warg = null;
   }
 
   dispose(): void {
