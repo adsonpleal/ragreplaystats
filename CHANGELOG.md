@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-07-23
+
+- Bases de nomes atualizadas com o último patch do cliente: **135 itens novos** e diversos nomes corrigidos, além de **1 habilidade** e **2 efeitos de status** novos. Os replays passam a mostrar o nome correto desses itens, habilidades e buffs em vez de exibir só o ID.
+
 ## 2026-07-19
 
 - Visualizador de replay: **linha do tempo navegável** — a barra de progresso agora é **arrastável**: dá para pular para qualquer momento da gravação, para frente ou para trás, e a cena é reconstruída naquele instante (posições, vida, buffs, quem já morreu). Clicar em qualquer ponto da barra também pula direto para lá. Ao soltar, a reprodução volta a rodar se já estava rodando. Ao cair no meio de uma luta, os últimos segundos de números de dano, efeitos e barras de conjuração são refeitos para que a cena não apareça congelada — mas **sem som**, para não disparar uma enxurrada de efeitos sonoros antigos. A música de fundo continua tocando normalmente durante a navegação.
