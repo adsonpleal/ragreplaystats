@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-08-10
+
+- Base de itens atualizada com o último patch do cliente: **85 itens novos** (papiros elementais, cadernos, baús e as caixas do evento de agosto, entre outros) e alguns nomes corrigidos — a Mochila de Hatii, o Pænitentia Ferum e alguns Esboços que estavam trocados entre si. Os replays passam a mostrar o nome correto desses itens em vez de exibir só o ID.
+- Base de monstros atualizada a partir do projeto irmão [ragassets](https://github.com/adsonpleal/ragassets): **68 monstros novos** (os espíritos elementais invocados, chefes no modo Pesadelo e monstros de evento, entre outros), **nomes corrigidos** (Familiar, Golem Estalactítico Feroz e Ancestral, Fenris) e o **HP de 9 monstros marinhos** (Cornutus, Deviace, Hidra, Kukre, Cavalo-Marinho, Marina, Esfera Marinha, Marse e Tritão), que vinha truncado e agora aparece com o valor certo nas barras de vida do visualizador de replay.
+
 ## 2026-07-23
 
 - Bases de nomes atualizadas com o último patch do cliente: **135 itens novos** e diversos nomes corrigidos, além de **1 habilidade** e **2 efeitos de status** novos. Os replays passam a mostrar o nome correto desses itens, habilidades e buffs em vez de exibir só o ID.
