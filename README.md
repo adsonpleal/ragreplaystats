@@ -146,3 +146,13 @@ Lua bytecode parsing walks the constant pool recursively over nested function pr
 - **Kill attribution heuristic**: the player whose damage event is the latest one before the mob's vanish gets credit. Mobs killed by status DoT or self-destruct that have no preceding player damage are skipped.
 - **Skill-use dedup**: the server broadcasts `0x09cb` / `0x013e` twice (caster + nearby-observer broadcast). Decode collapses pairs with identical `(source, target, skillId)` within 200 ms.
 - **Encryption sentinel**: skill IDs from the GRF use the Latam server's `pcidentity.lub` mapping. If you regenerate `job.json` against a different server's GRF, the player-class ID interpretation changes too.
+
+## License
+
+[MIT](LICENSE) © Adson Leal.
+
+Third-party terms that still apply to parts of the tree:
+
+- `src/features/replay-map/` is a port of rendering code from [roBrowser](https://github.com/vthibault/roBrowser), which is **GPL-3.0**. Reuse of that directory is governed by roBrowser's terms, not by the MIT grant above.
+- `public/fonts/Galmuri11*` is [Galmuri](https://github.com/quiple/galmuri) under the SIL Open Font License 1.1 — see `public/fonts/Galmuri11.OFL-NOTICE.txt`.
+- Bundled data under `public/db/` is extracted from Ragnarok Online client files and is © Gravity Co., Ltd. It ships for interoperability only and is not covered by the MIT grant.
