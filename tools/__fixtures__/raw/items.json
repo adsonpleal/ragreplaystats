@@ -1,0 +1,68 @@
+[
+  {
+    "id": 501,
+    "name": "Poção Vermelha",
+    "slots": 0,
+    "aegisName": null,
+    "resourceName": "빨간포션",
+    "description": "Poção feita de ervas vermelhas.\nDê um clique duplo no item para usar.\n-------------------------\n^0000ffRecupera cerca de 45 a 65 de HP.^000000\n-------------------------\nPeso: ^7777777^000000",
+    "view": 0,
+    "equipSlots": [],
+    "costume": false
+  },
+  {
+    "id": 556,
+    "name": null,
+    "slots": 0,
+    "aegisName": null,
+    "resourceName": "가래떡",
+    "description": "",
+    "view": 0,
+    "equipSlots": [],
+    "costume": false
+  },
+  {
+    "id": 1101,
+    "name": "Espada",
+    "slots": 3,
+    "aegisName": null,
+    "resourceName": "소드",
+    "description": "Espada simples, de uma mão só. Arraste esta arma para sua janela de equipamento para usar.\n-------------------------\nTipo: ^777777Espada^000000\nATQ: ^77777725^000000 ATQM: ^7777770^000000\nPeso: ^77777750^000000\nNível da arma: ^7777771^000000\nNível necessário: ^7777772^000000\nClasses: ^777777Aprendizes, Espadachins, Mercadores, Gatunos e evoluções^000000",
+    "view": 2,
+    "equipSlots": [],
+    "costume": false
+  },
+  {
+    "id": 1103,
+    "name": "Espada",
+    "slots": 0,
+    "aegisName": null,
+    "resourceName": "소드",
+    "description": "Espada simples, de uma mão só. Arraste esta arma para sua janela de equipamento para usar.\n-------------------------\nTipo: ^777777Espada^000000\nATQ: ^77777725^000000 ATQM: ^7777770^000000\nPeso: ^77777750^000000\nNível da arma: ^7777771^000000\nNível necessário: ^7777772^000000\nClasses: ^777777Aprendizes, Espadachins, Mercadores, Gatunos e evoluções^000000",
+    "view": 2,
+    "equipSlots": [],
+    "costume": false
+  },
+  {
+    "id": 1119,
+    "name": "Tsurugi",
+    "slots": 1,
+    "aegisName": null,
+    "resourceName": "츠루기",
+    "description": "A mais poderosa espada de uma mão. Pode eliminar muitos inimigos. A espada predileta dos samurais.\n-------------------------\nTipo: ^777777Espada^000000\nATQ: ^777777130^000000 ATQM: ^7777770^000000\nPeso: ^777777120^000000\nNível da arma: ^7777773^000000\nNível necessário: ^77777727^000000\nClasses: ^777777Espadachins, Mercadores, Gatunos e evoluções^000000",
+    "view": 39,
+    "equipSlots": [],
+    "costume": false
+  },
+  {
+    "id": 1174,
+    "name": null,
+    "slots": 0,
+    "aegisName": null,
+    "resourceName": "액서큐셔너",
+    "description": "",
+    "view": 49,
+    "equipSlots": [],
+    "costume": false
+  }
+]

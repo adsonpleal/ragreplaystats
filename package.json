@@ -1,7 +1,7 @@
 {
   "name": "ragreplaystats",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.5.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "tsc && vite build && npm run prerender",
     "prerender": "node tools/prerender.mjs",
     "preview": "vite preview",
-    "build:db": "node tools/build-db.mjs",
+    "test": "vitest run",
+    "build:db": "node tools/sync-db.mjs",
     "build:monsters": "node tools/build-monsters.mjs"
   },
   "devDependencies": {
@@ -19,7 +20,8 @@
     "firebase-admin": "^13.10.0",
     "puppeteer": "^25.3.0",
     "typescript": "^5.4.5",
-    "vite": "^5.2.11"
+    "vite": "^5.2.11",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "@types/three": "^0.185.0",

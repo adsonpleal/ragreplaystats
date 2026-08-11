@@ -1,0 +1,32 @@
+[
+  {
+    "id": 0,
+    "jt": "JT_NOVICE",
+    "name": "Aprendiz",
+    "hasIcon": true
+  },
+  {
+    "id": 13,
+    "jt": null,
+    "name": null,
+    "hasIcon": true
+  },
+  {
+    "id": 4023,
+    "jt": "JT_NOVICE_B",
+    "name": "Mini Aprendiz",
+    "hasIcon": true
+  },
+  {
+    "id": 4054,
+    "jt": "JT_RUNE_KNIGHT",
+    "name": "Cavaleiro Rúnico",
+    "hasIcon": true
+  },
+  {
+    "id": 4060,
+    "jt": "JT_RUNE_KNIGHT_H",
+    "name": null,
+    "hasIcon": true
+  }
+]

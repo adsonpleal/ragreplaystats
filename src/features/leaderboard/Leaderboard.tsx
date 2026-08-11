@@ -5,6 +5,7 @@ import { type Column, DataTable } from "../../ui/DataTable";
 import { useReplaySummaries } from "../../hooks/useReplaySummaries";
 import { useAppStore } from "../../store/useAppStore";
 import { ensureMonsterNames } from "../../names";
+import { jobIconUrl } from "../../sim/ragassets";
 import { type ComboboxItem, Combobox } from "./Combobox";
 import {
   anyClasslessRecord,
@@ -101,7 +102,7 @@ export function Leaderboard() {
     const its: ComboboxItem[] = [{ value: CLASS_ALL, label: t.leaderboardClassAll }];
     for (const name of db?.pcClassNames() ?? []) {
       const iconId = db?.pcClassIconId(name);
-      its.push({ value: name, label: name, iconSrc: iconId != null ? `./icons/job/${iconId}.png` : undefined });
+      its.push({ value: name, label: name, iconSrc: iconId != null ? jobIconUrl(iconId) : undefined });
     }
     if (anyClasslessRecord(items)) its.push({ value: CLASS_UNKNOWN, label: t.leaderboardClassUnknown });
     return its;

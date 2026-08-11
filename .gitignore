@@ -4,7 +4,10 @@ dist/
 *.log
 *.local
 .env*
-.claude/
+
+# Local Claude state — but skills are project documentation and do ship.
+.claude/*
+!.claude/skills/
 
 # Firebase Admin service account keys — keep these out of the repo.
 *-firebase-adminsdk-*.json

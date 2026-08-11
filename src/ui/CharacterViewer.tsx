@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { t } from "../i18n";
-import { resolveSex } from "../sim/ragassets";
+import { RAGASSETS_BASE, resolveSex } from "../sim/ragassets";
 import { CHEVRON_LEFT, CHEVRON_RIGHT, ChevronButton } from "./ChevronButton";
 import { attackActionType } from "./weapon-action";
 
 // ragassets/zrenderer gateway. zrenderer encodes body direction AND animation
 // type into one number: action = animationType * 8 + bodyDirection (0=S…7=SE).
 // Gear params take sprite "view" ids (the client's ClassNum), NOT item ids.
-const RAGASSETS_BASE = "https://assets.latam-tools.com.br";
 const DEFAULT_HEAD = 1; // hairstyle id
 // Fixed render canvas so the sprite's ground point always lands on the same
 // pixel (feet stay aligned across pose/direction changes). URLSearchParams

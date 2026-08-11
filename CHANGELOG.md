@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-08-11
+
+- Todas as bases de nomes do site — itens, habilidades, classes, efeitos de status, bônus aleatórios e monstros — agora vêm de uma **fonte única e sempre em dia**, o projeto irmão [ragassets](https://github.com/adsonpleal/ragassets), que é quem lê o cliente do jogo e mantém essas tabelas atualizadas para todas as ferramentas LATAM. Antes cada tabela era extraída aqui, à mão, a partir de uma cópia local do cliente — o que fazia as atualizações demorarem e deixava um item novo aparecendo só como número por semanas. Os **nomes** desta versão são exatamente os mesmos de antes, mas daqui em diante toda atualização do cliente chega ao site logo depois de sair, sem espera.
+- **Ícones de mais de 1.100 itens** que apareciam em branco agora aparecem normalmente, junto com os de **99 habilidades** e **7 classes**. O site guardava uma cópia própria dos ícones, que ia ficando para trás a cada atualização do cliente: o item novo já tinha nome, mas nenhuma imagem. Agora os ícones vêm direto do ragassets, na hora — então um item que entra no jogo aparece com o ícone certo sem precisar de uma nova versão do site. De quebra, a página ficou bem mais leve para baixar.
+
 ## 2026-08-10
 
 - Base de itens atualizada com o último patch do cliente: **85 itens novos** (papiros elementais, cadernos, baús e as caixas do evento de agosto, entre outros) e alguns nomes corrigidos — a Mochila de Hatii, o Pænitentia Ferum e alguns Esboços que estavam trocados entre si. Os replays passam a mostrar o nome correto desses itens em vez de exibir só o ID.

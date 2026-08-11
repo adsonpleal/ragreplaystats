@@ -4,6 +4,7 @@ import { fmt } from "../../lib/format";
 import type { Replay } from "../../rrf/types";
 import { BarChart, type BarLabelSegment, type BarRow } from "../../ui/BarChart";
 import { useAppStore } from "../../store/useAppStore";
+import { skillIconUrl } from "../../sim/ragassets";
 import { primarySelectedPlayer } from "../../store/selectors";
 import { monsterName, playerName } from "./entityNames";
 import { mobDpUrl, resolveSkillName, skillDpUrl } from "./resolvers";
@@ -55,7 +56,7 @@ export function SkillUsesChart({ replay }: { replay: Replay }) {
       key: r.key,
       label: labelText,
       labelSegments,
-      iconSrc: r.skillId ? `./icons/skill/${r.skillId}.png` : undefined,
+      iconSrc: r.skillId ? skillIconUrl(r.skillId) : undefined,
       value: r.count,
       display: fmt(r.count),
     };
