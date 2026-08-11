@@ -100,7 +100,31 @@ function playerParams(look: PlayerLook): URLSearchParams {
  *  per icon'd EFST; ids without an icon 404 (the caller drops those, matching
  *  the RO client which only shows icon'd statuses). */
 export function statusIconUrl(efstId: number): string {
-  return `${RAGASSETS_BASE}/icons/status/${efstId}.png`;
+  return iconUrl("status", efstId);
+}
+
+/** Item inventory icon (24×24), keyed by **item id** — not the sprite `view`. */
+export function itemIconUrl(itemId: number): string {
+  return iconUrl("item", itemId);
+}
+
+/** Skill icon (24×24), keyed by skill id. */
+export function skillIconUrl(skillId: number): string {
+  return iconUrl("skill", skillId);
+}
+
+/** Class icon (25×25), keyed by **job/view id** — the ids `PC_JOB_IDS` lists,
+ *  and what an entity's `view` carries for a player. */
+export function jobIconUrl(jobId: number): string {
+  return iconUrl("job", jobId);
+}
+
+/** ragassets extracts every icon tree straight from the client, so each is keyed
+ *  by the same numeric id the replay packets carry. Ids the client ships no
+ *  image for 404 — every call site renders through an `onError` that hides the
+ *  `<img>`, which is what already happened when a bundled icon was missing. */
+function iconUrl(kind: "item" | "skill" | "job" | "status", id: number): string {
+  return `${RAGASSETS_BASE}/icons/${kind}/${id}.png`;
 }
 
 // --- Skill/world effect gateway (STR renderer) ---------------------------

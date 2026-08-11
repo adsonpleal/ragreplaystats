@@ -2,8 +2,9 @@
 // Build public/db/monster.json — the monster name/HP/level table the app reads
 // at runtime (src/names.ts → getMonsterName/getMonsterHp).
 //
-// Source of truth is the sibling project ragassets' mobs.json:
-//   https://github.com/adsonpleal/ragassets/blob/main/mobs.json
+// Source of truth is the sibling project ragassets, which serves mobs.json
+// alongside the client's own data tables (see tools/sync-db.mjs):
+//   https://assets.latam-tools.com.br/raw/mobs.json
 // ragassets derives it from the client's navi data (mob id ↔ aegis name) and
 // localizes it, then enriches each mob with HP/level/etc. That replaces the old
 // Divine Pride scrape (tools/scrape-dp.mjs, now removed) — no runtime DP calls,
@@ -16,7 +17,7 @@
 // `name` is the localized (pt-BR) display name.
 //
 // Usage:
-//   node tools/build-monsters.mjs                 # fetch from GitHub, write public/db/monster.json
+//   node tools/build-monsters.mjs                 # fetch from ragassets, write public/db/monster.json
 //   node tools/build-monsters.mjs --input mobs.json   # use a local copy instead of fetching
 //   node tools/build-monsters.mjs --url <url>     # override the source URL
 //   node tools/build-monsters.mjs --out <path>    # override the output file
@@ -24,8 +25,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
-const DEFAULT_URL =
-  "https://raw.githubusercontent.com/adsonpleal/ragassets/main/mobs.json";
+const DEFAULT_URL = "https://assets.latam-tools.com.br/raw/mobs.json";
 const DEFAULT_OUT = "public/db/monster.json";
 
 const args = parseArgs(process.argv.slice(2));

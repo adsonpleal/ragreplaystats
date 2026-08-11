@@ -4,19 +4,18 @@
 
 Static website that parses Ragnarok Online `.rrf` replay files and shows damage / skill / kill statistics. All decoding and aggregation happen **in the browser** — the file is also stored in Firebase Firestore so a shareable link with a 10-char id is produced. Files >1 MiB stay local and aren't uploaded.
 
-UI is in **Brazilian Portuguese**. The decoder is server-agnostic but the bundled reference data (skill / mob / job names) was extracted from a brAthena-style Latam client (Event Horizon GRF) and rAthena's renewal `mob_db.yml`.
+UI is in **Brazilian Portuguese**. The decoder is server-agnostic, but the reference data (skill / mob / job names and icons) describes the Latam client and comes from [ragassets](https://github.com/adsonpleal/ragassets).
 
 ## Stack
 
 - Vanilla TypeScript + Vite, single bundled SPA.
 - `uplot` for time-series charts.
-- A 230-line custom GRF reader + Lua 5.1 bytecode constant-pool walker (`tools/build-db.mjs`) that produces `public/db/{job,item,skill,randomopt}.json` from a client GRF.
-- Monster names + HP/level come from the sibling project [ragassets](https://github.com/adsonpleal/ragassets)' `mobs.json`, extracted into `public/db/monster.json` by `tools/build-monsters.mjs`. All names ship bundled and offline — nothing queries divine-pride.net at runtime.
+- All reference data comes from the sibling project [ragassets](https://github.com/adsonpleal/ragassets), the single place that reads the game client. Names are bundled: `tools/sync-db.mjs` reshapes its published tables into `public/db/{item,job,skill,randomopt,status}.json` and `tools/build-monsters.mjs` its `mobs.json` into `public/db/monster.json`. Icons are not bundled — item/skill/job/status PNGs load from ragassets at runtime. Nothing queries divine-pride.net.
 - Firebase Firestore (free Spark tier) holds the uploaded `.rrf` bytes (≤1 MiB / doc). Lazy-loaded — the SDK isn't fetched unless the user shares or opens a shared link.
 
 ## Assets
 
-The equipment **character viewer** (Estatísticas → Equipamento) renders the player's sprite — gear included — from [ragassets](https://github.com/adsonpleal/ragassets), a fast caching HTTP gateway that serves Ragnarok Online sprites as images/APNG on top of [zrenderer](https://github.com/zhad3/zrenderer) by [zhad3](https://github.com/zhad3), which does the actual rendering. Images come from the public instance at `https://assets.latam-tools.com.br` (configurable via `RAGASSETS_BASE` in `src/ui/character-viewer.ts`). Equipped gear maps to zrenderer view ids via each item's `ClassNum`, extracted into `public/db/item.json` by `tools/build-db.mjs`.
+The equipment **character viewer** (Estatísticas → Equipamento) renders the player's sprite — gear included — from [ragassets](https://github.com/adsonpleal/ragassets), a fast caching HTTP gateway that serves Ragnarok Online sprites as images/APNG on top of [zrenderer](https://github.com/zhad3/zrenderer) by [zhad3](https://github.com/zhad3), which does the actual rendering. Images come from the public instance at `https://assets.latam-tools.com.br` (`RAGASSETS_BASE` in `src/sim/ragassets.ts`, which is also where every other ragassets URL — icons, maps, effects, sounds — is built). Equipped gear maps to zrenderer view ids via each item's `ClassNum`, carried into `public/db/item.json` as `view` by `tools/sync-db.mjs`.
 
 ## Replay viewer (experimental)
 
@@ -28,17 +27,14 @@ The **"Assistir replay"** button opens a highly experimental 3D playback of the 
 npm install
 npm run dev      # http://127.0.0.1:5173
 npm run build    # static output in dist/
+npm test         # vitest — covers the public/db transforms
 
-# Rebuild the name DBs (only needed once, or when upgrading the client):
-node tools/build-db.mjs --grf /path/to/data.grf
-# or, faster, against a pre-extracted folder:
-node tools/build-db.mjs --dir ~/Downloads/Ragnarok-extracted
-
-# Refresh monster names/HP/level from ragassets' mobs.json (no GRF needed):
-npm run build:monsters
+# Refresh the bundled name DBs from ragassets (no game client needed):
+npm run build:db         # item/job/skill/randomopt/status.json
+npm run build:monsters   # monster.json
 ```
 
-The `tools/build-db.mjs` script also supports `--list <file.grf>` (print contents), `--dump <file.grf>::<inner-path>` (extract one file to stdout), and `--extract <dir> [--match <regex>]` (full GRF extraction).
+Run both after a LATAM client update — see `.claude/skills/sync-with-ragassets/SKILL.md` for the full workflow, including how to check the result before committing. Icons need nothing: they're fetched from ragassets at runtime, so a client update reaches them on deploy.
 
 ## Architecture
 
@@ -126,17 +122,18 @@ Mnemonics follow the rAthena / Hercules convention. Some IDs are used differentl
 
 ## Reference data
 
-All reference data ships bundled under `public/db/` — nothing is fetched from a third-party API at runtime.
+Reference **names** ship bundled under `public/db/`; **icons** are fetched from ragassets at runtime. Both come from [ragassets](https://github.com/adsonpleal/ragassets), which owns the GRF/Lua extraction for all of the LATAM tools and publishes an unopinionated projection of the client at `https://assets.latam-tools.com.br/raw/<name>.json`.
+
+Names are bundled because a table row needs them synchronously to render, and they're small. Icons aren't: the vendored trees were 31,852 PNGs and 123 MB — and 116 MB of that was the `collection` album art, which nothing in `src/` ever referenced.
 
 | Source | Contents |
 |--------|----------|
-| `public/db/{item,skill,randomopt}.json` (built by `tools/build-db.mjs` from the client GRF) | Item names + `ClassNum` view ids, skill names, and random-option templates — all pt-BR, straight from the client's Lua data tables. |
-| `public/db/monster.json` (built by `tools/build-monsters.mjs` from [ragassets](https://github.com/adsonpleal/ragassets)' `mobs.json`) | Monster names + HP + level, keyed by mob id. ragassets is the source of truth for mob names; this replaces the old Divine Pride scrape. |
-| `public/db/job.json` (built by `tools/build-db.mjs` from the client GRF) | Player-class display names. The GRF's `pcjobnamegender.lub` is the only source for strings like "Sentinela Trans". |
+| `public/db/{item,skill,randomopt,status}.json` (built by `tools/sync-db.mjs` from `/raw/{items,skills,randomopt,status}.json`) | Item names + `ClassNum` view ids, skill names, random-option templates and buff/debuff names — all pt-BR, straight from the client's Lua data tables. |
+| `public/db/monster.json` (built by `tools/build-monsters.mjs` from `/raw/mobs.json`) | Monster names + HP + level, keyed by mob id. This replaces the old Divine Pride scrape. |
+| `public/db/job.json` (built by `tools/sync-db.mjs` from `/raw/jobs.json`) | Player-class display names, the source of strings like "Sentinela Trans". |
+| `https://assets.latam-tools.com.br/icons/{item,skill,job,status}/<id>.png` (built in `src/sim/ragassets.ts`) | Icon PNGs, loaded at runtime and keyed by the same numeric id the replay packets carry. Missing ids 404 and the `<img>` hides itself. |
 
-The build tool reads `pcjobnamegender.lub` (display) + `admin/pcidentity.lub` (server-side `JT_X → ID`). The `pcidentity.lub` is critical — Latam server uses non-standard IDs (e.g. `JT_RANGER_H = 4062`, where kRO standard says `JT_MINSTREL = 4062`).
-
-Lua bytecode parsing walks the constant pool recursively over nested function prototypes — no Lua VM needed. The server uses a custom-magic GRF (`Event Horizon` instead of `Master of Magic`) with version `0x300` (a 4-byte gap before the file table and 21-byte entry trailers vs standard 0x200's 17 bytes). Mixed-DES-encrypted files (~31k sprites/textures) are skipped — they're irrelevant for stats.
+The naming decisions stay on this side of the split, in `tools/sync-db.mjs`: the `[N]` slot suffix on gear, the pt-BR names for the food buffs the client titles `%s`, and — for classes — `PLAYER_JT_IDS` plus `JOB_NAME_OVERRIDE`. `/raw/jobs.json` pairs a label with an id only where the server's `admin/pcidentity.lub` numbers the class, and it numbers none of the 4th classes, so all 13 of those names are pinned in `JOB_NAME_OVERRIDE` (which is what we want editorially anyway — the client's `pcjobnamegender.lub` predates the LATAM renames). `pcidentity.lub` matters because the LATAM server uses non-standard ids: `JT_RANGER_H = 4062`, where kRO says `JT_MINSTREL = 4062`.
 
 ## Caveats
 

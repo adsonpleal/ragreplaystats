@@ -6,6 +6,7 @@ import type { Replay } from "../../rrf/types";
 import { CHEVRON_LEFT, CHEVRON_RIGHT, ChevronButton } from "../../ui/ChevronButton";
 import { CharacterViewer } from "../../ui/CharacterViewer";
 import { useAppStore } from "../../store/useAppStore";
+import { itemIconUrl } from "../../sim/ragassets";
 import {
   buildEquipmentPages,
   EQUIP_SLOTS,
@@ -22,7 +23,7 @@ function EquipIcon({ id, className, size }: { id: number; className: string; siz
   return (
     <img
       className={className}
-      src={`./icons/item/${id}.png`}
+      src={itemIconUrl(id)}
       alt=""
       width={size}
       height={size}

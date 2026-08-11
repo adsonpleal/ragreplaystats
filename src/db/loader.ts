@@ -49,8 +49,8 @@ export type ReferenceDb = {
 };
 
 /**
- * Whitelist of player-character job ids — the same list `tools/build-db.mjs`
- * uses when extracting names from the GRF. Includes alt-sprite ids
+ * Whitelist of player-character job ids — the same list `tools/sync-db.mjs`
+ * uses (`PLAYER_JT_IDS`) when building job.json. Includes alt-sprite ids
  * (mounted Knight, Crusader on peco, mounted Royal Guard, etc.); those
  * either share a name with their base class (and get deduped) or fall
  * through to `job#<id>` and get filtered out at the call site.
