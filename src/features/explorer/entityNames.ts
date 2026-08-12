@@ -1,7 +1,7 @@
 import type { MonsterAgg } from "../../aggregate/index";
 import type { ReferenceDb } from "../../db/loader";
 import { t } from "../../i18n";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 
 /** Best monster name: DP species name → server-reported instance name → fallback. */
 export function monsterName(replay: Replay, db: ReferenceDb | null, aid: number): string {

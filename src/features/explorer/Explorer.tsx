@@ -1,4 +1,4 @@
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { useTabUrlSync } from "../../hooks/useTabUrlSync";
 import { useAppStore } from "../../store/useAppStore";
 import { PrintReport } from "../export/PrintReport";

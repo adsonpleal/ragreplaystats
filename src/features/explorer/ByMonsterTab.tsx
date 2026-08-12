@@ -8,7 +8,7 @@ import {
 } from "../../aggregate/index";
 import { t } from "../../i18n";
 import { fmt } from "../../lib/format";
-import type { DamageEvent, Replay } from "../../rrf/types";
+import type { DamageEvent, Replay } from "rrfparser";
 import { BarChart } from "../../ui/BarChart";
 import { DamageChart } from "../../ui/DamageChart";
 import { type Column, DataTable } from "../../ui/DataTable";

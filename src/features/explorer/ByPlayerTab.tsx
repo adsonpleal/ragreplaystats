@@ -6,7 +6,7 @@ import {
 } from "../../aggregate/index";
 import { t } from "../../i18n";
 import { fmt } from "../../lib/format";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { type Column, DataTable } from "../../ui/DataTable";
 import { DpsScatter } from "../../ui/DpsScatter";
 import { useAppStore } from "../../store/useAppStore";

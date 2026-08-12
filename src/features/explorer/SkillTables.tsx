@@ -1,7 +1,7 @@
 import { bySkill, bySkillAndPlayer } from "../../aggregate/index";
 import { t } from "../../i18n";
 import { fmt } from "../../lib/format";
-import type { DamageEvent, Replay } from "../../rrf/types";
+import type { DamageEvent, Replay } from "rrfparser";
 import { type Column, DataTable } from "../../ui/DataTable";
 import { useAppStore } from "../../store/useAppStore";
 import { ClassCell, SkillCell } from "./cells";

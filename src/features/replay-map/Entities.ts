@@ -37,7 +37,7 @@ import { type AttackTarget, Companion, FALCON_VIEW, type OwnerState, WARG_VIEW }
 import { lookFromEntity } from "./playerState";
 import type { World } from "../../sim/render/scene";
 import type { ReferenceDb } from "../../db/loader";
-import type { Entity, FixPosEvent, MoveEvent } from "../../rrf/types";
+import type { Entity, FixPosEvent, MoveEvent } from "rrfparser";
 
 const ATTACK_HOLD_MS = 600; // attack pose displays for this long after a damage event
 const HURT_HOLD_MS = 250; // brief flash; long enough to register, short enough to keep walking feeling fluid

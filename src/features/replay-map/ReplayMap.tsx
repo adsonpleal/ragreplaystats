@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Raycaster, Vector2, Vector3 } from "three";
 import { t } from "../../i18n";
 import type { ReferenceDb } from "../../db/loader";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { Engine } from "../../sim/render/engine";
 import { buildWorld, type MapManifest, type World } from "../../sim/render/scene";
 import { MAPS_ROOT, bgmIndexUrl, bgmTrackUrl } from "../../sim/ragassets";

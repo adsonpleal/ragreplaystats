@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { t } from "../../i18n";
 import { formatDuration } from "../../lib/format";
 import type { ReferenceDb } from "../../db/loader";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { CHEVRON_LEFT, CHEVRON_RIGHT, ChevronButton } from "../../ui/ChevronButton";
 import { CharacterViewer } from "../../ui/CharacterViewer";
 import { useAppStore } from "../../store/useAppStore";

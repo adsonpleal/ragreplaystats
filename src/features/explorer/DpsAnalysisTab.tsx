@@ -1,7 +1,7 @@
 import { dpsAnalysisStats } from "../../aggregate/index";
 import { t } from "../../i18n";
 import { fmt, formatDuration } from "../../lib/format";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { DpsScatter } from "../../ui/DpsScatter";
 import { SummaryCard, type SummaryCell } from "../../ui/SummaryCard";
 import { useAppStore } from "../../store/useAppStore";

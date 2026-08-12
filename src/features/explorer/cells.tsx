@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReferenceDb } from "../../db/loader";
 import { t } from "../../i18n";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { jobIconUrl, skillIconUrl } from "../../sim/ragassets";
 import { playerClass } from "./entityNames";
 

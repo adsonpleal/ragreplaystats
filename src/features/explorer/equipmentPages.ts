@@ -1,6 +1,6 @@
 import type { ReferenceDb } from "../../db/loader";
 import { t } from "../../i18n";
-import type { RandomOption, Replay } from "../../rrf/types";
+import type { RandomOption, Replay } from "rrfparser";
 import { resolveItemName } from "./resolvers";
 
 /**

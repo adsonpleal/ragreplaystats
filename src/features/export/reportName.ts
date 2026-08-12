@@ -1,4 +1,4 @@
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 
 /** Slug for download filenames: player + recording date, ascii-safe. */
 export function reportBaseName(replay: Replay | null): string {
