@@ -5,9 +5,9 @@ import { fetchReplay, uploadReplay } from "../firebase";
 import { invalidate as invalidateSummariesCache } from "../replay-summaries";
 import { buildReplaySummary } from "../features/replay/replaySummary";
 import { t } from "../i18n";
-import { decodeReplay } from "../rrf/decode";
+import { decodeReplay } from "rrfparser";
 import type { Range } from "../aggregate/index";
-import type { Replay } from "../rrf/types";
+import type { Replay } from "rrfparser";
 
 export type Mode = "byPlayer" | "byMonster" | "stats" | "dpsAnalysis";
 

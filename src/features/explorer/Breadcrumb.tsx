@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { t } from "../../i18n";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { useAppStore } from "../../store/useAppStore";
 import { monsterName, playerName } from "./entityNames";
 

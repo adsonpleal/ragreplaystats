@@ -1,6 +1,6 @@
 import { locale, t } from "../../i18n";
 import { fmt, formatDuration } from "../../lib/format";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 
 /** The "Sessão" stat card shown above the explorer for the loaded replay. */
 export function SessionSummary({ replay }: { replay: Replay }) {

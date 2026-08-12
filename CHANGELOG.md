@@ -2,6 +2,12 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-08-12
+
+- **Buffs que já estavam ativos no começo da gravação não ficam mais "para sempre" no visualizador.** Alguns buffs aparecem em dois lugares do arquivo: no retrato tirado quando a gravação começou e também num pacote do servidor, que é o único dos dois que traz quanto tempo ainda falta. O leitor ficava com a versão sem tempo e descartava a outra, então esses buffs entravam na barra e nunca mais saíam — mesmo depois de terem acabado de verdade. Agora vale a versão com duração, e eles expiram na hora certa. Nas gravações de teste isso recuperou a duração de 70 buffs.
+- **Munição guardada no carrinho não aparece mais como munição equipada.** A lista de equipamento e o boneco do personagem liam mochila, carrinho e equipamento de uma lista só. Como cada um numera suas posições a partir do zero, uma pilha de balas de canhão parada no carrinho podia ocupar o espaço de Munição na tela de quem não estava com munição nenhuma equipada. Agora cada container é lido separado.
+- Por baixo, o leitor de arquivos `.rrf` virou um projeto à parte, o [rrfparser](https://github.com/adsonpleal/rrfparser), compartilhado com o [simulador de dano](https://github.com/adsonpleal/latam-ro-calc) e o [mercado](https://github.com/adsonpleal/latam-market). Eram três cópias do mesmo leitor seguindo caminhos diferentes, cada uma sabendo ler algo que as outras não sabiam; agora é uma só, com o melhor das três. A troca foi conferida decodificando 566 gravações reais com o leitor antigo e o novo lado a lado, exigindo que toda diferença tivesse explicação.
+
 ## 2026-08-11
 
 - Todas as bases de nomes do site — itens, habilidades, classes, efeitos de status, bônus aleatórios e monstros — agora vêm de uma **fonte única e sempre em dia**, o projeto irmão [ragassets](https://github.com/adsonpleal/ragassets), que é quem lê o cliente do jogo e mantém essas tabelas atualizadas para todas as ferramentas LATAM. Antes cada tabela era extraída aqui, à mão, a partir de uma cópia local do cliente — o que fazia as atualizações demorarem e deixava um item novo aparecendo só como número por semanas. Os **nomes** desta versão são exatamente os mesmos de antes, mas daqui em diante toda atualização do cliente chega ao site logo depois de sair, sem espera.

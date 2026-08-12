@@ -18,7 +18,7 @@ import {
 } from "../aggregate/index.js";
 import { t, locale } from "../i18n.js";
 import type { ReferenceDb } from "../db/loader.js";
-import type { Replay } from "../rrf/types.js";
+import type { Replay } from "rrfparser";
 
 type SheetSpec = {
   data: Row[];

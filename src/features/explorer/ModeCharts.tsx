@@ -1,7 +1,7 @@
 import { killsByPlayerAndMob, skillUsageByPlayer } from "../../aggregate/index";
 import { t } from "../../i18n";
 import { fmt } from "../../lib/format";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { BarChart, type BarLabelSegment, type BarRow } from "../../ui/BarChart";
 import { useAppStore } from "../../store/useAppStore";
 import { skillIconUrl } from "../../sim/ragassets";

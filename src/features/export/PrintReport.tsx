@@ -1,5 +1,5 @@
 import { locale, t } from "../../i18n";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { ByMonsterTab } from "../explorer/ByMonsterTab";
 import { ByPlayerTab } from "../explorer/ByPlayerTab";
 import { DpsAnalysisTab } from "../explorer/DpsAnalysisTab";

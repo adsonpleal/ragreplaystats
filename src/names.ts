@@ -10,7 +10,7 @@
 //
 // Nothing here talks to divine-pride.net: every name is bundled offline.
 
-import type { Replay } from "./rrf/types.js";
+import type { Replay } from "rrfparser";
 
 type ItemEntry = { name: string; view?: number };
 type MonsterEntry = { name: string; hp: number; level: number };

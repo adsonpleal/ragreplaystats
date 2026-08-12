@@ -1,7 +1,7 @@
 import { mvpMatchups } from "../../aggregate/index";
 import type { ReferenceDb } from "../../db/loader";
 import type { ReplaySummary } from "../../firebase";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 
 /**
  * Build the denormalised summary stored alongside an uploaded replay (and used

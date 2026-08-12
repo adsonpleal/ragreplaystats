@@ -2,7 +2,7 @@ import type {
   DamageEvent,
   Replay,
   VanishEvent,
-} from "../rrf/types.js";
+} from "rrfparser";
 
 // rAthena SP_* enum values we read from paramChanges.
 export const SP_HP = 5;

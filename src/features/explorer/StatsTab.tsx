@@ -12,7 +12,7 @@ import {
 } from "../../aggregate/index";
 import { t } from "../../i18n";
 import { fmt, formatDuration } from "../../lib/format";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { BarChart, type BarRow } from "../../ui/BarChart";
 import { LineChart } from "../../ui/LineChart";
 import { SummaryCard, type SummaryCell } from "../../ui/SummaryCard";

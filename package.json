@@ -1,7 +1,7 @@
 {
   "name": "ragreplaystats",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -32,6 +32,7 @@
     "three": "^0.185.0",
     "uplot": "^1.6.30",
     "write-excel-file": "^4.1.1",
-    "zustand": "^4.5.4"
+    "zustand": "^4.5.4",
+    "rrfparser": "^1.0.0-rc.1"
   }
 }

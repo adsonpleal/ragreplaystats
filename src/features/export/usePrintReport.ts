@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { useAppStore } from "../../store/useAppStore";
 import { PRINT_TABS } from "./PrintReport";
 import { delay, snapshotNode, waitForImages } from "./reportSnapshot";

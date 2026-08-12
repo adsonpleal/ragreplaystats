@@ -8,7 +8,7 @@ import {
 } from "../../aggregate/index";
 import { t } from "../../i18n";
 import { fmt, formatDuration } from "../../lib/format";
-import type { Replay } from "../../rrf/types";
+import type { Replay } from "rrfparser";
 import { BarChart } from "../../ui/BarChart";
 import { type Column, DataTable } from "../../ui/DataTable";
 import { LineChart } from "../../ui/LineChart";

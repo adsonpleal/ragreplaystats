@@ -10,7 +10,7 @@
 
 import type { ReferenceDb } from "../../db/loader";
 import { EQUIP_SLOTS } from "../explorer/equipmentPages";
-import type { Entity, Replay } from "../../rrf/types";
+import type { Entity, Replay } from "rrfparser";
 import { type PlayerLook, resolveSex } from "../../sim/ragassets";
 
 // Slot ORDER indices (into EQUIP_SLOTS) for the visual pieces — matches

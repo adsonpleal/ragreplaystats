@@ -25,7 +25,7 @@ import {
   Vector3,
 } from "three";
 import { UNITS_PER_PX } from "../../sim/sprite";
-import type { HitType } from "../../rrf/types";
+import type { HitType } from "rrfparser";
 
 /** Single-hit (auto-attack / one-shot skill) number lifetime in ms. Kept close
  *  to the multi-hit whites' quick pop-and-fade (HIT_LIFETIME_MS) so a lone hit
