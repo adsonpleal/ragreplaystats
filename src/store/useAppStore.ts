@@ -15,8 +15,8 @@ export type DragRange = { startMs: number; endMs: number } | null;
 
 /**
  * Central app state — the React/Zustand successor to the single mutable
- * `state` object in the old `main.ts`. Routing (home/leaderboard/suggestions)
- * now lives in react-router, so it is not part of this store; everything else
+ * `state` object in the old `main.ts`. Routing (home/leaderboard) now lives
+ * in react-router, so it is not part of this store; everything else
  * is mirrored field-for-field.
  */
 export type AppState = {

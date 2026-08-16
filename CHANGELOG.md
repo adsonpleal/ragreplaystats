@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-08-16
+
+- **As sugestões mudaram de casa.** O quadro de sugestões que ficava aqui dentro foi substituído pelo [rastreador de issues das ferramentas do RO LATAM](https://issues.latam-tools.com.br/?projeto=recap), o mesmo para todas as ferramentas — uma sugestão feita aqui passa a aparecer no mesmo lugar que as do simulador de dano e do mercado, com status e acompanhamento. As sugestões que já tinham sido enviadas foram levadas para lá. No topo do site, no lugar do link **Sugestões**, ficaram dois botões — **Reportar**, para abrir um bug ou uma ideia, e **Acompanhar**, para ver o que já foi enviado —, os mesmos do simulador de dano. O link de bugs no rodapé também abre o rastreador, e quem acessar o endereço antigo `/suggestions` é redirecionado automaticamente.
+
 ## 2026-08-12
 
 - **Buffs que já estavam ativos no começo da gravação não ficam mais "para sempre" no visualizador.** Alguns buffs aparecem em dois lugares do arquivo: no retrato tirado quando a gravação começou e também num pacote do servidor, que é o único dos dois que traz quanto tempo ainda falta. O leitor ficava com a versão sem tempo e descartava a outra, então esses buffs entravam na barra e nunca mais saíam — mesmo depois de terem acabado de verdade. Agora vale a versão com duração, e eles expiram na hora certa. Nas gravações de teste isso recuperou a duração de 70 buffs.

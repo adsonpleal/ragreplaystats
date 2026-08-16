@@ -9,7 +9,15 @@ export function SiteFooter() {
         .
       </p>
       <p className="muted small">
-        Projeto open source. Sugestões e bugs no{" "}
+        Sugestões e bugs no{" "}
+        <a
+          href="https://issues.latam-tools.com.br/novo?projeto=recap"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          rastreador de issues
+        </a>
+        . Projeto open source no{" "}
         <a href="https://github.com/adsonpleal/ragreplaystats" target="_blank" rel="noopener">
           GitHub
         </a>

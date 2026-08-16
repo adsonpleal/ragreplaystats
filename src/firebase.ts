@@ -3,20 +3,13 @@
 
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import {
-  addDoc,
   Bytes,
-  collection,
   doc,
   getDoc,
-  getDocs,
   getFirestore,
-  increment,
-  orderBy,
-  query,
   serverTimestamp,
   setDoc,
   Timestamp,
-  updateDoc,
   type Firestore,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
@@ -406,59 +399,9 @@ function restTimestamp(v: unknown): Date | null {
   return Number.isFinite(d.getTime()) ? d : null;
 }
 
-// ---------------------------------------------------------------------------
-// Suggestions / comments
-// ---------------------------------------------------------------------------
-
-const SUGGESTIONS_COLLECTION = "suggestions";
-export const SUGGESTION_MAX_LENGTH = 500;
-
-export type Suggestion = {
-  id: string;
-  text: string;
-  createdAt: Date | null;
-  upvotes: number;
-  downvotes: number;
-};
-
-export async function createSuggestion(text: string): Promise<string> {
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error("Sugestão vazia.");
-  if (trimmed.length > SUGGESTION_MAX_LENGTH) {
-    throw new Error(`Sugestão muito longa (máx. ${SUGGESTION_MAX_LENGTH}).`);
-  }
-  const ref = await addDoc(collection(getDb(), SUGGESTIONS_COLLECTION), {
-    text: trimmed,
-    createdAt: serverTimestamp(),
-    upvotes: 0,
-    downvotes: 0,
-  });
-  return ref.id;
-}
-
-export async function listSuggestions(): Promise<Suggestion[]> {
-  const col = collection(getDb(), SUGGESTIONS_COLLECTION);
-  const snap = await getDocs(query(col, orderBy("createdAt", "desc")));
-  return snap.docs.map((d) => {
-    const data = d.data() as Record<string, unknown>;
-    return {
-      id: d.id,
-      text: typeof data.text === "string" ? data.text : "",
-      createdAt:
-        data.createdAt instanceof Timestamp ? data.createdAt.toDate() : null,
-      upvotes: typeof data.upvotes === "number" ? data.upvotes : 0,
-      downvotes: typeof data.downvotes === "number" ? data.downvotes : 0,
-    };
-  });
-}
-
-export async function voteSuggestion(
-  id: string,
-  direction: "up" | "down",
-): Promise<void> {
-  const ref = doc(getDb(), SUGGESTIONS_COLLECTION, id);
-  const field = direction === "up" ? "upvotes" : "downvotes";
-  await updateDoc(ref, { [field]: increment(1) });
-}
+// The in-app suggestions board (the `suggestions` collection) is retired in
+// favour of the unified tracker at issues.latam-tools.com.br. The collection
+// still exists and stays readable, but this client no longer reads or writes
+// it — see firestore.rules, where create/update are now `if false`.
 
 export type { QueryDocumentSnapshot };

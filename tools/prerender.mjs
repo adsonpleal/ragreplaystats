@@ -9,7 +9,6 @@
 //
 //   /            -> dist/index.html            (overwritten; also the SPA fallback)
 //   /leaderboard -> dist/leaderboard/index.html
-//   /suggestions -> dist/suggestions/index.html
 //
 // Firebase Hosting serves an exact file match before the `** -> /index.html`
 // rewrite, so those per-route files are what crawlers get; the client router
@@ -42,7 +41,6 @@ const OG_ONLY = process.argv.includes("--og-only");
 const ROUTES = {
   "/": "index.html",
   "/leaderboard": "leaderboard/index.html",
-  "/suggestions": "suggestions/index.html",
 };
 
 const MIME = {

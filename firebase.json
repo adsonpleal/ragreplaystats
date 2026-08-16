@@ -12,6 +12,13 @@
         "**/.*",
         "**/node_modules/**"
       ],
+      "redirects": [
+        {
+          "source": "/suggestions",
+          "destination": "https://issues.latam-tools.com.br/?projeto=recap",
+          "type": 301
+        }
+      ],
       "rewrites": [
         { "source": "**", "destination": "/index.html" }
       ],

@@ -59,25 +59,12 @@ export const t = {
   leaderboardColDate: "Gravado em",
   leaderboardColAction: "",
 
-  // Suggestions section
-  suggestionsNav: "Sugestões",
-  suggestionsTitle: "Sugestões e comentários",
-  suggestionsHint:
-    "Compartilhe ideias, bugs ou pedidos. Vote nas sugestões existentes.",
-  suggestionsPlaceholder: "Escreva uma sugestão…",
-  suggestionsSubmit: "Enviar",
-  suggestionsSending: "Enviando…",
-  suggestionsSent: "Obrigado! Sua sugestão foi registrada.",
-  suggestionsEmpty: "Nenhuma sugestão ainda. Seja o primeiro a enviar uma!",
-  suggestionsLoading: "Carregando sugestões…",
-  suggestionsError: (msg: string) => `Falha ao carregar sugestões: ${msg}`,
-  suggestionsSubmitError: (msg: string) => `Falha ao enviar: ${msg}`,
-  suggestionsVoteError: (msg: string) => `Falha ao votar: ${msg}`,
-  suggestionsTooLong: "Sugestão muito longa (máx. 500 caracteres).",
-  suggestionsAlreadyVoted: "Você já votou nesta sugestão.",
-  suggestionUpvote: "Curtir",
-  suggestionDownvote: "Não curtir",
-  suggestionPostedAt: (when: string) => `Enviado em ${when}`,
+  // Issue tracker (external — replaced the in-app suggestions board). Same
+  // Reportar/Acompanhar pair the simulador shows, pointing at ?projeto=recap.
+  issuesReportNav: "Reportar",
+  issuesReportTitle: "Abrir um bug ou sugestão no rastreador das ferramentas do RO LATAM",
+  issuesBoardNav: "Acompanhar",
+  issuesBoardTitle: "Acompanhar bugs e sugestões no rastreador das ferramentas do RO LATAM",
 
   copyLink: "Copiar link",
   downloadReplay: "Baixar replay",
