@@ -2,6 +2,13 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-08-18
+
+- Bases de nomes atualizadas com o último patch do cliente: **111 itens novos** — os **Cubos Sombrios** (o equipamento sombrio de todas as classes, mais os raciais de DEF e DEFM), os **Cadernos** (dos Feitiços, do Portador, Pontual, de Automagia, Fugaz, Durável e a Caixa de Cadernos), as armas **Primordiais-LT**, **Celestiais** e **Infernais**, os artefatos e sacolas do evento noturno de Geffen, as caixas de agosto e as dez **Roletas de Setembro**.
+- **134 itens tiveram o nome corrigido**, e boa parte deles eram nomes que ficavam ilegíveis no replay. As **pedras de encantamento** não aparecem mais como "Tempo de Recarga Global 1Lv" ou "P.ATK 1Lv" e passaram a usar o nome que o jogo mostra — "Pedra Global 1", "P.ATQ +1", "Músculo 1", "FOR Ancestral", "Mestre Dragão", "Medalha de Amorfo". As **cartas da Arena de Geffen** viraram "Noturnal" ("Carta Arhi da Arena" → "Carta Alphard Noturnal"), e vários equipamentos trocaram de nome (Traje Anti Conjure → Uniforme Anti-Magia, Enciclopédia Completa → Enciclopédia Editada, as Botas "Desconhecidas" de cada atributo e os mantos mágicos de Geffen).
+- Base de monstros: **8 monstros novos** — Madeira Podre, Poring Derretido, Verme Tumular, Sugador de Cérebro, Mosquilo, Criatura Desconhecida e mais dois da Arena — e **14 nomes corrigidos**, com os monstros da Arena de Geffen ganhando o sufixo "da Arena" (Alphard → Arhi da Arena) e Fenris virando Fenrir.
+- **Alguns itens antigos voltaram a aparecer só pelo número.** Neste patch o cliente deixou de informar o nome de 833 itens, quase todos antigos: aluguéis, chapéus de evento, os anéis elementais, itens de praia. Os nomes saem do próprio cliente do jogo, então quando ele para de trazer um, não há de onde tirá-lo e o replay volta a mostrar o ID. **Nenhuma carta foi afetada.** Se o cliente voltar a informar esses nomes num próximo patch, eles voltam sozinhos.
+
 ## 2026-08-16
 
 - **As sugestões mudaram de casa.** O quadro de sugestões que ficava aqui dentro foi substituído pelo [rastreador de issues das ferramentas do RO LATAM](https://issues.latam-tools.com.br/?projeto=recap), o mesmo para todas as ferramentas — uma sugestão feita aqui passa a aparecer no mesmo lugar que as do simulador de dano e do mercado, com status e acompanhamento. As sugestões que já tinham sido enviadas foram levadas para lá. No topo do site, no lugar do link **Sugestões**, ficaram dois botões — **Reportar**, para abrir um bug ou uma ideia, e **Acompanhar**, para ver o que já foi enviado —, os mesmos do simulador de dano. O link de bugs no rodapé também abre o rastreador, e quem acessar o endereço antigo `/suggestions` é redirecionado automaticamente.
