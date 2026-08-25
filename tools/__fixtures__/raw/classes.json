@@ -1,0 +1,10 @@
+[
+{"id":0,"renderId":0,"jt":"JT_NOVICE","name":"Aprendiz","race":"human"},
+{"id":7,"renderId":7,"jt":"JT_KNIGHT","name":"Cavaleiro","race":"human"},
+{"id":4054,"renderId":4054,"jt":"JT_RUNE_KNIGHT","name":"Cavaleiro Rúnico","race":"human"},
+{"id":4218,"renderId":4218,"jt":"JT_SUMMONER","name":"Invocador","race":"doram"},
+{"id":4252,"renderId":4252,"jt":"JT_DRAGON_KNIGHT","name":"Cavaleiro Draconiano","race":"human"},
+{"id":4254,"renderId":4254,"jt":"JT_SHADOW_CROSS","name":"Assassino","race":"human"},
+{"id":4314,"renderId":4307,"jt":"JT_HYPER_NOVICE","name":"Hiperaprendiz","race":"human"},
+{"id":4311,"renderId":4304,"jt":"JT_SHINKIRO","name":null,"race":"human"}
+]

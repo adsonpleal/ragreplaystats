@@ -13,13 +13,17 @@ and reshape them into the exact files the app loads:
 
 | Command | Writes | From |
 |---|---|---|
-| `npm run build:db` | `item.json`, `job.json`, `skill.json`, `randomopt.json`, `status.json` | `/raw/{items,jobs,skills,randomopt,status}.json` |
+| `npm run build:db` | `item.json`, `job.json`, `skill.json`, `randomopt.json`, `status.json` | `/raw/{items,jobs,classes,skills,randomopt,status}.json` |
 | `npm run build:monsters` | `monster.json` | `/raw/mobs.json` |
 
 - **item.json** — `{ "<id>": { name, view? } }`. `name` includes the `[N]` slot
   suffix; `view` is the client's `ClassNum`, which the character viewer needs to
   draw equipped gear.
-- **job.json** — `{ "<id>": "<name>" }`, player classes only.
+- **job.json** — `{ "<id>": "<name>" }`, player classes only. Built from two
+  tables: `jobs.json` (the client's own numbering, which covers the classic
+  tree down to every baby and mounted sprite) and `classes.json` (one row per
+  playable class, the only source for everything past Oboro — the 4th
+  classes, Rebellion, Summoner, Star Emperor, Hyper Novice …).
 - **skill.json** / **status.json** — `{ "<id>": { name } }`. status is keyed by
   EFST id (the id the status-change packets carry), used by the buff strip.
 - **randomopt.json** — `{ "<id>": "<template>" }`, e.g. `"ATQM +%d"`; the UI
@@ -55,8 +59,8 @@ Then read the diff. **A sync that changes nothing is a valid result** — it mea
 ragassets hasn't been regenerated since last time. What you must never see is a
 file *shrinking*: `git diff --stat` counts lines, and these are single-line
 compact JSON files, so use the entry counts the scripts print instead. Current
-baseline: item 14464, job 123, skill 1558, randomopt 252, status 704, monster
-2724. Growth of a few dozen after a client update is normal; a collapse means
+baseline: item 13742, job 158, skill 1558, randomopt 252, status 704, monster
+2732. Growth of a few dozen after a client update is normal; a collapse means
 `/raw` was rebuilt from a broken client dump.
 
 To summarize what actually changed for the changelog:
@@ -113,14 +117,26 @@ git diff --stat public/db/   # must be empty
   an item with no name, and keeping them would put `{"name":null}` in the bundle.
 - **`name` in `/raw` is bare — no `[3]`.** If item names suddenly lose their slot
   counts, the suffix rebuild in `buildItems` is what broke.
-- **`/raw/jobs.json` cannot carry the 4th classes.** It pairs a label with an id
-  only where the server's `admin/pcidentity.lub` numbers the class, and it
-  numbers none of the 4th classes — so all 13 names are pinned in
-  `JOB_NAME_OVERRIDE` and their ids in `PLAYER_JT_IDS`. If a 14th 4th class ships,
-  it will silently be missing from `job.json` until both tables are updated.
-  (Pinning is also editorially right: the client's `pcjobnamegender.lub` predates
-  the LATAM renames — it still says "Arquimágico", "Assassino", "Poeta",
-  "Patrulheiro", "Ladino".)
+- **`/raw/jobs.json` stops at Oboro.** It pairs a label with an id only where the
+  server's `admin/pcidentity.lub` numbers the class, and that table numbers no
+  4th class, no Rebellion, no Summoner, no Star Emperor. `classes.json` is what
+  fills the gap — a row per playable class — so a new class reaching `/raw` now
+  lands in `job.json` on the next sync with no table to edit here. What still
+  has to be pinned is the *name*: `JOB_NAME_OVERRIDE` keeps ours where the
+  client's predates the LATAM renames (it still says "Arquimágico", "Assassino",
+  "Poeta", "Patrulheiro", "Ladino") and supplies one for Shinkiro and Shiranui,
+  which the client never labels in any language.
+- **Key classes by `renderId`, not `id`.** `classes.json` carries both, and they
+  differ for the seven expanded 4th classes (Sky Emperor … Spirit Handler):
+  `renderId` (4302-4308) is the id the class packets and the party icons use —
+  the one the app looks up — while `id` (4309-4315) is the always-mounted
+  sprite. Both get named, pointing at the same class.
+- **`PLAYER_JT_IDS` still owns the derived sprites.** `classes.json` lists the 85
+  canonical classes only, so the baby/trans/mounted ids that share a class come
+  from there: the mounted 4th classes are 4278-4281 (`JT_WINDHAWK2`,
+  `JT_MEISTER2`, `JT_DRAGON_KNIGHT2`, `JT_IMPERIAL_GUARD2`) — **not** 4302-4308,
+  which they were wrongly pinned to until the expanded branch showed up and
+  claimed that block.
 - **`PLAYER_JT_IDS` is a fallback, never an override.** LATAM's `pcidentity.lub`
   disagrees with the kRO defaults on real ids (`JT_RUNE_KNIGHT_H` is 4060 there,
   4067 in kRO), and `/raw` carries the server's answer. An id from

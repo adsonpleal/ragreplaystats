@@ -19,6 +19,12 @@
 //                    view, equipSlots, costume }   — `name` is the BARE name
 //                    and is null for rows the client never labels
 //   jobs.json      { id, jt, name, hasIcon }       — `jt`/`name` may be null
+//   classes.json   { id, renderId, jt, name, race, … }  — one row per PLAYABLE
+//                    class, including every class pcidentity.lub never numbers
+//                    (the 4th classes, Rebellion, Summoner, Star Emperor …).
+//                    `renderId` is the id the packets carry; `id` is the
+//                    client's own (they differ only for the expanded 4th
+//                    classes, whose always-mounted sprite sits at 4309-4315)
 //   skills.json    { id, name }
 //   randomopt.json { id, name }
 //   status.json    { id, name }
@@ -77,21 +83,26 @@ export const PLAYER_JT_IDS = {
   JT_IMPERIAL_GUARD: 4258, JT_BIOLO: 4259, JT_ABYSS_CHASER: 4260,
   JT_ELEMENTAL_MASTER: 4261, JT_INQUISITOR: 4262, JT_TROUBADOUR: 4263,
   JT_TROUVERE: 4264,
-  JT_DRAGON_KNIGHT2: 4302, JT_IMPERIAL_GUARD2: 4308,
-  JT_WINDHAWK2: 4307, JT_MEISTER2: 4303,
+  // The four mounted 4th sprites — 4278-4281, NOT 4302-4308: that block is the
+  // expanded 4th branch (Sky Emperor … Spirit Handler), which classes.json
+  // numbers. Ordering per the client's own job id space (JOBID/rAthena mmo.hpp).
+  JT_WINDHAWK2: 4278, JT_MEISTER2: 4279,
+  JT_DRAGON_KNIGHT2: 4280, JT_IMPERIAL_GUARD2: 4281,
   JT_SUMMONER: 4218,
   JT_CHICKEN: 4045, JT_CHICKEN2: 4046,
 };
 
-// The 13 4th-class display names, pinned from bROWiki's "Classe 4" column and
-// kept in sync with the sibling project latam-visuais (NAME_OVERRIDE).
+// Class labels we pin ourselves, keyed by JT constant.
 //
-// This table is not optional polish: jobs.json pairs a label with an id only
-// for classes pcidentity.lub numbers, and it numbers none of the 4th classes —
-// so their client labels never reach /raw at all. Pinning them here is also
-// what we want editorially, since the client's pcjobnamegender.lub predates the
-// LATAM renames (it still says "Arquimágico", "Assassino", "Poeta",
-// "Patrulheiro", "Ladino").
+// The 13 original 4th classes come from bROWiki's "Classe 4" column and are kept
+// in sync with the sibling project latam-visuais (NAME_OVERRIDE). classes.json
+// does carry a label for them now, but it is the client's own — and the client's
+// string tables predate the LATAM renames (they still say "Arquimágico",
+// "Assassino", "Poeta", "Patrulheiro", "Ladino"), so ours wins.
+//
+// Shinkiro/Shiranui are the other half: the client ships no label for them in
+// any language, so without a pin they would fall back to their base class
+// (Kagerou/Oboro). Untranslated, like Kagerou and Oboro themselves.
 export const JOB_NAME_OVERRIDE = {
   JT_DRAGON_KNIGHT: "Cavaleiro Draconiano",
   JT_MEISTER: "Engenheiro",
@@ -106,6 +117,8 @@ export const JOB_NAME_OVERRIDE = {
   JT_INQUISITOR: "Inquisidor",
   JT_TROUBADOUR: "Maestro",
   JT_TROUVERE: "Diva",
+  JT_SHINKIRO: "Shinkiro",
+  JT_SHIRANUI: "Shiranui",
 };
 
 // Stat/utility food buffs carry a bare "%s" title in the client (it substitutes
@@ -145,32 +158,59 @@ export function buildItems(items) {
 }
 
 // job.json — { "<id>": "<name>" }, player classes only.
-export function buildJobs(jobs) {
+//
+// Two /raw tables feed this. jobs.json is the client's own numbering
+// (pcidentity.lub) and covers the classic tree down to every baby and trans
+// sprite, but it numbers nothing past Oboro — no 4th class, no Rebellion, no
+// Summoner, no Star Emperor. classes.json is the playable-class table and
+// numbers all of them, so it fills the gap; where both know a class they agree,
+// and the client's own label is kept so existing names don't churn.
+export function buildJobs(jobs, classes = []) {
   const labelByJt = new Map();
   const idByJt = new Map();
+  // Extra ids that render the same class as their JT's main id — today only the
+  // expanded 4th branch's always-mounted sprites (4309-4315), which we name too
+  // rather than leave a replay showing "job#4314" if one ever carries it.
+  const altIds = [];
   for (const j of jobs) {
     if (!j.jt) continue; // icon-only rows: an id with no name the client uses
     idByJt.set(j.jt, j.id);
     if (j.name) labelByJt.set(j.jt, j.name);
   }
+  for (const c of classes) {
+    if (!c.jt) continue;
+    // `renderId` is the id the class packets carry (and the id its party icon is
+    // filed under); `id` is the client's own, which differs only for the
+    // expanded 4th classes. The client's numbering wins when it has one.
+    const id = c.renderId ?? c.id;
+    if (!idByJt.has(c.jt)) idByJt.set(c.jt, id);
+    if (c.name && !labelByJt.has(c.jt)) labelByJt.set(c.jt, c.name);
+    if (c.id != null && c.id !== id) altIds.push([c.jt, c.id]);
+  }
   for (const [jt, id] of Object.entries(PLAYER_JT_IDS)) {
     if (!idByJt.has(jt)) idByJt.set(jt, id);
   }
 
+  // Trans (_H), baby (_B) and alt-sprite ("2" — the mounted forms: Knight on a
+  // peco, Rune Knight on a dragon, Meister in a madogear …) classes reuse the
+  // base class label when the client doesn't give them one of their own. The
+  // suffixes stack, so this peels them one at a time: JT_KNIGHT2_H → JT_KNIGHT2
+  // → JT_KNIGHT.
+  const baseOf = (jt) => {
+    if (jt.endsWith("_H") || jt.endsWith("_B")) return jt.slice(0, -2);
+    if (jt.endsWith("2")) return jt.slice(0, -1);
+    return null;
+  };
   const labelFor = (jt) => {
-    if (JOB_NAME_OVERRIDE[jt]) return JOB_NAME_OVERRIDE[jt];
-    if (labelByJt.has(jt)) return labelByJt.get(jt);
-    // Trans (_H) and baby (_B) classes reuse the base class label when the
-    // client doesn't give them one of their own.
-    if (jt.endsWith("_H") || jt.endsWith("_B")) {
-      const base = jt.slice(0, -2);
-      if (labelByJt.has(base)) return labelByJt.get(base);
+    for (let cur = jt; cur; cur = baseOf(cur)) {
+      if (JOB_NAME_OVERRIDE[cur]) return JOB_NAME_OVERRIDE[cur];
+      if (labelByJt.has(cur)) return labelByJt.get(cur);
     }
     return null;
   };
 
   const out = {};
-  for (const [jt, id] of idByJt) {
+  for (const [jt, id] of [...idByJt, ...altIds]) {
     const key = String(id);
     if (out[key]) continue; // first JT to name an id wins (alt sprites share ids)
     const label = labelFor(jt);
@@ -203,13 +243,14 @@ export function buildStatus(status) {
   return out;
 }
 
-// Source table → output file. Order is the order they're written/logged in.
+// Source table(s) → output file; `sources` are passed to `build` in order.
+// Order is the order they're written/logged in.
 const TABLES = [
-  { source: "items", out: "item.json", build: buildItems },
-  { source: "jobs", out: "job.json", build: buildJobs },
-  { source: "skills", out: "skill.json", build: buildSkills },
-  { source: "randomopt", out: "randomopt.json", build: buildRandomOpt },
-  { source: "status", out: "status.json", build: buildStatus },
+  { sources: ["items"], out: "item.json", build: buildItems },
+  { sources: ["jobs", "classes"], out: "job.json", build: buildJobs },
+  { sources: ["skills"], out: "skill.json", build: buildSkills },
+  { sources: ["randomopt"], out: "randomopt.json", build: buildRandomOpt },
+  { sources: ["status"], out: "status.json", build: buildStatus },
 ];
 
 // ---------------------------------------------------------------------------
@@ -221,13 +262,17 @@ async function main(argv) {
   const outDir = resolve(args.out ?? DEFAULT_OUT);
   if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
-  for (const { source, out, build } of TABLES) {
-    const rows = await loadSource(source, args);
-    if (!Array.isArray(rows) || rows.length === 0) {
-      console.error(`Expected ${source}.json to be a non-empty JSON array.`);
-      process.exit(1);
+  for (const { sources, out, build } of TABLES) {
+    const inputs = [];
+    for (const source of sources) {
+      const rows = await loadSource(source, args);
+      if (!Array.isArray(rows) || rows.length === 0) {
+        console.error(`Expected ${source}.json to be a non-empty JSON array.`);
+        process.exit(1);
+      }
+      inputs.push(rows);
     }
-    const table = build(rows);
+    const table = build(...inputs);
     const outPath = join(outDir, out);
     // Compact JSON (no pretty-print) keeps the bundled files small.
     writeFileSync(outPath, JSON.stringify(table));

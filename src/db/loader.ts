@@ -49,9 +49,9 @@ export type ReferenceDb = {
 };
 
 /**
- * Whitelist of player-character job ids — the same list `tools/sync-db.mjs`
- * uses (`PLAYER_JT_IDS`) when building job.json. Includes alt-sprite ids
- * (mounted Knight, Crusader on peco, mounted Royal Guard, etc.); those
+ * Whitelist of player-character job ids — the ids `tools/sync-db.mjs` names in
+ * job.json (`PLAYER_JT_IDS` plus ragassets' classes.json). Includes alt-sprite
+ * ids (mounted Knight, Crusader on peco, mounted Royal Guard, etc.); those
  * either share a name with their base class (and get deduped) or fall
  * through to `job#<id>` and get filtered out at the call site.
  */
@@ -68,9 +68,14 @@ export const PC_JOB_IDS: readonly number[] = [
   4054, 4055, 4056, 4057, 4058, 4059, 4060, 4061, 4062, 4063, 4064, 4065,
   4066, 4067, 4068, 4069, 4070, 4071, 4072, 4073, 4074, 4075, 4076, 4077,
   4078, 4079, 4080, 4081, 4082, 4083, 4084, 4085, 4086, 4087,
-  // 4th jobs + mounted forms
+  // Expanded classes: Rebellion, Kagerou/Oboro, Star Emperor, Soul Reaper
+  4215, 4211, 4212, 4239, 4240,
+  // 4th jobs + their mounted forms (4278-4281)
   4252, 4253, 4254, 4255, 4256, 4257, 4258, 4259, 4260, 4261, 4262, 4263,
-  4264, 4302, 4303, 4307, 4308,
+  4264, 4278, 4279, 4280, 4281,
+  // 4th jobs of the expanded branch — Sky Emperor, Soul Ascetic, Shinkiro,
+  // Shiranui, Night Watch, Hyper Novice, Spirit Handler
+  4302, 4303, 4304, 4305, 4306, 4307, 4308,
   // Summoner / Doram + odd misc
   4218, 4045,
 ];

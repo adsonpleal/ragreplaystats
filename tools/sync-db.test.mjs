@@ -54,11 +54,25 @@ describe("buildItems", () => {
 });
 
 describe("buildJobs", () => {
-  const jobs = buildJobs(fixture("jobs"));
+  const jobs = buildJobs(fixture("jobs"), fixture("classes"));
 
   it("uses the client label when there is one", () => {
     expect(jobs["0"]).toBe("Aprendiz");
     expect(jobs["4054"]).toBe("Cavaleiro Rúnico");
+  });
+
+  it("numbers the classes pcidentity.lub leaves out, from classes.json", () => {
+    // jobs.json stops at Oboro: no 4th class, no Summoner, no Rebellion. Those
+    // reach us only through classes.json, keyed by its `renderId` — the id the
+    // class packets carry, which is what the app looks up.
+    expect(jobs["4218"]).toBe("Invocador");
+    expect(jobs["4307"]).toBe("Hiperaprendiz"); // JT_HYPER_NOVICE, renderId
+  });
+
+  it("names the always-mounted sprite of the expanded 4th classes too", () => {
+    // Those seven classes carry a second client id (4309-4315) for their
+    // always-mounted sprite; same class, same label.
+    expect(jobs["4314"]).toBe("Hiperaprendiz"); // JT_HYPER_NOVICE, client id
   });
 
   it("falls back to the base class for unlabelled _H/_B classes", () => {
@@ -83,17 +97,26 @@ describe("buildJobs", () => {
     expect(jobs).not.toHaveProperty("4067");
   });
 
-  it("pins the 4th-class names /raw cannot carry", () => {
-    // pcidentity.lub numbers none of the 4th classes, so jobs.json has no row
-    // for them at all — they exist only via PLAYER_JT_IDS + JOB_NAME_OVERRIDE.
-    expect(Object.keys(JOB_NAME_OVERRIDE)).toHaveLength(13);
+  it("gives the mounted alt sprites their base class name", () => {
+    // A Knight on a peco spawns as JT_KNIGHT2 (13) and a mounted Dragon Knight
+    // as JT_DRAGON_KNIGHT2 (4280): same class, and the client labels neither.
+    expect(jobs["13"]).toBe("Cavaleiro");
+    expect(jobs["4280"]).toBe("Cavaleiro Draconiano");
+  });
+
+  it("prefers our pinned 4th-class names over the client's", () => {
+    // The client's string tables predate the LATAM renames, so classes.json
+    // still says "Assassino" where the server shows "Executor".
+    expect(Object.keys(JOB_NAME_OVERRIDE)).toHaveLength(15);
     expect(jobs["4252"]).toBe("Cavaleiro Draconiano");
+    expect(jobs["4254"]).toBe("Executor"); // classes.json says "Assassino"
     expect(jobs["4264"]).toBe("Diva");
+    // Shinkiro carries no label in any of the client's languages.
+    expect(jobs["4304"]).toBe("Shinkiro");
   });
 
   it("drops icon-only rows and ids nothing names", () => {
-    expect(jobs).not.toHaveProperty("13"); // JT_KNIGHT2, an alt sprite
-    expect(jobs).not.toHaveProperty("4302"); // JT_DRAGON_KNIGHT2, mounted
+    expect(jobs).not.toHaveProperty("4048"); // JT_STAR2, nothing labels JT_STAR
   });
 });
 

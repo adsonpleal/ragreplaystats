@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-08-25
+
+- **As classes que apareciam como "job#4307" agora aparecem pelo nome.** As classes mais novas nunca chegavam ao site: o cliente só numera as classes antigas, e todas as outras ficavam de fora da nossa tabela. Entraram **35 classes** — as de 4ª geração do ramo expandido (**Hiperaprendiz**, **Mestre Celestial**, **Asceta**, **Guerrilheiro**, **Druida**, Shinkiro e Shiranui), além de **Insurgente**, **Invocador**, **Mestre Estelar** e **Ceifador de Almas**. Agora todas aparecem com nome e ícone nas estatísticas, nos duelos com MVP e no filtro de classe do ranking.
+- **Quem está montado deixou de virar um número.** Cavaleiro e Templário em pecopeco, Cavaleiro Rúnico no dragão, Engenheiro no madogear, Guardião Real, Sentinela, Mecânico, Guardião Imperial e Falcão do Vento montados: cada uma dessas formas tem um código próprio, que o site não conhecia. Todas passam a mostrar o nome da classe — e, quando o cliente não tem o ícone da forma montada, aparece o ícone da classe no lugar do espaço em branco.
+
 ## 2026-08-18
 
 - Bases de nomes atualizadas com o último patch do cliente: **111 itens novos** — os **Cubos Sombrios** (o equipamento sombrio de todas as classes, mais os raciais de DEF e DEFM), os **Cadernos** (dos Feitiços, do Portador, Pontual, de Automagia, Fugaz, Durável e a Caixa de Cadernos), as armas **Primordiais-LT**, **Celestiais** e **Infernais**, os artefatos e sacolas do evento noturno de Geffen, as caixas de agosto e as dez **Roletas de Setembro**.
