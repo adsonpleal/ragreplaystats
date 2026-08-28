@@ -1,6 +1,6 @@
 import { mvpMatchups } from "../../aggregate/index";
 import type { ReferenceDb } from "../../db/loader";
-import type { ReplaySummary } from "../../firebase";
+import type { ReplaySummary } from "../../api";
 import type { Replay } from "rrfparser";
 
 /**

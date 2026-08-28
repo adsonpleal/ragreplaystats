@@ -2,12 +2,5 @@
   "projects": {
     "default": "ragreplaystats",
     "dev": "ragreplaystats-dev"
-  },
-  "targets": {
-    "ragreplaystats": {
-      "hosting": {
-        "ragnarecap": ["ragnarecap"]
-      }
-    }
   }
 }

@@ -1,42 +1,6 @@
 {
+  "//": "Hosting left this file on 28/08/2026 — the site is on Cloudflare Workers (see wrangler.jsonc). What remains is the Firestore block, and it has to remain: the firebase CLI refuses to run at all without a firebase.json ('Not in a Firebase app directory'), so deleting this file would make the documented retirement step — firebase deploy --only firestore:rules — impossible to run, leaving the retired collection open to writes from stale cached bundles.",
   "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
-  "hosting": [
-    {
-      "target": "ragnarecap",
-      "public": "dist",
-      "ignore": [
-        "firebase.json",
-        "**/.*",
-        "**/node_modules/**"
-      ],
-      "redirects": [
-        {
-          "source": "/suggestions",
-          "destination": "https://issues.latam-tools.com.br/?projeto=recap",
-          "type": 301
-        }
-      ],
-      "rewrites": [
-        { "source": "**", "destination": "/index.html" }
-      ],
-      "trailingSlash": false,
-      "headers": [
-        {
-          "source": "/assets/**",
-          "headers": [
-            { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-          ]
-        },
-        {
-          "source": "/**/*.@(html|json)",
-          "headers": [
-            { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
-          ]
-        }
-      ]
-    }
-  ]
+    "rules": "firestore.rules"
+  }
 }

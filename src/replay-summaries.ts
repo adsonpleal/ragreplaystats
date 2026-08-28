@@ -14,7 +14,7 @@
 //   - `isLoading()` / `isFresh()` / `getCached()` to drive UI without
 //     duplicating per-consumer loading state
 
-import { listRecentReplays, type ReplayListItem } from "./firebase.js";
+import { listRecentReplays, type ReplayListItem } from "./api.js";
 
 /**
  * Items are considered fresh for this long after a successful fetch. A

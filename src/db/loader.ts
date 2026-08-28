@@ -7,6 +7,7 @@ import {
   getSkillName,
   getStatusName,
 } from "../names.js";
+import { dbUrl } from "./manifest";
 
 export type JobInfo = string;
 
@@ -93,8 +94,8 @@ async function fetchJson<T>(path: string, fallback: T): Promise<T> {
 // Job names stay local: Divine Pride doesn't expose a server-localized job
 // endpoint, and the GRF's `pcjobnamegender.lub` is the only source of strings
 // like "Sentinela Trans" for the Latam server.
-export async function loadReferenceDb(base = "./db"): Promise<ReferenceDb> {
-  const job = await fetchJson<Record<string, JobInfo>>(`${base}/job.json`, {});
+export async function loadReferenceDb(): Promise<ReferenceDb> {
+  const job = await fetchJson<Record<string, JobInfo>>(await dbUrl("job.json"), {});
 
   // Compute once at load time — the underlying `job` map is immutable for
   // the session, so the result is too.

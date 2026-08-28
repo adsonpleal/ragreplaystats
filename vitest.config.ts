@@ -5,6 +5,6 @@ import { defineConfig } from "vitest/config";
 // (and its warnings) into the run.
 export default defineConfig({
   test: {
-    include: ["tools/**/*.test.mjs"],
+    include: ["tools/**/*.test.mjs", "tools/**/*.test.ts"],
   },
 });

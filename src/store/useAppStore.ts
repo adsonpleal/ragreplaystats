@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { prefetchReplay } from "../names";
 import type { ReferenceDb } from "../db/loader";
-import { fetchReplay, uploadReplay } from "../firebase";
+import { fetchReplay, uploadReplay } from "../api";
 import { invalidate as invalidateSummariesCache } from "../replay-summaries";
 import { buildReplaySummary } from "../features/replay/replaySummary";
 import { t } from "../i18n";
@@ -38,7 +38,9 @@ export type AppState = {
   dpsAnalysisRange: DragRange;
   byPlayerCompareRange: DragRange;
   shareId: string | null;
-  replayBytes: Uint8Array | null;
+  /** Always ArrayBuffer-backed (never Shared), so it can go straight into
+   * the upload Blob without a defensive copy — see uploadReplay. */
+  replayBytes: Uint8Array<ArrayBuffer> | null;
   replayFileName: string | null;
   openedFromUrl: boolean;
   /** Status line under the drop zone (parsing / decoded / upload / errors). */

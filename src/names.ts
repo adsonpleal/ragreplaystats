@@ -11,6 +11,9 @@
 // Nothing here talks to divine-pride.net: every name is bundled offline.
 
 import type { Replay } from "rrfparser";
+// URL resolution for the files below — absolute paths, content-hashed names in
+// production, raw public/db/ in dev. See db/manifest.ts for why not relative.
+import { dbUrl } from "./db/manifest";
 
 type ItemEntry = { name: string; view?: number };
 type MonsterEntry = { name: string; hp: number; level: number };
@@ -19,12 +22,6 @@ type SkillEntry = { name: string };
 type StatusEntry = { name: string };
 // Random-option id -> display template ("ATQM +%d"). Stored as a bare string.
 type RandomOptEntry = string;
-
-// vite is configured with `base: "./"`, so relative URLs resolve against
-// the current page (works on dev http://localhost:5173/ and on Firebase
-// Hosting https://ragnarecap.web.app/ alike). Files live in public/db/
-// and ship as-is to the deploy root.
-const DB_BASE = "./db";
 
 let items: Map<number, ItemEntry> | null = null;
 let monsters: Map<number, MonsterEntry> | null = null;
@@ -42,7 +39,7 @@ async function loadKind<T>(
   fileName: string,
 ): Promise<Map<number, T>> {
   try {
-    const res = await fetch(`${DB_BASE}/${fileName}`);
+    const res = await fetch(await dbUrl(fileName));
     if (!res.ok) return new Map();
     const data = (await res.json()) as Record<string, T>;
     const map = new Map<number, T>();

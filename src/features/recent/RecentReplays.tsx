@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { ReplayListItem } from "../../firebase";
+import type { ReplayListItem } from "../../api";
 import { locale, t } from "../../i18n";
 import { fmt, formatDuration } from "../../lib/format";
 import { useReplaySummaries } from "../../hooks/useReplaySummaries";

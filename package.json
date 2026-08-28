@@ -6,33 +6,35 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && npm run prerender",
+    "build": "tsc && vite build && node tools/hash-db.mjs && npm run prerender",
     "prerender": "node tools/prerender.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "build:db": "node tools/sync-db.mjs",
-    "build:monsters": "node tools/build-monsters.mjs"
+    "build:monsters": "node tools/build-monsters.mjs",
+    "deploy": "npm run build && wrangler deploy",
+    "typecheck:worker": "tsc -p worker/tsconfig.json"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260828.1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "firebase-admin": "^13.10.0",
     "puppeteer": "^25.3.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.127.1"
   },
   "dependencies": {
     "@types/three": "^0.185.0",
-    "firebase": "^12.12.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
+    "rrfparser": "^1.0.0-rc.1",
     "three": "^0.185.0",
     "uplot": "^1.6.30",
     "write-excel-file": "^4.1.1",
-    "zustand": "^4.5.4",
-    "rrfparser": "^1.0.0-rc.1"
+    "zustand": "^4.5.4"
   }
 }

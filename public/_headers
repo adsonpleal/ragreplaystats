@@ -1,0 +1,83 @@
+# Cache policy for Cloudflare Workers static assets. Vite copies public/ to the
+# dist root verbatim, so this file lands at dist/_headers. Cloudflare parses it
+# and does not publish it, so it is never fetchable.
+#
+# READ THIS BEFORE ADDING A RULE.
+#
+# Cloudflare applies EVERY matching rule and joins repeated headers with a comma.
+# There is no override mechanism. So a catch-all is actively harmful: `/*` with
+# no-cache next to `/assets/*` with immutable emits
+#     Cache-Control: no-cache, public, max-age=31536000, immutable
+# on every bundle, and no-cache wins. `*` is also greedy ACROSS path segments.
+#
+# So: every pattern below is mutually exclusive, and there is deliberately no
+# `/*` rule. tools/cache-headers.test.ts enforces both against a real build.
+#
+# Patterns use the `:name` placeholder, which matches exactly ONE non-empty path
+# segment, rather than the greedy `*`. That is not cosmetic. `*` matches the empty
+# string, so `/assets/*` also matches the bare directory URL `/assets/` — which
+# the SPA fallback answers with index.html, meaning the shell would be served
+# `immutable` and could pin itself in a visitor's cache for a year. Verified
+# against `wrangler dev`: with `:file`, `/assets/` falls through to the safe
+# revalidate default while `/assets/index-<hash>.js` and its `.map` still match.
+#
+# The tradeoff: a placeholder does not cross directories, so if a build ever
+# emits `/assets/sub/x.js` that file silently drops to the default policy. The
+# failure mode is extra 304s, never stale content, and the overlap test would
+# still pass — so keep the build output flat.
+#
+# WHAT IS NOT LISTED: the SPA shell — `/`, `/index.html`, `/leaderboard` and every
+# client-side route. Those cannot be enumerated, so they inherit Cloudflare's
+# static-asset default, `public, max-age=0, must-revalidate`. That is exactly
+# right for the shell and is what structurally prevents a deploy from being stuck
+# behind stale HTML.
+#
+# That default is the fix for a live Firebase bug this migration retires: on
+# Firebase the rule `/**/*.@(html|json)` required a literal `.html` extension, so
+# the root URL `/` never matched it and fell back to Firebase's own 1-hour
+# default. Production served the shell with `max-age=3600`, meaning every deploy
+# could be up to an hour late for a returning visitor. Nothing here can
+# reintroduce that: the shell is never named, so it can never be given a lifetime.
+#
+# Two classes of file, two policies:
+#   - content-hashed (Vite outputHashing + tools/hash-db.mjs) -> immutable, 1 year.
+#     A new build means a new filename, so a stale entry is never requested again.
+#   - stable filename -> 1 day. Long enough to matter, short enough that no deploy
+#     ever needs a cache purge.
+
+# --- content-hashed: safe to cache forever -----------------------------------
+
+# Vite bundles (js, css, sourcemaps) — hashed by the bundler.
+/assets/:file
+  Cache-Control: public, max-age=31536000, immutable
+
+# Reference DBs, hashed by tools/hash-db.mjs. The manifest that names these sits
+# at the dist ROOT, not in here, so no pattern here can reach it.
+/db/:file
+  Cache-Control: public, max-age=31536000, immutable
+
+# --- never cache: names which hashed file to load ----------------------------
+
+# The most correctness-critical file in the deployment. If this went stale the app
+# would ask for db files from a previous build and silently fall back to empty
+# name maps (item#123 instead of item names). Deliberately at the root so that
+# the `/db/` rule above cannot match it.
+/db-manifest.json
+  Cache-Control: no-cache
+
+# --- stable filenames: one day, then revalidate ------------------------------
+
+/fonts/*
+  Cache-Control: public, max-age=86400
+
+/favicon.svg
+  Cache-Control: public, max-age=86400
+
+/og.png
+  Cache-Control: public, max-age=86400
+
+/robots.txt
+  Cache-Control: public, max-age=86400
+
+/sitemap.xml
+  Cache-Control: public, max-age=86400

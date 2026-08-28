@@ -1,0 +1,59 @@
+{
+  // Cloudflare Workers static assets. Same shape as the sibling project
+  // latam-ro-calc, which left Firebase Hosting on 23/08/2026 with its 10 GB/month
+  // egress quota exhausted — see that repo's wrangler.jsonc for the long version.
+  //
+  // Nearly every request (the shell, the hashed bundles, the hashed db JSONs) is
+  // served straight from the uploaded assets, which is free and unlimited.
+  //
+  // `run_worker_first` is an ARRAY naming only the paths that must reach the
+  // Worker. It is deliberately NOT the boolean `true`: that form puts the entire
+  // site behind the Worker request budget, and on the free plan a 429 once the
+  // daily budget is spent means the homepage itself stops loading. With an array,
+  // every unlisted path still takes the free asset path.
+  //
+  // There is deliberately no `assets.binding`: the Worker only ever answers
+  // /api/* and never falls through to an asset, so exposing env.ASSETS would
+  // only imply a routing mode this Worker does not have.
+  //
+  // Cache policy for assets lives in public/_headers (Vite copies public/ to the
+  // dist root verbatim). Worker responses do NOT go through that file — they set
+  // their own headers. Read public/_headers before touching anything cache-related.
+  "name": "ragnarecap",
+  "compatibility_date": "2026-08-23",
+  "main": "./worker/index.ts",
+  "assets": {
+    "directory": "./dist",
+    // Unmatched paths serve /index.html so the React router handles client-side
+    // routes. Note prerender.mjs writes dist/leaderboard/index.html, and an exact
+    // file match wins over this fallback — so crawlers still get real content
+    // there, exactly as they did under the Firebase rewrite.
+    "not_found_handling": "single-page-application",
+    // Only the JSON API reaches the Worker. Everything else — including every
+    // client-side route — is a free static asset.
+    "run_worker_first": ["/api/*"]
+  },
+  // Replay metadata — was the `replays` Firestore collection.
+  // Create with: wrangler d1 create ragnarecap   (then paste the id here)
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ragnarecap",
+      "database_id": "9172ca78-9639-4d73-87c5-bb3d766560d9"
+    }
+  ],
+  // Replay bytes — was the `bytes` field inside each Firestore document, which
+  // is what capped uploads at 1 MiB. Create with: wrangler r2 bucket create ragnarecap-replays
+  "r2_buckets": [
+    {
+      "binding": "REPLAYS",
+      "bucket_name": "ragnarecap-replays"
+    }
+  ],
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
+  }
+}

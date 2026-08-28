@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ReplayListItem } from "../firebase";
+import type { ReplayListItem } from "../api";
 import { ensureLoaded, getCached, isFresh } from "../replay-summaries";
 
 /**

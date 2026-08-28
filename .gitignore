@@ -16,3 +16,6 @@ service-account*.json
 # Sample replay — drop your own .rrf in the browser instead
 rag_test.rrf
 
+
+# wrangler dev local state (local D1/R2 emulation)
+.wrangler/

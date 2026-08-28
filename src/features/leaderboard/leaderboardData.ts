@@ -1,4 +1,4 @@
-import type { ReplayListItem } from "../../firebase";
+import type { ReplayListItem } from "../../api";
 import { locale } from "../../i18n";
 
 export type MvpOption = { view: number; name: string };

@@ -1,0 +1,79 @@
+name: Deploy to Cloudflare
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Two overlapping runs would race to activate different asset manifests.
+# Serialising is free.
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # full history so the post-deploy step can compare package.json against
+          # the pre-push commit (github.event.before) to detect a version bump
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # The Worker is bundled by wrangler itself, so nothing else typechecks it —
+      # and a type error there would only surface as a failed deploy.
+      - name: Typecheck the Worker
+        run: npm run typecheck:worker
+
+      # Runs vite build, then tools/hash-db.mjs (content-hashes public/db/*.json
+      # and writes dist/db-manifest.json), then the prerender.
+      - run: npm run build
+
+      # AFTER the build, not before. tools/cache-headers.test.ts checks the
+      # _headers patterns for overlap against the real dist/ file list and skips
+      # those assertions when dist/ is absent — so running it first left the one
+      # check that actually catches a new build output escaping the cache policy
+      # passing vacuously on every CI run.
+      - run: npm test
+
+      # Assets plus one route-scoped Worker (/api/*), configured by wrangler.jsonc.
+      # Cache policy for the assets travels with them in dist/_headers.
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+
+      # Announce the release in Discord — only when this push actually bumped the
+      # version (so routine main pushes don't spam the channel).
+      - name: Detect version bump
+        id: ver
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          NEW=$(node -p "require('./package.json').version")
+          OLD=""
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE:package.json" 2>/dev/null; then
+            OLD=$(git show "$BEFORE:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          fi
+          echo "New version: $NEW / previous: ${OLD:-<none>}"
+          if [ "$NEW" != "$OLD" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Post novidades to Discord
+        if: steps.ver.outputs.changed == 'true'
+        # best-effort: the deploy already shipped, so a Discord hiccup shouldn't
+        # fail the run — it's still logged as a failed step.
+        continue-on-error: true
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID: "1524025278471471295"
+        run: node tools/post-novidades.mjs

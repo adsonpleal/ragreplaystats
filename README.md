@@ -2,7 +2,7 @@
 
 **Live: <https://recap.latam-tools.com.br/>**
 
-Static website that parses Ragnarok Online `.rrf` replay files and shows damage / skill / kill statistics. All decoding and aggregation happen **in the browser** — the file is also stored in Firebase Firestore so a shareable link with a 10-char id is produced. Files >1 MiB stay local and aren't uploaded.
+Static website that parses Ragnarok Online `.rrf` replay files and shows damage / skill / kill statistics. All decoding and aggregation happen **in the browser** — the file is also stored server-side so a shareable link with a 10-char id is produced. Files >5 MB stay local and aren't uploaded.
 
 UI is in **Brazilian Portuguese**. The decoder is server-agnostic, but the reference data (skill / mob / job names and icons) describes the Latam client and comes from [ragassets](https://github.com/adsonpleal/ragassets).
 
@@ -11,7 +11,7 @@ UI is in **Brazilian Portuguese**. The decoder is server-agnostic, but the refer
 - Vanilla TypeScript + Vite, single bundled SPA.
 - `uplot` for time-series charts.
 - All reference data comes from the sibling project [ragassets](https://github.com/adsonpleal/ragassets), the single place that reads the game client. Names are bundled: `tools/sync-db.mjs` reshapes its published tables into `public/db/{item,job,skill,randomopt,status}.json` and `tools/build-monsters.mjs` its `mobs.json` into `public/db/monster.json`. Icons are not bundled — item/skill/job/status PNGs load from ragassets at runtime. Nothing queries divine-pride.net.
-- Firebase Firestore (free Spark tier) holds the uploaded `.rrf` bytes (≤1 MiB / doc). Lazy-loaded — the SDK isn't fetched unless the user shares or opens a shared link.
+- Cloudflare: **Workers static assets** serve the site, **D1** holds replay metadata, **R2** holds the `.rrf` bytes (≤5 MB). One Worker (`worker/index.ts`) serves `/api/*` and nothing else.
 
 ## Assets
 
@@ -126,6 +126,8 @@ Reference **names** ship bundled under `public/db/`; **icons** are fetched from 
 
 Names are bundled because a table row needs them synchronously to render, and they're small. Icons aren't: the vendored trees were 31,852 PNGs and 123 MB — and 116 MB of that was the `collection` album art, which nothing in `src/` ever referenced.
 
+These files ship **content-hashed**. `tools/hash-db.mjs` runs after `vite build`, renames each to `<name>-<hash>.json` and writes `dist/db-manifest.json`; `src/db/manifest.ts` resolves logical names through that manifest at runtime, falling back to the unhashed name in `vite dev`. So the DBs are cached `immutable` for a year while a rebuild after a client patch still reaches everyone immediately — a changed file is a changed URL. Only the manifest itself is `no-cache`.
+
 | Source | Contents |
 |--------|----------|
 | `public/db/{item,skill,randomopt,status}.json` (built by `tools/sync-db.mjs` from `/raw/{items,skills,randomopt,status}.json`) | Item names + `ClassNum` view ids, skill names, random-option templates and buff/debuff names — all pt-BR, straight from the client's Lua data tables. |
@@ -134,6 +136,33 @@ Names are bundled because a table row needs them synchronously to render, and th
 | `https://assets.latam-tools.com.br/icons/{item,skill,job,status}/<id>.png` (built in `src/sim/ragassets.ts`) | Icon PNGs, loaded at runtime and keyed by the same numeric id the replay packets carry. Missing ids 404 and the `<img>` hides itself. |
 
 The naming decisions stay on this side of the split, in `tools/sync-db.mjs`: the `[N]` slot suffix on gear, the pt-BR names for the food buffs the client titles `%s`, and — for classes — `PLAYER_JT_IDS` plus `JOB_NAME_OVERRIDE`. `/raw/jobs.json` pairs a label with an id only where the server's `admin/pcidentity.lub` numbers the class, and that table stops at Oboro — no 4th class, no Rebellion, no Summoner, no Star Emperor — which is why `job.json` is built from `/raw/classes.json` (a row per playable class) as well. `pcidentity.lub` still matters because the LATAM server uses non-standard ids: `JT_RANGER_H = 4062`, where kRO says `JT_MINSTREL = 4062`. `JOB_NAME_OVERRIDE` stays on top of both: the client's own strings predate the LATAM renames (it still says "Arquimágico", "Assassino", "Poeta").
+
+## Deploy
+
+Hosted on **Cloudflare**; a push to `main` runs `.github/workflows/deploy.yml`, which builds and publishes via `wrangler`. To publish by hand:
+
+```bash
+npm run deploy
+```
+
+| Piece | What it holds |
+|-------|---------------|
+| Workers static assets (`dist/`) | The whole site. Free and unlimited — this is why hosting left Firebase. |
+| `worker/index.ts` | The `/api/*` routes, and nothing else. |
+| D1 `ragnarecap` | Replay metadata + MVP records (`schema.sql`). |
+| R2 `ragnarecap-replays` | The `.rrf` bytes, keyed `<id>.rrf`. Egress is free. |
+
+There is **one** Worker and it runs on **one** prefix, named by `run_worker_first: ["/api/*"]` in `wrangler.jsonc`. The array form matters: the boolean `true` puts every request on the Worker, and on the free plan a 429 once the daily request budget is spent means the homepage stops loading. Everything not listed stays a free static asset.
+
+**Cache policy lives in `public/_headers`**, which Vite copies to the build root. Read the comment at the top before touching it: Cloudflare applies **every** matching rule and comma-joins repeated headers, so patterns must stay mutually exclusive and there must never be a `/*` catch-all. `tools/cache-headers.test.ts` holds the line, including an overlap check against a real build. No deploy needs a cache purge — everything heavy is content-hashed, so a new build means new URLs.
+
+**Asset URLs are absolute** (`base: "/"` in `vite.config.ts`, and `/db` in `src/db/manifest.ts`). Relative URLs are not safe here: Workers assets 307s `/leaderboard` to `/leaderboard/`, from which `./assets/index-<hash>.js` resolves to `/leaderboard/assets/…`, misses, and gets answered by the SPA fallback with HTML — the browser then tries to execute HTML as a module and the app never boots. Firebase Hosting masked this with `trailingSlash: false`.
+
+### Firebase, retired
+
+Firestore and the Firebase Hosting site are kept, intact, as the rollback target. `firestore.rules` is closed to writes so a browser running a cached copy of the old bundle can't write replays into a collection nothing reads any more — but **editing that file changes nothing until** `firebase deploy --only firestore:rules --project ragreplaystats` runs, which is why `firebase.json` still exists with just its `firestore` block (the CLI refuses to run without one).
+
+The 991 replays were moved with a one-shot script that is deliberately **not** in this repo — it read the world-readable `replays` collection over Firestore's public REST API and wrote D1 rows plus R2 objects. It ran once, so keeping it would have meant carrying ~250 lines of Firestore decoding, plus a plain-JS copy of the class-rename table (a `.mjs` script cannot import `.ts`), for something that will never run again. Legacy class labels are still normalized — on upload, by `normalizeClass` in `shared/replay.ts`.
 
 ## Caveats
 
