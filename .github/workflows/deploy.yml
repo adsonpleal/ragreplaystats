@@ -21,9 +21,12 @@ jobs:
           # the pre-push commit (github.event.before) to detect a version bump
           fetch-depth: 0
 
+      # 22, not the 20 inherited from the old Firebase workflow: wrangler 4.127
+      # refuses to run on anything below v22, and it is the version that actually
+      # publishes the site. Matches the local toolchain.
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
