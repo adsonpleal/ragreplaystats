@@ -4,7 +4,8 @@
 // consume the same projected REST query (no bytes blob). Sharing the cache
 // means a typical session does **one** bulk fetch instead of one per route
 // visit, and a stale-while-revalidate TTL keeps re-fetches infrequent — both
-// matter because each returned doc costs a Firestore read.
+// matter because each returned doc cost a Firestore read. It is cheaper now
+// (one edge-cached response from our own Worker), but still worth not repeating.
 //
 // Consumers:
 //   - call `ensureLoaded()` to read the latest set (may resolve synchronously

@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-08-28
+
+- **O limite para compartilhar um replay subiu de 1 MB para 5 MB.** O teto de 1 MB nunca foi uma escolha nossa: era o tamanho máximo que o banco onde os replays ficavam guardados aceitava por registro, e o arquivo ia inteiro lá dentro. Os arquivos passaram a ficar num armazenamento próprio, então o limite virou uma decisão de verdade — e agora é cinco vezes maior. Sessões longas que antes davam "arquivo grande demais" e só rodavam no seu navegador agora podem ser compartilhadas por link. Nada muda para quem já compartilhava: os **991 replays** que já estavam no site continuam todos lá, com os mesmos links.
+- **O site abre mais rápido, e as atualizações chegam na hora.** As bases de nomes (itens, monstros, habilidades) passaram a ser guardadas pelo navegador de um jeito que não precisa perguntar ao servidor se mudaram — e, quando elas mudam depois de um patch do cliente, o navegador percebe na mesma hora em vez de continuar mostrando a versão antiga. A página em si também deixou de ficar até uma hora presa em cache, então uma novidade aparece assim que é publicada.
+
 ## 2026-08-25
 
 - **As classes que apareciam como "job#4307" agora aparecem pelo nome.** As classes mais novas nunca chegavam ao site: o cliente só numera as classes antigas, e todas as outras ficavam de fora da nossa tabela. Entraram **35 classes** — as de 4ª geração do ramo expandido (**Hiperaprendiz**, **Mestre Celestial**, **Asceta**, **Guerrilheiro**, **Druida**, Shinkiro e Shiranui), além de **Insurgente**, **Invocador**, **Mestre Estelar** e **Ceifador de Almas**. Agora todas aparecem com nome e ícone nas estatísticas, nos duelos com MVP e no filtro de classe do ranking.

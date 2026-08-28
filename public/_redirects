@@ -1,0 +1,14 @@
+# Redirects for Cloudflare Workers static assets. Vite copies public/ to the
+# build root, so this lands at dist/_redirects. Cloudflare parses it and does not
+# publish it, so it is never fetchable.
+#
+# This carries over the one redirect that lived in firebase.json's `hosting`
+# block until the move to Cloudflare on 28/08/2026. Losing it was silent: with no
+# rule, /suggestions falls through to the SPA fallback, which serves index.html
+# with 200, and the router's catch-all renders the home page — so an old link
+# looks like it worked while quietly landing somewhere else.
+#
+# The in-app suggestions board was retired in favour of the shared tracker; the
+# route is deliberately absent from the router (see src/app/App.tsx), which is
+# exactly why the redirect has to exist at the edge.
+/suggestions https://issues.latam-tools.com.br/?projeto=recap 301

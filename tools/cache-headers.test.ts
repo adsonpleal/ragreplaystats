@@ -57,6 +57,30 @@ function walk(dir: string, base = dir): string[] {
 
 const rules = parseHeaders(readFileSync(HEADERS_FILE, "utf8"));
 
+describe("public/_redirects", () => {
+  // This exists because the redirect was lost silently in the move off Firebase.
+  // It lived in firebase.json's `hosting` block; removing that block took it with
+  // it, and nothing failed — /suggestions just fell through to the SPA fallback,
+  // which answers 200 with index.html, so the router's catch-all rendered the
+  // home page. An old link looked like it worked while landing somewhere else.
+  const redirects = readFileSync(join(ROOT, "public", "_redirects"), "utf8");
+
+  it("still 301s the retired /suggestions path to the tracker", () => {
+    const rule = redirects
+      .split(/\r?\n/)
+      .find((l) => l.trim().startsWith("/suggestions"));
+    expect(rule, "/suggestions redirect is missing").toBeDefined();
+    expect(rule).toContain("issues.latam-tools.com.br");
+    expect(rule).toContain("301");
+  });
+
+  it("ships to the build root", () => {
+    const files = walk(DIST);
+    if (!files.length) return;
+    expect(files).toContain("/_redirects");
+  });
+});
+
 describe("public/_headers", () => {
   it("declares at least one rule", () => {
     expect(rules.length).toBeGreaterThan(0);

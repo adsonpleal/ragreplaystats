@@ -19,10 +19,10 @@ export function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           {/* /suggestions is retired — the unified tracker at
-              issues.latam-tools.com.br took over the board. Firebase Hosting
-              301s the old path (see `redirects` in firebase.json), so the route
-              is intentionally gone from the router; any old link that escapes
-              the redirect falls through to the catch-all below. */}
+              issues.latam-tools.com.br took over the board. The edge 301s the
+              old path (see public/_redirects), so the route is intentionally
+              gone from the router; any old link that escapes the redirect falls
+              through to the catch-all below. */}
           <Route path="*" element={<HomePage />} />
         </Routes>
       </main>

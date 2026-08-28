@@ -10,8 +10,9 @@
 //   /            -> dist/index.html            (overwritten; also the SPA fallback)
 //   /leaderboard -> dist/leaderboard/index.html
 //
-// Firebase Hosting serves an exact file match before the `** -> /index.html`
-// rewrite, so those per-route files are what crawlers get; the client router
+// Cloudflare Workers static assets serve an exact file match before the
+// single-page-application fallback (as Firebase Hosting did before the move), so
+// those per-route files are what crawlers get; the client router
 // still takes over once the bundle boots. It also renders dist/og.png (1200x630)
 // for the og:image / twitter:image tags.
 //

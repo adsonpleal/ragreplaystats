@@ -11,7 +11,7 @@ import { useEffect } from "react";
  * so their card comes from whichever prerendered file the URL resolves to.
  */
 
-/** Canonical production origin (Firebase custom domain), no trailing slash. */
+/** Canonical production origin, no trailing slash. */
 export const SITE_URL = "https://recap.latam-tools.com.br";
 
 /** Absolute social preview image (generated into dist/og.png at build time). */
