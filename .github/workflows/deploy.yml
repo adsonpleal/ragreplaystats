@@ -46,12 +46,20 @@ jobs:
 
       # Assets plus one route-scoped Worker (/api/*), configured by wrangler.jsonc.
       # Cache policy for the assets travels with them in dist/_headers.
+      #
+      # Deliberately NOT cloudflare/wrangler-action. That action installs its own
+      # wrangler rather than using the repo's, and the version it picked (4.86.0)
+      # declares `peerOptional @cloudflare/workers-types@^4`, which conflicts with
+      # the v5 types this repo needs for the Worker — npm ci inside the action
+      # died on ERESOLVE. Running the wrangler that npm ci already installed uses
+      # the exact version in package-lock.json, so CI deploys with the same
+      # binary as a local `npm run deploy` and there is no second resolution to
+      # go wrong. wrangler reads both secrets from the environment.
       - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
 
       # Announce the release in Discord — only when this push actually bumped the
       # version (so routine main pushes don't spam the channel).
