@@ -2,6 +2,12 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-09-01
+
+- Bases de nomes atualizadas com o último patch do cliente: **104 itens novos** — o equipamento sombrio do **Esconderijo** e do **Furto**, as **Pedras** de encantamento (do Guerreiro, do Mágico, da Precisão e da Variação, 1 a 5), os **Cordões** de classe (Ninja, Guerrilheiro, Asceta, Mestre, Animista e Hiperaprendiz), as **Capas Desconhecidas** de cada atributo, uma leva de chapéus **-LT** (Chapéu de Eddga, Marionete de Thanatos, Boneca da Lady Branca, Tiara Oracular, Coroa Oriental, Ignis e outros), as armas **Celestiais** e a **Bíblia Infernal**, as **Cápsulas Primordiais**, os **Artefatos do Passado** e as caixas, arcas e combos de agosto.
+- **32 itens tiveram o nome corrigido.** As caixas de consumíveis passaram a dizer quanto vem dentro ("Caixa de Poções Brancas" → "Caixa de Poção Branca [100]", "Cx Sementes Yggdrasil" → "Caixa de Semente de Yggdrasil [30]"), os pratos de evento e os especiais deixaram de ser indistinguíveis entre si (agora vêm marcados como **[Evento]** e **[Especial]**), e alguns nomes trocaram de vez — Chicle de Bola virou Super Chiclete, Cupom de Transferência virou Transferidor de Encanto, e os cubos de reforma de arma "de Thanos" viraram "Reformar Arma de Cinza".
+- Base de habilidades: entrou **Para Glastheim**.
+
 ## 2026-08-28
 
 - **O limite para compartilhar um replay subiu de 1 MB para 5 MB.** O teto de 1 MB nunca foi uma escolha nossa: era o tamanho máximo que o banco onde os replays ficavam guardados aceitava por registro, e o arquivo ia inteiro lá dentro. Os arquivos passaram a ficar num armazenamento próprio, então o limite virou uma decisão de verdade — e agora é cinco vezes maior. Sessões longas que antes davam "arquivo grande demais" e só rodavam no seu navegador agora podem ser compartilhadas por link. Nada muda para quem já compartilhava: os **991 replays** que já estavam no site continuam todos lá, com os mesmos links.
