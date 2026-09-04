@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { type Mode, useAppStore } from "../store/useAppStore";
 
 const VALID_MODES: ReadonlySet<Mode> = new Set([
@@ -24,6 +25,7 @@ export function readTabFromUrl(): Mode | null {
  * mount it honours an incoming `?tab=…`; afterwards it mirrors mode → URL.
  */
 export function useTabUrlSync() {
+  const [, setSearchParams] = useSearchParams();
   const mode = useAppStore((s) => s.mode);
   const setMode = useAppStore((s) => s.setMode);
   const firstReflect = useRef(true);
@@ -42,12 +44,21 @@ export function useTabUrlSync() {
       firstReflect.current = false;
       return;
     }
-    const url = new URL(location.href);
-    if (mode === "byPlayer") url.searchParams.delete("tab");
-    else url.searchParams.set("tab", mode);
-    const next = url.pathname + (url.search || "");
-    if (next !== location.pathname + location.search) {
-      history.replaceState(null, "", next);
-    }
+    // Go through the router rather than history.replaceState: a raw call
+    // overwrites the `{ idx, key }` bookkeeping react-router stores on each
+    // entry (it warns that doing so "will result in bugs") and leaves the
+    // router's own location stale, so a later setSearchParams would rewrite
+    // the URL from an out-of-date copy and drop whatever this wrote.
+    setSearchParams(
+      (prev) => {
+        if (mode === "byPlayer") prev.delete("tab");
+        else prev.set("tab", mode);
+        return prev;
+      },
+      { replace: true },
+    );
+    // `setSearchParams` is a fresh closure every render; the mode is the only
+    // thing that should trigger a rewrite.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 }

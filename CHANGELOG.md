@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-09-04
+
+- **Abrir um replay pelo ranking não trava mais o site num vaivém sem fim.** Quem já tinha um replay aberto, ia ao **Leaderboard de MVPs** e clicava em "Ver replay" de um replay diferente podia cair num ciclo: a tela ficava alternando sozinha entre os dois replays, sem parar, e a única saída era fechar a aba. O endereço da página (o `?r=` do link) e o replay guardado na memória do site brigavam pelo controle — o link mandava carregar o novo, e o site reescrevia o link de volta para o antigo, cada um desfazendo o outro para sempre. Agora quem manda é o link: o replay guardado só preenche o endereço quando ele está vazio, que é o caso de um arquivo recém-enviado. Compartilhar um `.rrf` do seu computador continua igual, com o link aparecendo na barra assim que o envio termina. Reportado por **Faw**.
+- **O botão Voltar do navegador ficou confiável dentro de um replay.** Trocar de aba na análise (Estatísticas, Por jogador, Por monstro, Análise de DPS) apagava, sem querer, a marcação que o navegador usa para saber em que ponto do histórico você está. Nada quebrava na hora, mas o histórico ia ficando embaralhado ao longo da visita. A troca de aba passou a atualizar o endereço pelo caminho certo, sem apagar nada — e, como antes, sem criar uma entrada nova no histórico a cada aba.
+
 ## 2026-09-01
 
 - Bases de nomes atualizadas com o último patch do cliente: **104 itens novos** — o equipamento sombrio do **Esconderijo** e do **Furto**, as **Pedras** de encantamento (do Guerreiro, do Mágico, da Precisão e da Variação, 1 a 5), os **Cordões** de classe (Ninja, Guerrilheiro, Asceta, Mestre, Animista e Hiperaprendiz), as **Capas Desconhecidas** de cada atributo, uma leva de chapéus **-LT** (Chapéu de Eddga, Marionete de Thanatos, Boneca da Lady Branca, Tiara Oracular, Coroa Oriental, Ignis e outros), as armas **Celestiais** e a **Bíblia Infernal**, as **Cápsulas Primordiais**, os **Artefatos do Passado** e as caixas, arcas e combos de agosto.
