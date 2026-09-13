@@ -25,7 +25,7 @@ export function ExplorerToolbar({
 }) {
   const mode = useAppStore((s) => s.mode);
   const setMode = useAppStore((s) => s.setMode);
-  const replay = useAppStore((s) => s.replay);
+  const replay = useAppStore((s) => s.rawReplay);
   const db = useAppStore((s) => s.db);
   const [mapOpen, setMapOpen] = useState(false);
 

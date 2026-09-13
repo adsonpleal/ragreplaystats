@@ -16,8 +16,10 @@ import type { Replay } from "rrfparser";
 import { dbUrl } from "./db/manifest";
 
 type ItemEntry = { name: string; view?: number };
-type MonsterEntry = { name: string; hp: number; level: number };
-type SkillEntry = { name: string };
+type MonsterEntry = { name: string; hp: number; level: number; mvp?: true };
+// `parent` marks a second hit the client doesn't label (Flecha Escarlate's
+// explosion) — see SUB_SKILLS in tools/sync-db.mjs.
+type SkillEntry = { name: string; parent?: number };
 // EFST (status-effect) id -> display name, keyed like the status-change packets.
 type StatusEntry = { name: string };
 // Random-option id -> display template ("ATQM +%d"). Stored as a bare string.
@@ -118,8 +120,20 @@ export function getMonsterHp(id: number): number {
   return monsters?.get(id)?.hp ?? 0;
 }
 
+export function isMonsterMvp(id: number): boolean {
+  return monsters?.get(id)?.mvp === true;
+}
+
 export function getSkillName(id: number): string | null {
   return skills?.get(id)?.name ?? null;
+}
+
+/**
+ * The skill a hit belongs to: the parent for a second-hit id (5236 → 5235), the
+ * id itself otherwise — so one cast that lands as two packets counts once.
+ */
+export function getSkillParent(id: number): number {
+  return skills?.get(id)?.parent ?? id;
 }
 
 /**

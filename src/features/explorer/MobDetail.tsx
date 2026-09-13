@@ -1,5 +1,5 @@
 import {
-  isPlayerSource,
+  isAllySource,
   type MobSkillAgg,
   mobHpCurve,
   mobSkillBreakdown,
@@ -15,7 +15,7 @@ import { LineChart } from "../../ui/LineChart";
 import { SummaryCard, type SummaryCell } from "../../ui/SummaryCard";
 import { useAppStore } from "../../store/useAppStore";
 import { ClassCell, SkillCell } from "./cells";
-import { effectiveMaxHp, hasCritData, monsterName, playerClass, playerLevel } from "./entityNames";
+import { effectiveMaxHp, hasCritData, monsterName, playerClass, playerLevel, playerName } from "./entityNames";
 import { mobDpUrl, pct, resolveSkillName, skillDpUrl } from "./resolvers";
 
 /** Latest player damage on `targetAid` at/ before `byTime` (killing-blow heuristic). */
@@ -23,7 +23,7 @@ function lastDamageBeforeFromPlayer(replay: Replay, targetAid: number, byTime: n
   let best: { source: number; time: number } | null = null;
   for (const ev of replay.damage) {
     if (ev.target !== targetAid || ev.time > byTime) continue;
-    if (!isPlayerSource(replay, ev.source)) continue;
+    if (!isAllySource(replay, ev.source)) continue;
     if (!best || ev.time > best.time) best = { source: ev.source, time: ev.time };
   }
   return best;
@@ -42,9 +42,9 @@ export function MonsterOverview({ replay, mobAid }: { replay: Replay; mobAid: nu
   for (const d of replay.damage) {
     if (d.target === mobAid) {
       totalReceived += d.damage;
-      if (isPlayerSource(replay, d.source)) attackers.add(d.source);
+      if (isAllySource(replay, d.source)) attackers.add(d.source);
     }
-    if (d.source === mobAid && isPlayerSource(replay, d.target)) {
+    if (d.source === mobAid && isAllySource(replay, d.target)) {
       totalDealt += d.damage;
       victims.add(d.target);
       victimDamage.set(d.target, (victimDamage.get(d.target) ?? 0) + d.damage);
@@ -54,7 +54,7 @@ export function MonsterOverview({ replay, mobAid }: { replay: Replay; mobAid: nu
   let topVictim: { name: string; total: number } | null = null;
   for (const [aid, total] of victimDamage) {
     if (!topVictim || total > topVictim.total) {
-      topVictim = { name: replay.entities.get(aid)?.name || `#${aid}`, total };
+      topVictim = { name: playerName(replay, aid), total };
     }
   }
 
@@ -69,7 +69,7 @@ export function MonsterOverview({ replay, mobAid }: { replay: Replay; mobAid: nu
   let killerName: string | null = null;
   if (killTime != null) {
     const lastHit = lastDamageBeforeFromPlayer(replay, mobAid, killTime);
-    if (lastHit) killerName = replay.entities.get(lastHit.source)?.name || `#${lastHit.source}`;
+    if (lastHit) killerName = playerName(replay, lastHit.source);
   }
 
   const maxHp = effectiveMaxHp(db, ent.maxHp, ent.view);
@@ -165,7 +165,12 @@ export function MobVictims({
 
   const crit = hasCritData(replay);
   const cols: Column<PlayerAgg>[] = [
-    { key: "name", label: t.colPlayer },
+    {
+      key: "name",
+      label: t.colPlayer,
+      format: (r) => playerName(replay, r.aid),
+      sortValue: (r) => playerName(replay, r.aid),
+    },
     {
       key: "class",
       label: t.colClass,
@@ -196,7 +201,7 @@ export function MobVictims({
         {t.mobVictimsBarTitle(monsterLabel)}
       </h2>
       <BarChart
-        rows={victims.map((v) => ({ key: v.aid, label: v.name, value: v.totalDealt, display: fmt(v.totalDealt) }))}
+        rows={victims.map((v) => ({ key: v.aid, label: playerName(replay, v.aid), value: v.totalDealt, display: fmt(v.totalDealt) }))}
       />
     </div>
   );
@@ -273,7 +278,7 @@ export function MobSkills({
           <option value="">{t.mobSkillsFilterAll}</option>
           {victims.map((v) => (
             <option key={v.aid} value={v.aid}>
-              {v.name}
+              {playerName(replay, v.aid)}
             </option>
           ))}
         </select>

@@ -8,6 +8,7 @@
 
 import writeXlsxFile, { type Row, type CellObject } from "write-excel-file/browser";
 import {
+  allyName,
   computeResumo,
   consumablesByItem,
   killsByPlayerAndMob,
@@ -15,7 +16,9 @@ import {
   monstersWhoTookDamage,
   playersWhoDamaged,
   skillUsageByPlayer,
+  summonsWhoDamaged,
 } from "../aggregate/index.js";
+import { getSkillParent } from "../names.js";
 import { t, locale } from "../i18n.js";
 import type { ReferenceDb } from "../db/loader.js";
 import type { Replay } from "rrfparser";
@@ -185,8 +188,9 @@ export async function buildReplayXlsxBlob(
         { label: t.colMonstersHit, width: 12, align: "right" },
         { label: t.colKills, width: 10, align: "right" },
       ],
-      playersWhoDamaged(replay).map((p) => [
-        str(p.name),
+      // Summons follow the players, named with their owner.
+      [...playersWhoDamaged(replay), ...summonsWhoDamaged(replay)].map((p) => [
+        str(allyName(replay, p.aid, resolveMob)),
         num(p.totalDealt),
         num(p.hits),
         num(p.crits),
@@ -234,8 +238,8 @@ export async function buildReplayXlsxBlob(
         { label: t.colId, width: 8, align: "right" },
         { label: t.exportXlsxUsesCol, width: 10, align: "right" },
       ],
-      skillUsageByPlayer(replay, {}, resolveSkill).map((s) => [
-        str(s.playerName),
+      skillUsageByPlayer(replay, {}, resolveSkill, getSkillParent).map((s) => [
+        str(allyName(replay, s.playerAid, resolveMob)),
         str(s.skillName),
         num(s.skillId),
         num(s.count),
@@ -253,7 +257,7 @@ export async function buildReplayXlsxBlob(
         { label: t.colKills, width: 10, align: "right" },
       ],
       killsByPlayerAndMob(replay, {}, resolveMob).map((k) => [
-        str(k.playerName),
+        str(k.playerAid ? allyName(replay, k.playerAid, resolveMob) : k.playerName),
         str(k.monsterName),
         num(k.count),
       ]),

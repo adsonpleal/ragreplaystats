@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { prefetchReplay } from "../names";
+import { isMonsterMvp, prefetchReplay } from "../names";
 import type { ReferenceDb } from "../db/loader";
 import { fetchReplay, uploadReplay } from "../api";
 import { invalidate as invalidateSummariesCache } from "../replay-summaries";
@@ -7,6 +7,7 @@ import { buildReplaySummary } from "../features/replay/replaySummary";
 import { t } from "../i18n";
 import { decodeReplay } from "rrfparser";
 import type { Range } from "../aggregate/index";
+import { mergeBossPhases } from "../aggregate/bossPhases";
 import type { Replay } from "rrfparser";
 
 export type Mode = "byPlayer" | "byMonster" | "stats" | "dpsAnalysis";
@@ -20,7 +21,13 @@ export type DragRange = { startMs: number; endMs: number } | null;
  * is mirrored field-for-field.
  */
 export type AppState = {
+  /**
+   * The replay the explorer reads — a phased MVP folded into one AID once the
+   * monster DB (which says what is an MVP) has loaded; the decoded one until then.
+   */
   replay: Replay | null;
+  /** As decoded. The map viewer needs every phase under its own AID. */
+  rawReplay: Replay | null;
   db: ReferenceDb | null;
   /**
    * Bumped whenever name data lands (reference DB load, or per-replay
@@ -84,6 +91,7 @@ const CLEARED_SELECTION = {
 
 export const useAppStore = create<AppState>((set, get) => ({
   replay: null,
+  rawReplay: null,
   db: null,
   namesVersion: 0,
   mode: "stats",
@@ -105,10 +113,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   loadReplayFromBytes: (buf, fileName, shareId) => {
     const t0 = performance.now();
-    const replay = decodeReplay(buf);
+    const rawReplay = decodeReplay(buf);
+    const replay = mergeBossPhases(rawReplay, isMonsterMvp);
     const ms = (performance.now() - t0).toFixed(0);
     set({
       replay,
+      rawReplay,
       ...CLEARED_SELECTION,
       selectedPlayers: new Set(),
       shareId,
@@ -126,9 +136,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Load DP name databases in the background; bump namesVersion when ready so
     // any `mob#1234` / `skill#999` fallbacks become real names — but only if
     // this is still the active replay.
-    void prefetchReplay(replay).then(() => {
-      if (get().replay !== replay) return;
-      set((s) => ({ namesVersion: s.namesVersion + 1 }));
+    void prefetchReplay(rawReplay).then(() => {
+      if (get().rawReplay !== rawReplay) return;
+      // The merge needs the MVP flags, which only just arrived on a first visit.
+      const merged = mergeBossPhases(rawReplay, isMonsterMvp);
+      set((s) => ({
+        namesVersion: s.namesVersion + 1,
+        // Only when the load-time merge couldn't run (no DB yet) and now can.
+        ...(s.replay === rawReplay && merged !== rawReplay
+          ? { replay: merged, selectedMonster: null, selectedMobSkillTarget: null }
+          : {}),
+      }));
     });
   },
 
@@ -169,6 +187,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearReplay: () =>
     set({
       replay: null,
+      rawReplay: null,
       ...CLEARED_SELECTION,
       selectedPlayers: new Set(),
       shareId: null,

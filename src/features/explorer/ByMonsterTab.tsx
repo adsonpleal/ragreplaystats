@@ -1,6 +1,6 @@
 import {
   damageTimelineMulti,
-  isPlayerSource,
+  isAllySource,
   type MonsterAgg,
   monstersWhoTookDamage,
   type PlayerAgg,
@@ -14,11 +14,21 @@ import { DamageChart } from "../../ui/DamageChart";
 import { type Column, DataTable } from "../../ui/DataTable";
 import { useAppStore } from "../../store/useAppStore";
 import { ClassCell } from "./cells";
-import { effectiveMaxHp, formatMonsterRow, hasCritData, monsterName, playerClass, playerLevel } from "./entityNames";
+import {
+  effectiveMaxHp,
+  formatMonsterRow,
+  hasCritData,
+  isSummonAid,
+  monsterName,
+  playerClass,
+  playerLevel,
+  playerName,
+} from "./entityNames";
 import { MobHpCurve, MobSkills, MobVictims, MonsterOverview } from "./MobDetail";
 import { KillsChart, SkillUsesChart } from "./ModeCharts";
 import { mobDpUrl } from "./resolvers";
 import { SkillByPlayerTable } from "./SkillTables";
+import { SummonsTable } from "./SummonsTable";
 
 /** Damage-timeline bucket size scaled to the combat span. */
 function pickBucketMs(events: DamageEvent[]): number {
@@ -37,8 +47,10 @@ function MonsterDetail({ replay, mobAid }: { replay: Replay; mobAid: number }) {
   const monsterLabel = monsterName(replay, db, mobAid);
 
   const events = replay.damage.filter((d) => d.target === mobAid);
-  const playerEvents = events.filter((d) => isPlayerSource(replay, d.source));
-  const players = playersThatDamaged(replay, mobAid);
+  const playerEvents = events.filter((d) => isAllySource(replay, d.source));
+  const allies = playersThatDamaged(replay, mobAid);
+  const players = allies.filter((p) => !isSummonAid(replay, p.aid));
+  const summons = allies.filter((p) => isSummonAid(replay, p.aid));
 
   const playerCols: Column<PlayerAgg>[] = [
     { key: "name", label: t.colPlayer },
@@ -71,12 +83,23 @@ function MonsterDetail({ replay, mobAid }: { replay: Replay; mobAid: number }) {
         <h2 className="section-title">{t.playersWhoDamaged(monsterLabel)}</h2>
         <DataTable cols={playerCols} rows={players} options={{ initialSort: { key: "totalDealt", asc: false } }} />
       </div>
+      {summons.length > 0 && (
+        <div>
+          <h2 className="section-title">{t.summonsWhoDamaged(monsterLabel)}</h2>
+          <SummonsTable replay={replay} rows={summons} killsLabel={t.colKillingBlow} showMonstersHit={false} />
+        </div>
+      )}
       {events.length > 0 && (
         <div>
           <h2 className="section-title">{t.damageByPlayerTitle}</h2>
           <p className="section-hint">{t.damageByPlayerHint(monsterLabel)}</p>
           <BarChart
-            rows={players.map((p) => ({ key: p.aid, label: p.name, value: p.totalDealt, display: fmt(p.totalDealt) }))}
+            rows={allies.map((p) => ({
+              key: p.aid,
+              label: playerName(replay, p.aid),
+              value: p.totalDealt,
+              display: fmt(p.totalDealt),
+            }))}
           />
         </div>
       )}
@@ -153,7 +176,7 @@ export function ByMonsterTab({ replay }: { replay: Replay }) {
         <>
           <SkillByPlayerTable
             replay={replay}
-            events={replay.damage.filter((d) => d.target === selectedMonster && isPlayerSource(replay, d.source))}
+            events={replay.damage.filter((d) => d.target === selectedMonster && isAllySource(replay, d.source))}
             title={t.skillsAgainstMonster}
           />
           <MobVictims replay={replay} mobAid={selectedMonster} monsterLabel={monsterLabel} />

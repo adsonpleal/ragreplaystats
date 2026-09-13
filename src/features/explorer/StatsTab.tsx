@@ -2,6 +2,7 @@ import {
   brushSeries,
   computeResumo,
   consumablesByItem,
+  isAllySource,
   killsByPlayerAndMob,
   lootByItem,
   paramCurve,
@@ -235,8 +236,7 @@ function KillsByTypeChart({ replay }: { replay: Replay }) {
       let lastSrc = 0;
       for (const d of replay.damage) {
         if (d.target !== k.aid || d.time > k.time) continue;
-        const src = replay.entities.get(d.source);
-        if (!src || (src.kind !== "pc" && src.kind !== "homun" && src.kind !== "merc")) continue;
+        if (!isAllySource(replay, d.source)) continue;
         if (lastHit == null || d.time > lastHit) {
           lastHit = d.time;
           lastSrc = d.source;

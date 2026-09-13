@@ -1,5 +1,6 @@
 import type {
   DamageEvent,
+  Entity,
   Replay,
   VanishEvent,
 } from "rrfparser";
@@ -25,11 +26,88 @@ function effectiveDuration(replay: Replay, range: Range): number {
   return Math.max(1, range.endMs - range.startMs);
 }
 
-const PLAYER_KINDS = new Set(["pc", "homun", "merc"]);
+const SUMMON_KINDS = new Set(["homun", "merc", "elem", "abr", "bionic"]);
 
-export function isPlayerSource(replay: Replay, aid: number): boolean {
+/**
+ * A player's summon: homunculus, mercenary, elemental, ABR, bionic, or a monster
+ * a skill put on the field for a player (the parser names its owner). Pets are
+ * not — they never fight.
+ */
+export function isSummonEntity(ent: Entity): boolean {
+  return SUMMON_KINDS.has(ent.kind) || (ent.kind === "mob" && ent.ownerAid != null);
+}
+
+export function isSummon(replay: Replay, aid: number): boolean {
   const ent = replay.entities.get(aid);
-  return !!ent && PLAYER_KINDS.has(ent.kind);
+  return !!ent && isSummonEntity(ent);
+}
+
+export function isPc(replay: Replay, aid: number): boolean {
+  return replay.entities.get(aid)?.kind === "pc";
+}
+
+/**
+ * Allies — players and their summons. Every damage source that counts toward
+ * totals, attackers, kills and skill usage; the by-player tab splits them back
+ * into a players table and a summons table.
+ */
+export function isAllySource(replay: Replay, aid: number): boolean {
+  const ent = replay.entities.get(aid);
+  return !!ent && (ent.kind === "pc" || isSummonEntity(ent));
+}
+
+/**
+ * Homunculus names by view id. The client ships no table for them, and the
+ * server only sends a readable name once the owner renamed theirs — otherwise
+ * it is a `\x1c…\x1c` string-table code.
+ */
+const HOMUNCULUS_NAMES: Record<number, string> = {
+  6001: "Lif", 6002: "Amistr", 6003: "Filir", 6004: "Vanilmirth",
+  6005: "Lif", 6006: "Amistr", 6007: "Filir", 6008: "Vanilmirth",
+  6009: "Lif", 6010: "Amistr", 6011: "Filir", 6012: "Vanilmirth",
+  6013: "Lif", 6014: "Amistr", 6015: "Filir", 6016: "Vanilmirth",
+  6048: "Eira", 6049: "Bayeri", 6050: "Sera", 6051: "Dieter", 6052: "Eleanor",
+};
+
+/** Drop `\x1c…\x1c` codes, control chars and a `#suffix` from a server name. */
+function readableName(raw: string): string {
+  let s = raw.replace(/\x1c[^\x1c]*\x1c/g, "").replace(/[\x00-\x1f]/g, "");
+  const hash = s.indexOf("#");
+  if (hash >= 0) s = s.slice(0, hash);
+  return s.trim();
+}
+
+/**
+ * Display name for a summon, without its owner. Homunculi and mercenaries carry
+ * the name their owner gave them; everything else is named by species from the
+ * monster DB (`resolveMob` returns null or a `mob#` fallback when it can't).
+ */
+export function summonName(ent: Entity, resolveMob: (view: number) => string | null): string {
+  const own = readableName(ent.name || "");
+  const species = (() => {
+    const fromDb = ent.view ? resolveMob(ent.view) : null;
+    if (fromDb && !fromDb.startsWith("mob#")) return fromDb;
+    return HOMUNCULUS_NAMES[ent.view] ?? null;
+  })();
+  if (ent.kind === "homun" || ent.kind === "merc") return own || species || `#${ent.aid}`;
+  return species || own || `#${ent.aid}`;
+}
+
+/**
+ * Name for any ally in a cross-list (charts, crumbs, leaderboard): a player's
+ * name, or a summon's name followed by its owner's — "Ardor (Yiuiz..)".
+ */
+export function allyName(
+  replay: Replay,
+  aid: number,
+  resolveMob: (view: number) => string | null,
+): string {
+  const ent = replay.entities.get(aid);
+  if (!ent) return `#${aid}`;
+  if (!isSummonEntity(ent)) return ent.name || `#${aid}`;
+  const base = summonName(ent, resolveMob);
+  const owner = ent.ownerAid != null ? replay.entities.get(ent.ownerAid)?.name : undefined;
+  return owner ? `${base} (${owner})` : base;
 }
 
 /**
@@ -40,17 +118,16 @@ export function isPlayerSource(replay: Replay, aid: number): boolean {
  *   - missing entities (target AID that was never spawned in this recording
  *     — common on practice maps like tra_fild where dummies are placed on
  *     map and the spawn packet was missed).
- * We exclude pc / homun / merc / elem / pet — those are allies, not targets.
+ * We exclude players, their summons and pets — those are allies, not targets.
  * We also exclude ground-skill-unit AIDs — those are AoE skill placeholders
  * (Storm Gust, Arrow Shower, etc.) that show up as damage targets but
  * aren't real monsters.
  */
-const NON_TARGETABLE_KINDS = new Set(["pc", "homun", "merc", "elem", "pet"]);
 function isMobTarget(replay: Replay, aid: number): boolean {
   if (replay.groundUnits.has(aid)) return false;
   const ent = replay.entities.get(aid);
   if (!ent) return true;
-  return !NON_TARGETABLE_KINDS.has(ent.kind);
+  return ent.kind !== "pet" && ent.kind !== "pc" && !isSummonEntity(ent);
 }
 
 export type PlayerAgg = {
@@ -93,8 +170,29 @@ export type DamageSeries = {
   series: Array<{ aid: number; name: string; damage: number[] }>;
 };
 
-/** Cross-replay: list of all PCs/homuns/mercs that dealt damage. */
+/** Every player that dealt damage. Summons are listed by summonsWhoDamaged. */
 export function playersWhoDamaged(replay: Replay): PlayerAgg[] {
+  return damageDealers(replay, (aid) => isPc(replay, aid));
+}
+
+/**
+ * Every summon that dealt damage — the players table's twin. A hit on an ally
+ * is left out: the ABR Curandeira's repair and a bionic's self-buffs arrive as
+ * damage packets aimed at a summon, and would otherwise read as damage dealt.
+ */
+export function summonsWhoDamaged(replay: Replay): PlayerAgg[] {
+  return damageDealers(
+    replay,
+    (aid) => isSummon(replay, aid),
+    (target) => !isAllySource(replay, target),
+  );
+}
+
+function damageDealers(
+  replay: Replay,
+  include: (aid: number) => boolean,
+  countsAgainst: (target: number) => boolean = () => true,
+): PlayerAgg[] {
   const map = new Map<number, PlayerAgg>();
   const monsters = new Map<number, Set<number>>();
   const killAttribution = new Map<number, number>();
@@ -104,7 +202,7 @@ export function playersWhoDamaged(replay: Replay): PlayerAgg[] {
   }
 
   for (const ev of replay.damage) {
-    if (!isPlayerSource(replay, ev.source)) continue;
+    if (!include(ev.source) || !countsAgainst(ev.target)) continue;
     let agg = map.get(ev.source);
     if (!agg) {
       const ent = replay.entities.get(ev.source);
@@ -214,7 +312,7 @@ export function monstersWhoTookDamage(replay: Replay): MonsterAgg[] {
     }
     agg.totalReceived += ev.damage;
     agg.hits += 1;
-    if (isPlayerSource(replay, ev.source))
+    if (isAllySource(replay, ev.source))
       attackerSets.get(ev.target)!.add(ev.source);
     if (!firstHitAt.has(ev.target)) firstHitAt.set(ev.target, ev.time);
   }
@@ -243,7 +341,7 @@ export function playersThatDamaged(
 
   for (const ev of replay.damage) {
     if (ev.target !== monsterAid) continue;
-    if (!isPlayerSource(replay, ev.source)) continue;
+    if (!isAllySource(replay, ev.source)) continue;
     let agg = map.get(ev.source);
     if (!agg) {
       const ent = replay.entities.get(ev.source);
@@ -301,7 +399,7 @@ export function playersDamagedByMonster(
 
   for (const ev of replay.damage) {
     if (ev.source !== monsterAid) continue;
-    if (!isPlayerSource(replay, ev.target)) continue;
+    if (!isAllySource(replay, ev.target)) continue;
     let agg = map.get(ev.target);
     if (!agg) {
       const ent = replay.entities.get(ev.target);
@@ -326,7 +424,7 @@ export function playersDamagedByMonster(
   // Award the mob a "kill" against any player whose last damage event came
   // from this mob before the player's vanish.
   for (const kill of replay.kills) {
-    if (!isPlayerSource(replay, kill.aid)) continue;
+    if (!isAllySource(replay, kill.aid)) continue;
     const lastHit = lastDamageTo(replay, kill.aid, kill.time);
     if (lastHit?.source === monsterAid && map.has(kill.aid)) {
       map.get(kill.aid)!.kills += 1;
@@ -711,7 +809,7 @@ export function killsByPlayerAndMob(
     for (const d of replay.damage) {
       if (d.target !== k.aid) continue;
       if (d.time > k.time) continue;
-      if (!isPlayerSource(replay, d.source)) continue;
+      if (!isAllySource(replay, d.source)) continue;
       if (!lastHit || d.time > lastHit.time) lastHit = d;
     }
     if (!lastHit) continue;
@@ -747,6 +845,14 @@ export function killsByPlayerAndMob(
   return [...map.values()].sort((a, b) => b.count - a.count);
 }
 
+/**
+ * Packets of one skill use arrive within 0-2 ms of each other. Measured over 240
+ * recordings, same-ally same-skill gaps pile up at 0-2 ms (52k), thin out to a
+ * few hundred at 5-10 ms, then climb again from 20 ms on, where they are separate
+ * uses (auto-attacks, fast repeats) — so the window sits in the trough.
+ */
+const USE_WINDOW_MS = 5;
+
 export type SkillUsageAgg = {
   key: string;
   playerAid: number;
@@ -757,21 +863,28 @@ export type SkillUsageAgg = {
 };
 
 /**
- * Count skill uses by (player, skill). Auto-attacks are included as
+ * Count skill uses by (ally, skill). Auto-attacks are included as
  * skillId = 0; the caller's resolver should map that to a localized
- * "Ataque básico" label. Combines damage events (each skill cast that
- * landed) and non-damage skill uses (buffs / heals).
+ * "Ataque básico" label. Combines damage events and non-damage skill uses
+ * (buffs / heals).
  *
- * `filter.sourceAid` restricts to a single player; `filter.targetAid`
- * restricts to a single monster (only damage events are filterable by
- * target — non-damage skill uses are kept regardless of target).
+ * One use is often several packets: the skill-use packet plus the damage, a
+ * damage packet per target an AoE hit, or a second hit under its own id
+ * (Flecha Escarlate's explosion, 5236). Those land within a couple of ms of each
+ * other, so events of the same ally and skill — second hits folded into their
+ * parent by `parentOf` — that start within USE_WINDOW_MS count once.
+ *
+ * `filter.sourceAid` restricts to a single ally; `filter.targetAid`
+ * restricts to a single monster.
  */
 export function skillUsageByPlayer(
   replay: Replay,
   filter: { sourceAid?: number; targetAid?: number },
   resolveSkill: (id: number) => string,
+  parentOf: (id: number) => number = (id) => id,
 ): SkillUsageAgg[] {
   const map = new Map<string, SkillUsageAgg>();
+  const times = new Map<string, number[]>();
   const ensure = (sourceAid: number, skillId: number): SkillUsageAgg => {
     const key = `${sourceAid}::${skillId}`;
     let agg = map.get(key);
@@ -789,19 +902,38 @@ export function skillUsageByPlayer(
     }
     return agg;
   };
+  const note = (sourceAid: number, rawSkillId: number, time: number) => {
+    const agg = ensure(sourceAid, parentOf(rawSkillId));
+    let ts = times.get(agg.key);
+    if (!ts) times.set(agg.key, (ts = []));
+    ts.push(time);
+  };
 
   for (const ev of replay.damage) {
     if (filter.sourceAid != null && ev.source !== filter.sourceAid) continue;
     if (filter.targetAid != null && ev.target !== filter.targetAid) continue;
-    if (!isPlayerSource(replay, ev.source)) continue;
-    ensure(ev.source, ev.skillId).count += 1;
+    if (!isAllySource(replay, ev.source)) continue;
+    note(ev.source, ev.skillId, ev.time);
   }
 
   for (const u of replay.skillUses) {
     if (filter.sourceAid != null && u.source !== filter.sourceAid) continue;
     if (filter.targetAid != null && u.target !== filter.targetAid) continue;
-    if (!isPlayerSource(replay, u.source)) continue;
-    ensure(u.source, u.skillId).count += 1;
+    if (!isAllySource(replay, u.source)) continue;
+    note(u.source, u.skillId, u.time);
+  }
+
+  for (const [key, ts] of times) {
+    ts.sort((a, b) => a - b);
+    let uses = 0;
+    let start = Number.NEGATIVE_INFINITY;
+    for (const t of ts) {
+      if (t - start > USE_WINDOW_MS) {
+        uses += 1;
+        start = t;
+      }
+    }
+    map.get(key)!.count = uses;
   }
 
   return [...map.values()].sort((a, b) => b.count - a.count);
@@ -1027,7 +1159,7 @@ function killsByPlayer(
     let lastHit: DamageEvent | null = null;
     for (const d of replay.damage) {
       if (d.target !== k.aid || d.time > k.time) continue;
-      if (!isPlayerSource(replay, d.source)) continue;
+      if (!isAllySource(replay, d.source)) continue;
       if (!lastHit || d.time > lastHit.time) lastHit = d;
     }
     if (lastHit?.source === playerAid) out.push(k);
@@ -1442,7 +1574,7 @@ export function mvpMatchups(
   for (const ev of replay.damage) {
     const view = bossAidToView.get(ev.target);
     if (view === undefined) continue;
-    if (!isPlayerSource(replay, ev.source)) continue;
+    if (!isAllySource(replay, ev.source)) continue;
     const key = `${view}::${ev.source}`;
     let b = buckets.get(key);
     if (!b) {
@@ -1480,8 +1612,12 @@ export function mvpMatchups(
       }
     }
     const player = replay.entities.get(b.playerAid);
-    const playerName = player?.name || `aid#${b.playerAid}`;
-    // Class only resolves for PCs — homun/merc have their own view IDs that
+    // A summon is named by species and owner ("Ardor (Yiuiz..)") — its own
+    // server name is usually a string-table code.
+    const playerName = player
+      ? allyName(replay, b.playerAid, resolveMob)
+      : `aid#${b.playerAid}`;
+    // Class only resolves for PCs — summons have their own view IDs that
     // aren't in the job DB. We leave class empty for them so the leaderboard
     // filter buckets them under "(Sem classe)" rather than under a bogus
     // `job#<id>` string.

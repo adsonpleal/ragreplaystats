@@ -8,6 +8,7 @@ import { skillIconUrl } from "../../sim/ragassets";
 import { primarySelectedPlayer } from "../../store/selectors";
 import { monsterName, playerName } from "./entityNames";
 import { mobDpUrl, resolveSkillName, skillDpUrl } from "./resolvers";
+import { getSkillParent } from "../../names";
 
 const SKILL_USES_BAR_LIMIT = 30;
 const KILLS_BAR_LIMIT = 30;
@@ -23,7 +24,9 @@ export function SkillUsesChart({ replay }: { replay: Replay }) {
   if (primary != null) filter.sourceAid = primary;
   if (selectedMonster != null) filter.targetAid = selectedMonster;
 
-  const rows = skillUsageByPlayer(replay, filter, (id) => resolveSkillName(db, id));
+  const rows = skillUsageByPlayer(replay, filter, (id) => resolveSkillName(db, id), getSkillParent).map(
+    (r) => ({ ...r, playerName: playerName(replay, r.playerAid) }),
+  );
   if (!rows.length) return null;
 
   const playerLabel = primary != null ? playerName(replay, primary) : null;
@@ -85,7 +88,9 @@ export function KillsChart({ replay }: { replay: Replay }) {
     if (ent?.view) filter.targetView = ent.view;
   }
 
-  const rows = killsByPlayerAndMob(replay, filter, (id) => db?.resolveMob(id) ?? t.mobFallback(id));
+  const rows = killsByPlayerAndMob(replay, filter, (id) => db?.resolveMob(id) ?? t.mobFallback(id)).map(
+    (r) => (r.playerAid ? { ...r, playerName: playerName(replay, r.playerAid) } : r),
+  );
   if (!rows.length) return null;
 
   const playerLabel = primary != null ? playerName(replay, primary) : null;

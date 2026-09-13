@@ -219,10 +219,74 @@ export function buildJobs(jobs, classes = []) {
   return out;
 }
 
-// skill.json — { "<id>": { name } }.
+// Skill ids the server sends that the client never labels, keyed by SKID id.
+//
+// Most are a second hit of a skill that does have a name: the explosion of
+// Flecha Escarlate (AG_CRIMSON_ARROW_ATK) arrives as its own damage packet, and so
+// does every swing of Espada Alada (DK_SERVANTWEAPON_ATK). They get the parent's
+// name plus what the hit is, and keep `parent` so a use of the skill that lands as
+// several packets counts as one. The list is every SKID in skillid.lub with no
+// client name whose constant is the parent's plus _ATK / _FIRE / _WATER / _WIND /
+// _GROUND / _POISON / _MELEE (the Warlock's sphere attacks are named
+// WL_SUMMON_ATK_* against WL_SUMMONFB & co., so those four are paired by hand).
+// Regenerate it from skillid.lub if a patch adds more.
+export const SUB_SKILLS = {
+  717: { parent: 716, suffix: "ataque" }, // NPC_MAXPAIN_ATK
+  726: { parent: 725, suffix: "ataque" }, // NPC_REVERBERATION_ATK
+  2215: { parent: 2214, suffix: "ataque" }, // WL_CHAINLIGHTNING_ATK
+  2218: { parent: 2217, suffix: "fogo" }, // WL_TETRAVORTEX_FIRE
+  2219: { parent: 2217, suffix: "água" }, // WL_TETRAVORTEX_WATER
+  2220: { parent: 2217, suffix: "vento" }, // WL_TETRAVORTEX_WIND
+  2221: { parent: 2217, suffix: "terra" }, // WL_TETRAVORTEX_GROUND
+  2225: { parent: 2222, suffix: "ataque" }, // WL_SUMMON_ATK_FIRE
+  2226: { parent: 2223, suffix: "ataque" }, // WL_SUMMON_ATK_WIND
+  2227: { parent: 2224, suffix: "ataque" }, // WL_SUMMON_ATK_WATER
+  2228: { parent: 2229, suffix: "ataque" }, // WL_SUMMON_ATK_GROUND
+  2415: { parent: 2414, suffix: "corpo a corpo" }, // WM_REVERBERATION_MELEE
+  2484: { parent: 2483, suffix: "ataque" }, // GN_CRAZYWEED_ATK
+  2491: { parent: 2490, suffix: "ataque" }, // GN_HELLS_PLANT_ATK
+  2516: { parent: 2418, suffix: "corpo a corpo" }, // WM_SEVERE_RAINSTORM_MELEE
+  5030: { parent: 5029, suffix: "ataque" }, // SU_SV_ROOTTWIST_ATK
+  5202: { parent: 5201, suffix: "ataque" }, // DK_SERVANTWEAPON_ATK
+  5209: { parent: 5208, suffix: "ataque" }, // DK_HACKANDSLASHER_ATK
+  5219: { parent: 5218, suffix: "ataque" }, // AG_VIOLENT_QUAKE_ATK
+  5223: { parent: 5222, suffix: "ataque" }, // AG_ALL_BLOOM_ATK
+  5226: { parent: 5225, suffix: "ataque" }, // AG_CRYSTAL_IMPACT_ATK
+  5231: { parent: 5230, suffix: "ataque" }, // AG_ASTRAL_STRIKE_ATK
+  5236: { parent: 5235, suffix: "explosão" }, // AG_CRIMSON_ARROW_ATK
+  5274: { parent: 5273, suffix: "ataque" }, // CD_ARBITRIUM_ATK
+  5382: { parent: 5316, suffix: "ataque" }, // ABC_CHAIN_REACTION_SHOT_ATK
+  5389: { parent: 5380, suffix: "fogo" }, // EM_ELEMENTAL_BUSTER_FIRE
+  5390: { parent: 5380, suffix: "água" }, // EM_ELEMENTAL_BUSTER_WATER
+  5391: { parent: 5380, suffix: "vento" }, // EM_ELEMENTAL_BUSTER_WIND
+  5392: { parent: 5380, suffix: "terra" }, // EM_ELEMENTAL_BUSTER_GROUND
+  5393: { parent: 5380, suffix: "veneno" }, // EM_ELEMENTAL_BUSTER_POISON
+};
+
+// Unlabelled skills with no parent to borrow from: the Biolo's summons attack with
+// NPC_BO_* skills, and Betelgeuse opens with NPC_KILLING_AURA. Named after what
+// the constant says, with the summon that uses it.
+export const SKILL_NAMES = {
+  783: "Aura Assassina", // NPC_KILLING_AURA
+  5384: "Arremesso de Pedra (Bárbaro)", // NPC_BO_THROWROCK
+  5385: "Ataque de Madeira (Bárbaro)", // NPC_BO_WOODEN_ATTACK
+  5386: "Uivo Infernal (Árvore Infernal)", // NPC_BO_HELL_HOWLING
+  5387: "Poeira Infernal (Árvore Infernal)", // NPC_BO_HELL_DUSTY
+  5388: "Poeira de Fada (Fada)", // NPC_BO_FAIRY_DUSTY
+};
+
+// skill.json — { "<id>": { name, parent? } }. The client's own names always win;
+// SUB_SKILLS and SKILL_NAMES only fill ids it leaves unnamed.
 export function buildSkills(skills) {
   const out = {};
   for (const s of skills) out[String(s.id)] = { name: s.name };
+  for (const [id, { parent, suffix }] of Object.entries(SUB_SKILLS)) {
+    if (out[id] || !out[parent]) continue;
+    out[id] = { name: `${out[parent].name} (${suffix})`, parent };
+  }
+  for (const [id, name] of Object.entries(SKILL_NAMES)) {
+    if (!out[id]) out[id] = { name };
+  }
   return out;
 }
 

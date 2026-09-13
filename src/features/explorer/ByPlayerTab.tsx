@@ -3,6 +3,7 @@ import {
   monstersDamagedByPlayer,
   type PlayerAgg,
   playersWhoDamaged,
+  summonsWhoDamaged,
 } from "../../aggregate/index";
 import { t } from "../../i18n";
 import { fmt } from "../../lib/format";
@@ -16,6 +17,7 @@ import { effectiveMaxHp, formatMonsterRow, hasCritData, playerClass, playerLevel
 import { KillsChart, SkillUsesChart } from "./ModeCharts";
 import { mobDpUrl, resolveSkillName } from "./resolvers";
 import { SkillTable } from "./SkillTables";
+import { SummonsTable } from "./SummonsTable";
 
 /** Drag-select matchup timelines, one per selected player, locked to a shared scale. */
 function MatchupTimelines({ replay, monsterAid }: { replay: Replay; monsterAid: number }) {
@@ -107,6 +109,7 @@ export function ByPlayerTab({ replay }: { replay: Replay }) {
   const crit = hasCritData(replay);
 
   const players = playersWhoDamaged(replay);
+  const summons = summonsWhoDamaged(replay);
   const playerCols: Column<PlayerAgg>[] = [
     { key: "name", label: t.colPlayer },
     {
@@ -179,6 +182,23 @@ export function ByPlayerTab({ replay }: { replay: Replay }) {
           }}
         />
       </div>
+
+      {summons.length > 0 && (
+        <div>
+          <h2 className="section-title">{t.summonsHeading}</h2>
+          <p className="section-hint">{t.summonsHint}</p>
+          <SummonsTable
+            replay={replay}
+            rows={summons}
+            killsLabel={t.colKills}
+            showMonstersHit
+            options={{
+              onRowClick: (row) => togglePlayer(row.aid),
+              isSelected: (row) => selectedPlayers.has(row.aid),
+            }}
+          />
+        </div>
+      )}
 
       {primary != null && (
         <div>

@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import { t } from "../../i18n";
 import type { Replay } from "rrfparser";
 import { useAppStore } from "../../store/useAppStore";
-import { monsterName, playerName } from "./entityNames";
+import { isSummonAid, monsterName, playerName } from "./entityNames";
 
 type Crumb = { label: string; value: string; clear: () => void };
 
@@ -19,7 +19,7 @@ export function Breadcrumb({ replay }: { replay: Replay }) {
   if (mode === "byPlayer") {
     for (const aid of selectedPlayers) {
       crumbs.push({
-        label: t.crumbPlayer,
+        label: isSummonAid(replay, aid) ? t.crumbSummon : t.crumbPlayer,
         value: playerName(replay, aid),
         clear: () => {
           const next = new Set(selectedPlayers);

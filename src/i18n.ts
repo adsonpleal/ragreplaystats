@@ -121,6 +121,7 @@ export const t = {
 
   // Breadcrumb
   crumbPlayer: "Jogador",
+  crumbSummon: "Invocação",
   crumbMonster: "Monstro",
   clear: "Limpar",
 
@@ -143,6 +144,10 @@ export const t = {
   monstersDamagedBy: (name: string) => `Monstros atacados por ${name}`,
   monstersDamagedByHint:
     "Clique em um monstro para ver o gráfico de dano deste confronto.",
+  summonsHeading: "Invocações",
+  summonsHint:
+    "Homúnculos, mercenários, elementais, ABRs, plantas e outras invocações. Clique em uma para ver os monstros que ela danificou.",
+  summonsWhoDamaged: (monster: string) => `Invocações que atacaram ${monster}`,
   matchupTitle: (player: string, monster: string) => `${player} vs ${monster}`,
   skillsInMatchup: "Habilidades usadas neste confronto",
   matchupTimelineCardTitle: (player: string) => `Linha do tempo de dano — ${player}`,
@@ -205,6 +210,17 @@ export const t = {
 
   // Table column labels
   colPlayer: "Jogador",
+  colSummon: "Invocação",
+  colSummonKind: "Tipo",
+  colOwner: "Dono",
+  summonKind: {
+    homun: "Homúnculo",
+    merc: "Mercenário",
+    elem: "Elemental",
+    abr: "ABR",
+    bionic: "Planta",
+    mob: "Invocação",
+  } as Record<string, string>,
   colClass: "Classe",
   colLevel: "Nível",
   colMonster: "Monstro",

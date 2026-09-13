@@ -1,7 +1,8 @@
-import type { MonsterAgg } from "../../aggregate/index";
+import { allyName, isSummonEntity, type MonsterAgg, summonName } from "../../aggregate/index";
 import type { ReferenceDb } from "../../db/loader";
 import { t } from "../../i18n";
 import type { Replay } from "rrfparser";
+import { getMonsterName } from "../../names";
 
 /** Best monster name: DP species name → server-reported instance name → fallback. */
 export function monsterName(replay: Replay, db: ReferenceDb | null, aid: number): string {
@@ -15,9 +16,33 @@ export function monsterName(replay: Replay, db: ReferenceDb | null, aid: number)
   return t.mobFallback(ent.view || aid);
 }
 
+/** A player's name, or a summon's with its owner's — "Ardor (Yiuiz..)". */
 export function playerName(replay: Replay, aid: number): string {
+  return allyName(replay, aid, getMonsterName);
+}
+
+/** A summon's name alone, for the summons table where the owner has a column. */
+export function summonDisplayName(replay: Replay, aid: number): string {
   const ent = replay.entities.get(aid);
-  return ent?.name || `#${aid}`;
+  return ent ? summonName(ent, getMonsterName) : `#${aid}`;
+}
+
+/** Owner's name, or "—" when the recording can't say. */
+export function summonOwnerName(replay: Replay, aid: number): string {
+  const owner = replay.entities.get(aid)?.ownerAid;
+  if (owner == null) return t.none;
+  return replay.entities.get(owner)?.name || `#${owner}`;
+}
+
+/** "Elemental", "ABR", … — a skill-made monster is just "Invocação". */
+export function summonKindLabel(replay: Replay, aid: number): string {
+  const kind = replay.entities.get(aid)?.kind ?? "";
+  return t.summonKind[kind] ?? t.none;
+}
+
+export function isSummonAid(replay: Replay, aid: number): boolean {
+  const ent = replay.entities.get(aid);
+  return !!ent && isSummonEntity(ent);
 }
 
 /**

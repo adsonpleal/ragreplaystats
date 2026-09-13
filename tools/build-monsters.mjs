@@ -8,13 +8,13 @@
 // ragassets derives it from the client's navi data (mob id ↔ aegis name) and
 // localizes it, then enriches each mob with HP/level/etc. That replaces the old
 // Divine Pride scrape (tools/scrape-dp.mjs, now removed) — no runtime DP calls,
-// no scraping here. We extract only what the UI consumes (name/hp/level); the
-// rest of mobs.json (race, size, property, exp, boss/mvp flags, aegisId) is
+// no scraping here. We extract only what the UI consumes (name/hp/level/mvp); the
+// rest of mobs.json (race, size, property, exp, boss flag, aegisId) is
 // left upstream rather than bundled into the site.
 //
 // mobs.json shape: a JSON array of objects, e.g.
 //   { "id": 1002, "aegisId": "PORING", "name": "Poring", "hp": 55, "level": 1, … }
-// `name` is the localized (pt-BR) display name.
+// `name` is the localized (pt-BR) display name; `mvp` is carried through when true.
 //
 // Usage:
 //   node tools/build-monsters.mjs                 # fetch from ragassets, write public/db/monster.json
@@ -52,7 +52,31 @@ for (const e of arr) {
   // numerics to 0 rather than dropping the key, matching the old file's shape.
   rec.hp = Number.isFinite(e.hp) ? Math.round(e.hp) : 0;
   rec.level = Number.isFinite(e.level) ? Math.round(e.level) : 0;
+  // Only written when true, so the other ~2400 rows don't pay for the key. It
+  // tells a phased MVP's respawns (merged into one fight) from boss-flagged adds
+  // that spawn one after another — see src/aggregate/bossPhases.ts.
+  if (e.mvp === true) rec.mvp = true;
   out[String(e.id)] = rec;
+}
+
+// Monsters we pin ourselves, written over whatever the source says. Betelgeuse
+// and its Alma Morta were missing from ragassets' mobs.json when they first showed
+// up in replays (its refresh was blocked on the divine-pride crawler), and a sync
+// from it would silently drop them again — taking the merged-phases row, the HP
+// column and the MVP flag with them. Values are RagnaPlace's laro-pt records;
+// Betelgeuse's 2,000,000,000 HP matches divine-pride too. Once ragassets serves
+// the same numbers an entry here is redundant and can go — the log below says
+// when upstream disagrees.
+const MONSTER_OVERRIDE = {
+  20994: { name: "Betelgeuse", hp: 2_000_000_000, level: 250, mvp: true },
+  20995: { name: "Alma Morta", hp: 10_000, level: 250 },
+};
+for (const [id, rec] of Object.entries(MONSTER_OVERRIDE)) {
+  const upstream = out[id];
+  if (upstream && JSON.stringify(upstream) !== JSON.stringify(rec)) {
+    console.log(`override ${id}: ${JSON.stringify(upstream)} → ${JSON.stringify(rec)}`);
+  }
+  out[id] = rec;
 }
 
 const dir = dirname(outPath);
