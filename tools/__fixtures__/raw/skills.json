@@ -10,5 +10,14 @@
   {
     "id": 2001,
     "name": "Encantar Lâmina"
+  },
+  {
+    "id": 5235,
+    "name": "Flecha Escarlate"
+  },
+  {
+    "id": 5236,
+    "name": "Flecha Escarlate (explosão)",
+    "parent": 5235
   }
 ]

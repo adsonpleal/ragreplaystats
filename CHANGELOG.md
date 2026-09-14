@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-09-14
+
+- **Juntar as fases do Betelgeuse virou uma opção.** Desde o último ajuste, as três fases do Betelgeuse apareciam sempre somadas numa linha só, e não havia como ver o dano de cada fase separado. Agora o padrão voltou a ser uma linha por fase, e os replays com o Betelgeuse ganham a caixa **"Agrupar fases dos MVPs"** ao lado do título da lista de monstros, em "Por monstro" e em "Por jogador". Marcada, as fases viram um monstro só, com o tempo até o abate contado da primeira fase até a morte, e os gráficos de dano e de HP do monstro, e a linha do tempo de cada jogador contra ele, mostram uma linha tracejada onde cada fase começa ("Fase 2", "Fase 3").
+- **137 habilidades ganharam nome.** Habilidades que o cliente não nomeia apareciam como "skill#686". Entre elas estão as que o Betelgeuse usa entre uma fase e outra (**Invencibilidade (desativar)**, **Alívio (ativar)**, **Alívio (desativar)** e **Quebra Aleatória**) e as habilidades básicas de monstro, como **Sopro de Fogo**, **Quebrar Arma** e **Ataque Amaldiçoante**. A **Vigília Noturna** agora separa a metralhadora da espingarda. Golpes extras como a Chuva Estelar e o Magni Lumen passam a contar como um uso da habilidade de origem em "Habilidades mais usadas".
+
 ## 2026-09-13
 
 - **Invocações ganharam uma tabela própria em "Por jogador".** Homúnculos, mercenários, elementais, os ABRs do Engenheiro, as plantas do Cientista (Bárbaro, Fada, Vinha, Árvore Infernal) e as invocações de habilidade, como a Artilharia do Mecânico e o Clone das Sombras do Oboro, aparecem numa tabela logo abaixo dos jogadores, com o tipo e o **dono** de cada uma. Elas funcionam como um jogador: clicar numa mostra os monstros que ela atacou, o confronto com cada um e as habilidades que usou. Nos gráficos, aparecem com o nome do dono, como em "Ardor (Fulano)". Antes, os ABRs e as plantas eram lidos como monstros, com "HP máx. 1" e zero atacantes. Reportado por um usuário anônimo.

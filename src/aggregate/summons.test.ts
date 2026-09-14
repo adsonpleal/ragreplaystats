@@ -1,6 +1,6 @@
 import type { DamageEvent, Entity, Replay, SkillUse } from "rrfparser";
 import { describe, expect, it } from "vitest";
-import { bossPhaseAliases, mergeBossPhases } from "./bossPhases";
+import { findBossPhases, mergeBossPhases, NO_BOSS_PHASES } from "./bossPhases";
 import {
   allyName,
   monstersWhoTookDamage,
@@ -134,16 +134,16 @@ describe("skillUsageByPlayer", () => {
 });
 
 describe("mergeBossPhases", () => {
-  const isMvp = (view: number) => view === 20994;
-  const boss = (aid: number, firstSeenMs: number, view = 20994) =>
+  const BETELGEUSE = 20994;
+  const boss = (aid: number, firstSeenMs: number, view = BETELGEUSE) =>
     ent(aid, "mob", { view, isBoss: true, firstSeenMs, maxHp: -1 });
 
-  it("does not chain boss-flagged adds that are not an MVP species", () => {
+  it("does not chain monsters that are not groupable", () => {
     // Naght Sieger's Espinho: boss-flagged, one after another, rarely killed.
     const adds = replayOf([ent(1, "pc"), boss(101, 0, 20581), boss(102, 5000, 20581), boss(103, 9000, 20581)], {
       damage: [hit(1000, 1, 101, 10), hit(6000, 1, 102, 10), hit(10_000, 1, 103, 10)],
     });
-    expect(bossPhaseAliases(adds, isMvp).size).toBe(0);
+    expect(findBossPhases(adds).aliases.size).toBe(0);
   });
 
   // The shape of the Betelgeuse recording: three AIDs, a teleport between each,
@@ -161,11 +161,12 @@ describe("mergeBossPhases", () => {
   });
 
   it("folds the phases into the first AID", () => {
-    expect([...bossPhaseAliases(betel, isMvp)]).toEqual([
+    const phases = findBossPhases(betel);
+    expect([...phases.aliases]).toEqual([
       [52200, 47766],
       [55538, 47766],
     ]);
-    const merged = mergeBossPhases(betel, isMvp);
+    const merged = mergeBossPhases(betel, phases);
     const rows = monstersWhoTookDamage(merged);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ aid: 47766, totalReceived: 1200, hits: 6 });
@@ -173,9 +174,14 @@ describe("mergeBossPhases", () => {
     expect(merged.kills[0].aid).toBe(47766);
   });
 
+  it("records when each later phase appeared", () => {
+    expect([...findBossPhases(betel).phaseStarts]).toEqual([[47766, [29575, 55773]]]);
+  });
+
   it("leaves the decoded replay alone", () => {
-    mergeBossPhases(betel, isMvp);
+    mergeBossPhases(betel, findBossPhases(betel));
     expect(betel.damage[5].target).toBe(55538);
+    expect(monstersWhoTookDamage(betel)).toHaveLength(3);
   });
 
   it("does not chain a boss that was killed to the next one of its kind", () => {
@@ -183,25 +189,27 @@ describe("mergeBossPhases", () => {
       damage: [hit(1000, 1, 101, 10), hit(25_000, 1, 102, 10)],
       kills: [{ time: 1000, aid: 101, kind: 1 }],
     });
-    expect(bossPhaseAliases(farm, isMvp).size).toBe(0);
+    expect(findBossPhases(farm).aliases.size).toBe(0);
   });
 
   it("does not chain two of the same boss fought at the same time", () => {
     const pair = replayOf([ent(1, "pc"), boss(101, 0), boss(102, 500)], {
       damage: [hit(1000, 1, 101, 10), hit(1100, 1, 102, 10), hit(2000, 1, 101, 10)],
     });
-    expect(bossPhaseAliases(pair, isMvp).size).toBe(0);
+    expect(findBossPhases(pair).aliases.size).toBe(0);
   });
 
   it("does not chain a boss found long after the last one was left", () => {
     const later = replayOf([ent(1, "pc"), boss(101, 0), boss(102, 200_000)], {
       damage: [hit(1000, 1, 101, 10), hit(200_500, 1, 102, 10)],
     });
-    expect(bossPhaseAliases(later, isMvp).size).toBe(0);
+    expect(findBossPhases(later).aliases.size).toBe(0);
   });
 
   it("returns the same object when there is nothing to merge", () => {
     const plain = replayOf([ent(1, "pc"), ent(2, "mob", { view: 1002 })]);
-    expect(mergeBossPhases(plain, isMvp)).toBe(plain);
+    const phases = findBossPhases(plain);
+    expect(phases).toBe(NO_BOSS_PHASES);
+    expect(mergeBossPhases(plain, phases)).toBe(plain);
   });
 });

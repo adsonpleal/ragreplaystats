@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { isMonsterMvp, prefetchReplay } from "../names";
+import { prefetchReplay } from "../names";
 import type { ReferenceDb } from "../db/loader";
 import { fetchReplay, uploadReplay } from "../api";
 import { invalidate as invalidateSummariesCache } from "../replay-summaries";
@@ -7,7 +7,7 @@ import { buildReplaySummary } from "../features/replay/replaySummary";
 import { t } from "../i18n";
 import { decodeReplay } from "rrfparser";
 import type { Range } from "../aggregate/index";
-import { mergeBossPhases } from "../aggregate/bossPhases";
+import { type BossPhases, findBossPhases, mergeBossPhases, NO_BOSS_PHASES } from "../aggregate/bossPhases";
 import type { Replay } from "rrfparser";
 
 export type Mode = "byPlayer" | "byMonster" | "stats" | "dpsAnalysis";
@@ -22,12 +22,16 @@ export type DragRange = { startMs: number; endMs: number } | null;
  */
 export type AppState = {
   /**
-   * The replay the explorer reads — a phased MVP folded into one AID once the
-   * monster DB (which says what is an MVP) has loaded; the decoded one until then.
+   * The replay the explorer reads — the decoded one, or with each groupable
+   * monster's phases folded into one AID while `groupPhases` is on.
    */
   replay: Replay | null;
   /** As decoded. The map viewer needs every phase under its own AID. */
   rawReplay: Replay | null;
+  /** The groupable monsters' phase chains in `rawReplay`; empty when it has none. */
+  bossPhases: BossPhases;
+  /** Whether the explorer shows a groupable monster's phases as one monster. */
+  groupPhases: boolean;
   db: ReferenceDb | null;
   /**
    * Bumped whenever name data lands (reference DB load, or per-replay
@@ -67,6 +71,7 @@ export type AppState = {
   clearReplay: () => void;
   setStatus: (msg: string) => void;
   setShareId: (id: string) => void;
+  setGroupPhases: (on: boolean) => void;
 
   setMode: (mode: Mode) => void;
   /** Toggle a player in/out of the multi-select; clears the monster if emptied. */
@@ -92,6 +97,8 @@ const CLEARED_SELECTION = {
 export const useAppStore = create<AppState>((set, get) => ({
   replay: null,
   rawReplay: null,
+  bossPhases: NO_BOSS_PHASES,
+  groupPhases: false,
   db: null,
   namesVersion: 0,
   mode: "stats",
@@ -114,11 +121,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadReplayFromBytes: (buf, fileName, shareId) => {
     const t0 = performance.now();
     const rawReplay = decodeReplay(buf);
-    const replay = mergeBossPhases(rawReplay, isMonsterMvp);
     const ms = (performance.now() - t0).toFixed(0);
     set({
-      replay,
+      replay: rawReplay,
       rawReplay,
+      bossPhases: findBossPhases(rawReplay),
+      groupPhases: false,
       ...CLEARED_SELECTION,
       selectedPlayers: new Set(),
       shareId,
@@ -127,8 +135,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       replayBytes: new Uint8Array(buf).slice(),
       replayFileName: fileName,
       status: t.decoded(
-        replay.totals.handledPackets,
-        replay.totals.packetCount,
+        rawReplay.totals.handledPackets,
+        rawReplay.totals.packetCount,
         ms,
         fileName,
       ),
@@ -138,15 +146,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // this is still the active replay.
     void prefetchReplay(rawReplay).then(() => {
       if (get().rawReplay !== rawReplay) return;
-      // The merge needs the MVP flags, which only just arrived on a first visit.
-      const merged = mergeBossPhases(rawReplay, isMonsterMvp);
-      set((s) => ({
-        namesVersion: s.namesVersion + 1,
-        // Only when the load-time merge couldn't run (no DB yet) and now can.
-        ...(s.replay === rawReplay && merged !== rawReplay
-          ? { replay: merged, selectedMonster: null, selectedMobSkillTarget: null }
-          : {}),
-      }));
+      set((s) => ({ namesVersion: s.namesVersion + 1 }));
     });
   },
 
@@ -188,6 +188,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       replay: null,
       rawReplay: null,
+      bossPhases: NO_BOSS_PHASES,
+      groupPhases: false,
       ...CLEARED_SELECTION,
       selectedPlayers: new Set(),
       shareId: null,
@@ -199,6 +201,20 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setStatus: (status) => set({ status }),
   setShareId: (shareId) => set({ shareId }),
+
+  setGroupPhases: (groupPhases) => {
+    const { rawReplay, bossPhases, selectedMonster } = get();
+    if (!rawReplay) return;
+    set({
+      groupPhases,
+      replay: groupPhases ? mergeBossPhases(rawReplay, bossPhases) : rawReplay,
+      // A later phase no longer has a row of its own once grouped; follow it to
+      // the first. Ungrouping keeps the first phase, which still exists.
+      ...(groupPhases && selectedMonster != null
+        ? { selectedMonster: bossPhases.aliases.get(selectedMonster) ?? selectedMonster }
+        : {}),
+    });
+  },
 
   setMode: (mode) =>
     set({

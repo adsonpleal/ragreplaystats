@@ -11,9 +11,10 @@ import type { Replay } from "rrfparser";
 import { type Column, DataTable } from "../../ui/DataTable";
 import { DpsScatter } from "../../ui/DpsScatter";
 import { useAppStore } from "../../store/useAppStore";
-import { primarySelectedPlayer } from "../../store/selectors";
+import { primarySelectedPlayer, usePhaseStarts } from "../../store/selectors";
 import { ClassCell } from "./cells";
 import { effectiveMaxHp, formatMonsterRow, hasCritData, playerClass, playerLevel, playerName } from "./entityNames";
+import { GroupPhasesToggle } from "./GroupPhasesToggle";
 import { KillsChart, SkillUsesChart } from "./ModeCharts";
 import { mobDpUrl, resolveSkillName } from "./resolvers";
 import { SkillTable } from "./SkillTables";
@@ -25,6 +26,7 @@ function MatchupTimelines({ replay, monsterAid }: { replay: Replay; monsterAid: 
   const selectedPlayers = useAppStore((s) => s.selectedPlayers);
   const compareRange = useAppStore((s) => s.byPlayerCompareRange);
   const setCompareRange = useAppStore((s) => s.setByPlayerCompareRange);
+  const phaseStarts = usePhaseStarts(monsterAid);
 
   // Lock all cards to the same x + y scale so the comparison is honest.
   let xMin = Number.POSITIVE_INFINITY;
@@ -70,6 +72,7 @@ function MatchupTimelines({ replay, monsterAid }: { replay: Replay; monsterAid: 
               onSelect={setCompareRange}
               xRangeMs={xRange}
               yMax={yMaxOrNull}
+              phaseStartsMs={phaseStarts}
             />
           </section>
         );
@@ -202,7 +205,10 @@ export function ByPlayerTab({ replay }: { replay: Replay }) {
 
       {primary != null && (
         <div>
-          <h2 className="section-title">{t.monstersDamagedBy(playerName(replay, primary))}</h2>
+          <div className="section-title-row">
+            <h2 className="section-title">{t.monstersDamagedBy(playerName(replay, primary))}</h2>
+            <GroupPhasesToggle />
+          </div>
           <p className="section-hint">{t.monstersDamagedByHint}</p>
           <DataTable
             cols={monsterCols}

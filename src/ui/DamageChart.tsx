@@ -3,12 +3,23 @@ import type uPlot from "uplot";
 import type { AlignedData, Options } from "uplot";
 import type { DamageSeries } from "../aggregate/index";
 import { palette, useDarkMode } from "./palette";
+import { drawPhaseMarkers } from "./phaseMarkers";
 import { UplotChart } from "./UplotChart";
 
-/** Multi-series "damage over time" chart — one line per player/source. */
-export function DamageChart({ multi }: { multi: DamageSeries }) {
+/**
+ * Multi-series "damage over time" chart — one line per player/source, with a
+ * line at each of `phaseStartsMs` (a grouped monster's later phases).
+ */
+export function DamageChart({
+  multi,
+  phaseStartsMs = [],
+}: {
+  multi: DamageSeries;
+  phaseStartsMs?: readonly number[];
+}) {
   const dark = useDarkMode();
   const labelsKey = multi.series.map((s) => s.name).join("|");
+  const phasesKey = phaseStartsMs.join(",");
 
   const options = useMemo<Omit<Options, "width">>(() => {
     const pal = palette(dark);
@@ -28,9 +39,10 @@ export function DamageChart({ multi }: { multi: DamageSeries }) {
       axes: [{ stroke }, { stroke }],
       scales: { x: { time: false } },
       legend: { live: true },
+      hooks: { draw: [(u) => drawPhaseMarkers(u, phaseStartsMs, dark)] },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dark, labelsKey]);
+  }, [dark, labelsKey, phasesKey]);
 
   const data = useMemo<AlignedData>(
     () => [multi.ts.map((t) => t / 1000), ...multi.series.map((s) => s.damage)] as AlignedData,

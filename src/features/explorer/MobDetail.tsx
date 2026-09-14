@@ -14,6 +14,7 @@ import { type Column, DataTable } from "../../ui/DataTable";
 import { LineChart } from "../../ui/LineChart";
 import { SummaryCard, type SummaryCell } from "../../ui/SummaryCard";
 import { useAppStore } from "../../store/useAppStore";
+import { usePhaseStarts } from "../../store/selectors";
 import { ClassCell, SkillCell } from "./cells";
 import { effectiveMaxHp, hasCritData, monsterName, playerClass, playerLevel, playerName } from "./entityNames";
 import { mobDpUrl, pct, resolveSkillName, skillDpUrl } from "./resolvers";
@@ -114,6 +115,7 @@ export function MonsterOverview({ replay, mobAid }: { replay: Replay; mobAid: nu
 
 export function MobHpCurve({ replay, mobAid }: { replay: Replay; mobAid: number }) {
   const db = useAppStore((s) => s.db);
+  const phaseStarts = usePhaseStarts(mobAid);
   const ent = replay.entities.get(mobAid);
   // Only show if the server reported HP at some point — otherwise the curve is a
   // misleading straight line from "full" to 0.
@@ -137,6 +139,7 @@ export function MobHpCurve({ replay, mobAid }: { replay: Replay; mobAid: number 
             { label: t.hpMaxSeriesLabel, values: maxValues, paletteIndex: 7 },
           ]}
           height={220}
+          phaseStartsMs={phaseStarts}
         />
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type uPlot from "uplot";
 import type { AlignedData, Options } from "uplot";
 import { palette, useDarkMode } from "./palette";
+import { drawPhaseMarkers } from "./phaseMarkers";
 import { UplotChart } from "./UplotChart";
 
 export type LineSeries = {
@@ -15,14 +16,18 @@ export function LineChart({
   series,
   height = 240,
   liveLegend = true,
+  phaseStartsMs = [],
 }: {
   xs: number[];
   series: LineSeries[];
   height?: number;
   liveLegend?: boolean;
+  /** A grouped monster's later phases — drawn as labelled vertical lines. */
+  phaseStartsMs?: readonly number[];
 }) {
   const dark = useDarkMode();
   const labelsKey = series.map((s, i) => `${s.label}:${s.paletteIndex ?? i}`).join("|");
+  const phasesKey = phaseStartsMs.join(",");
 
   const options = useMemo<Omit<Options, "width">>(() => {
     const pal = palette(dark);
@@ -41,9 +46,10 @@ export function LineChart({
       axes: [{ stroke }, { stroke }],
       scales: { x: { time: false } },
       legend: { live: liveLegend },
+      hooks: { draw: [(u) => drawPhaseMarkers(u, phaseStartsMs, dark)] },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dark, labelsKey, height, liveLegend]);
+  }, [dark, labelsKey, height, liveLegend, phasesKey]);
 
   const data = useMemo<AlignedData>(
     () => [xs.map((t) => t / 1000), ...series.map((s) => s.values)] as AlignedData,

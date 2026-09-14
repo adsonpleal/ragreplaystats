@@ -16,9 +16,9 @@ import type { Replay } from "rrfparser";
 import { dbUrl } from "./db/manifest";
 
 type ItemEntry = { name: string; view?: number };
-type MonsterEntry = { name: string; hp: number; level: number; mvp?: true };
+type MonsterEntry = { name: string; hp: number; level: number };
 // `parent` marks a second hit the client doesn't label (Flecha Escarlate's
-// explosion) — see SUB_SKILLS in tools/sync-db.mjs.
+// explosion) — see buildSkills in tools/sync-db.mjs.
 type SkillEntry = { name: string; parent?: number };
 // EFST (status-effect) id -> display name, keyed like the status-change packets.
 type StatusEntry = { name: string };
@@ -118,10 +118,6 @@ export function getMonsterName(id: number): string | null {
 
 export function getMonsterHp(id: number): number {
   return monsters?.get(id)?.hp ?? 0;
-}
-
-export function isMonsterMvp(id: number): boolean {
-  return monsters?.get(id)?.mvp === true;
 }
 
 export function getSkillName(id: number): string | null {

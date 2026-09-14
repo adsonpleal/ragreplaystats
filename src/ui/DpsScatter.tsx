@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import uPlot, { type Options } from "uplot";
 import { useDarkMode } from "./palette";
+import { drawPhaseMarkers } from "./phaseMarkers";
 
 const ACCENT_LIGHT = "#c5462a";
 const ACCENT_DARK = "#ff7a55";
@@ -26,7 +27,8 @@ function escapeHtml(s: string): string {
 /**
  * Drag-selectable scatter for the DPS Analysis tab and the per-player matchup
  * cards: damage events as filled circles + chat/skill markers as vertical bars,
- * with a shared hover tooltip. uPlot is recreated when data/theme/range/locked
+ * with a shared hover tooltip, and a dashed line at each of `phaseStartsMs` (a
+ * grouped monster's later phases). uPlot is recreated when data/theme/range/locked
  * axes change; `onSelect` is deduped against the current range.
  */
 export function DpsScatter({
@@ -35,6 +37,7 @@ export function DpsScatter({
   onSelect,
   xRangeMs = null,
   yMax = null,
+  phaseStartsMs = [],
   className = "stats-chart",
 }: {
   data: DpsScatterData;
@@ -42,6 +45,7 @@ export function DpsScatter({
   onSelect: (range: Range) => void;
   xRangeMs?: Range;
   yMax?: number | null;
+  phaseStartsMs?: readonly number[];
   className?: string;
 }) {
   const dark = useDarkMode();
@@ -53,6 +57,7 @@ export function DpsScatter({
 
   const rangeKey = range ? `${range.startMs}-${range.endMs}` : "null";
   const xKey = xRangeMs ? `${xRangeMs.startMs}-${xRangeMs.endMs}` : "auto";
+  const phasesKey = phaseStartsMs.join(",");
   const dataKey = `${data.damage.length}:${data.chat.length}:${data.damage[0]?.time ?? 0}:${data.damage[data.damage.length - 1]?.time ?? 0}`;
 
   useEffect(() => {
@@ -178,6 +183,7 @@ export function DpsScatter({
         draw: [
           (u) => {
             drawChatBars(u);
+            drawPhaseMarkers(u, phaseStartsMs, dark);
             drawDamageDots(u);
           },
         ],
@@ -299,7 +305,7 @@ export function DpsScatter({
       tooltip.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey, dark, rangeKey, xKey, yMax]);
+  }, [dataKey, dark, rangeKey, xKey, yMax, phasesKey]);
 
   return <div ref={hostRef} className={className} />;
 }

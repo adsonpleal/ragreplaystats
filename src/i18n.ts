@@ -118,6 +118,10 @@ export const t = {
   modeByMonster: "Por monstro",
   modeStats: "Estatísticas",
   modeDpsAnalysis: "Análise de DPS",
+  groupPhasesLabel: "Agrupar fases dos MVPs",
+  groupPhasesHint:
+    "Alguns MVPs, como o Betelgeuse, renascem com outro código a cada fase. Marcado, as fases viram um monstro só, e os gráficos dele mostram uma linha onde cada fase começa.",
+  phaseMarker: (phase: number) => `Fase ${phase}`,
 
   // Breadcrumb
   crumbPlayer: "Jogador",

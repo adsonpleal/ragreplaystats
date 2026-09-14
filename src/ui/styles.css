@@ -696,6 +696,35 @@ main > section {
   color: var(--fg);
 }
 
+/* A section title with a control beside it; the row carries the title's margin. */
+.section-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.section-title-row .section-title {
+  margin: 0;
+}
+
+.group-phases-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-phases-toggle input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* Equipment icon cards */
 .equip-groups {
   display: flex;

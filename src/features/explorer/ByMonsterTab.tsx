@@ -13,6 +13,7 @@ import { BarChart } from "../../ui/BarChart";
 import { DamageChart } from "../../ui/DamageChart";
 import { type Column, DataTable } from "../../ui/DataTable";
 import { useAppStore } from "../../store/useAppStore";
+import { usePhaseStarts } from "../../store/selectors";
 import { ClassCell } from "./cells";
 import {
   effectiveMaxHp,
@@ -25,6 +26,7 @@ import {
   playerName,
 } from "./entityNames";
 import { MobHpCurve, MobSkills, MobVictims, MonsterOverview } from "./MobDetail";
+import { GroupPhasesToggle } from "./GroupPhasesToggle";
 import { KillsChart, SkillUsesChart } from "./ModeCharts";
 import { mobDpUrl } from "./resolvers";
 import { SkillByPlayerTable } from "./SkillTables";
@@ -45,6 +47,7 @@ function MonsterDetail({ replay, mobAid }: { replay: Replay; mobAid: number }) {
   const db = useAppStore((s) => s.db);
   const crit = hasCritData(replay);
   const monsterLabel = monsterName(replay, db, mobAid);
+  const phaseStarts = usePhaseStarts(mobAid);
 
   const events = replay.damage.filter((d) => d.target === mobAid);
   const playerEvents = events.filter((d) => isAllySource(replay, d.source));
@@ -105,7 +108,10 @@ function MonsterDetail({ replay, mobAid }: { replay: Replay; mobAid: number }) {
       )}
       <div>
         <h2 className="section-title">{t.damageOverTimeMultiTitle}</h2>
-        <DamageChart multi={damageTimelineMulti(replay, playerEvents, pickBucketMs(playerEvents))} />
+        <DamageChart
+          multi={damageTimelineMulti(replay, playerEvents, pickBucketMs(playerEvents))}
+          phaseStartsMs={phaseStarts}
+        />
       </div>
       <MobHpCurve replay={replay} mobAid={mobAid} />
     </>
@@ -155,7 +161,10 @@ export function ByMonsterTab({ replay }: { replay: Replay }) {
   return (
     <>
       <div>
-        <h2 className="section-title">{t.monstersHeading}</h2>
+        <div className="section-title-row">
+          <h2 className="section-title">{t.monstersHeading}</h2>
+          <GroupPhasesToggle />
+        </div>
         <p className="section-hint">{t.monstersHint}</p>
         <DataTable
           cols={monsterCols}
