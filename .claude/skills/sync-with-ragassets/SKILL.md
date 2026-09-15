@@ -59,8 +59,8 @@ Then read the diff. **A sync that changes nothing is a valid result** — it mea
 ragassets hasn't been regenerated since last time. What you must never see is a
 file *shrinking*: `git diff --stat` counts lines, and these are single-line
 compact JSON files, so use the entry counts the scripts print instead. Current
-baseline: item 13742, job 158, skill 1558, randomopt 252, status 704, monster
-2732. Growth of a few dozen after a client update is normal; a collapse means
+baseline: item 14108, job 158, skill 1732, randomopt 252, status 704, monster
+2734. Growth of a few dozen after a client update is normal; a collapse means
 `/raw` was rebuilt from a broken client dump.
 
 To summarize what actually changed for the changelog:

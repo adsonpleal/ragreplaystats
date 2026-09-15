@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-09-15
+
+- Bases de nomes atualizadas com o último patch do cliente: **262 itens novos**. Entre eles estão o equipamento do **Grupo do Éden** e do **Grupo do Éden Avançado** (armas de todas as classes, armaduras, chapéus, capas, sapatos e acessórios, além das peças sombrias), as armaduras, botas e mantos **Rúnicos de Varmundt** com os encantamentos de Varmundt (Poder, Sabedoria, Concentração, Fatalidade, Recuperação e Vigor), as **Runas** e os **Fragmentos de Runa** (Planície, Chama, Gelo e Morte), a **Magia Cinzenta** de cada estilo, as **Armaduras Desconhecidas** de cada atributo e os equipamentos **Gravados** (Uniforme de Orleans, Armadura de Escamas de Naga, Manto da Sobrevivência e outros). Também entraram a **Lança Celestial**, o **Livro Infernal**, a **Cauda de Gato Infernal**, os artefatos da **Independência**, as caixas de ovos e a colaboração do **Baby Shark** (visuais, pacotes, cartas, moeda e comidas).
+- **51 itens tiveram o nome corrigido.** Toda a linha **Pænitentia** passou a ser escrita "Paenitentia", as Lágrimas da Fúria viraram **Lágrima Temporal Forte** e **Lágrima Temporal Fraca**, o Baú de Reforma Primordial virou **Reformador Primordial Selecionável**, e alguns visuais ganharam a marca **[Visual]** (Naga Tailandesa → [Visual] Naga de Ayothaya).
+
 ## 2026-09-14
 
 - **Juntar as fases do Betelgeuse virou uma opção.** Desde o último ajuste, as três fases do Betelgeuse apareciam sempre somadas numa linha só, e não havia como ver o dano de cada fase separado. Agora o padrão voltou a ser uma linha por fase, e os replays com o Betelgeuse ganham a caixa **"Agrupar fases dos MVPs"** ao lado do título da lista de monstros, em "Por monstro" e em "Por jogador". Marcada, as fases viram um monstro só, com o tempo até o abate contado da primeira fase até a morte, e os gráficos de dano e de HP do monstro, e a linha do tempo de cada jogador contra ele, mostram uma linha tracejada onde cada fase começa ("Fase 2", "Fase 3").
