@@ -1,7 +1,20 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { t } from "../../i18n";
 import { useAppStore } from "../../store/useAppStore";
+
+// The share choice persists across reloads so a returning uploader doesn't have
+// to re-tick it every time. Default stays OFF: only an explicit `true` opts in,
+// so a corrupt/blocked store never silently uploads a replay.
+const SHARE_KEY = "ragreplay.dropzone.share";
+function loadShare(): boolean {
+  try {
+    return localStorage.getItem(SHARE_KEY) === "true";
+  } catch {
+    /* storage unavailable — fall through to the private default */
+    return false;
+  }
+}
 
 /**
  * Drag/drop + file-picker for `.rrf` files. Decoding runs in the browser via
@@ -12,8 +25,16 @@ export function DropZone() {
   const [, setSearchParams] = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isOver, setIsOver] = useState(false);
-  const [share, setShare] = useState(false);
+  const [share, setShare] = useState(loadShare);
   const status = useAppStore((s) => s.status);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SHARE_KEY, String(share));
+    } catch {
+      /* storage blocked — the toggle still works for this session */
+    }
+  }, [share]);
 
   const handleFile = async (file: File) => {
     const store = useAppStore.getState();

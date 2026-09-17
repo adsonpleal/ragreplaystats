@@ -2,6 +2,10 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-09-17
+
+- **A escolha de compartilhar o replay fica guardada.** A caixa **"Enviar este replay para o servidor"** voltava desmarcada a cada visita, e quem compartilha sempre precisava lembrar de marcá-la de novo antes de soltar o arquivo. Agora o site guarda a escolha no seu navegador e a caixa volta do jeito que você deixou da última vez. Nada muda para quem nunca marcou: a primeira visita continua com a caixa desmarcada, e a análise segue rodando só no seu navegador até você marcar. A escolha fica guardada só no seu aparelho e em nenhum momento é enviada para o servidor.
+
 ## 2026-09-15
 
 - Bases de nomes atualizadas com o último patch do cliente: **262 itens novos**. Entre eles estão o equipamento do **Grupo do Éden** e do **Grupo do Éden Avançado** (armas de todas as classes, armaduras, chapéus, capas, sapatos e acessórios, além das peças sombrias), as armaduras, botas e mantos **Rúnicos de Varmundt** com os encantamentos de Varmundt (Poder, Sabedoria, Concentração, Fatalidade, Recuperação e Vigor), as **Runas** e os **Fragmentos de Runa** (Planície, Chama, Gelo e Morte), a **Magia Cinzenta** de cada estilo, as **Armaduras Desconhecidas** de cada atributo e os equipamentos **Gravados** (Uniforme de Orleans, Armadura de Escamas de Naga, Manto da Sobrevivência e outros). Também entraram a **Lança Celestial**, o **Livro Infernal**, a **Cauda de Gato Infernal**, os artefatos da **Independência**, as caixas de ovos e a colaboração do **Baby Shark** (visuais, pacotes, cartas, moeda e comidas).
