@@ -160,7 +160,9 @@ There is **one** Worker and it runs on **one** prefix, named by `run_worker_firs
 
 ### Firebase, retired
 
-Firestore and the Firebase Hosting site are kept, intact, as the rollback target. `firestore.rules` is closed to writes so a browser running a cached copy of the old bundle can't write replays into a collection nothing reads any more — but **editing that file changes nothing until** `firebase deploy --only firestore:rules --project ragreplaystats` runs, which is why `firebase.json` still exists with just its `firestore` block (the CLI refuses to run without one).
+The old `ragnarecap.web.app` and `ragnarecap.firebaseapp.com` addresses permanently redirect to `https://recap.latam-tools.com.br`, preserving paths and query strings so existing replay links keep working. `firebase.json` targets only the `ragnarecap` Hosting site and uploads no files. Publish the redirect with `firebase deploy --only hosting:ragnarecap --project ragreplaystats`; the app itself still deploys to Cloudflare.
+
+The retired Firestore data remains in place. `firestore.rules` is closed to writes so a browser running a cached copy of the old bundle can't write replays into a collection nothing reads any more — but **editing that file changes nothing until** `firebase deploy --only firestore:rules --project ragreplaystats` runs.
 
 The 991 replays were moved with a one-shot script that is deliberately **not** in this repo — it read the world-readable `replays` collection over Firestore's public REST API and wrote D1 rows plus R2 objects. It ran once, so keeping it would have meant carrying ~250 lines of Firestore decoding, plus a plain-JS copy of the class-rename table (a `.mjs` script cannot import `.ts`), for something that will never run again. Legacy class labels are still normalized — on upload, by `normalizeClass` in `shared/replay.ts`.
 

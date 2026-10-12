@@ -1,5 +1,20 @@
 {
-  "//": "Hosting left this file on 28/08/2026 — the site is on Cloudflare Workers (see wrangler.jsonc). What remains is the Firestore block, and it has to remain: the firebase CLI refuses to run at all without a firebase.json ('Not in a Firebase app directory'), so deleting this file would make the documented retirement step — firebase deploy --only firestore:rules — impossible to run, leaving the retired collection open to writes from stale cached bundles.",
+  "//": "The app is on Cloudflare Workers (see wrangler.jsonc). Firebase Hosting only redirects the old ragnarecap site; no files are uploaded. Deploy the redirect with: firebase deploy --only hosting:ragnarecap --project ragreplaystats. Keep the Firestore rules for the retired collection.",
+  "hosting": {
+    "site": "ragnarecap",
+    "redirects": [
+      {
+        "regex": "^/$",
+        "destination": "https://recap.latam-tools.com.br/",
+        "type": 301
+      },
+      {
+        "regex": "^/(.+)$",
+        "destination": "https://recap.latam-tools.com.br/:1",
+        "type": 301
+      }
+    ]
+  },
   "firestore": {
     "rules": "firestore.rules"
   }

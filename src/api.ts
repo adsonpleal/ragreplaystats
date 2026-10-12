@@ -149,7 +149,9 @@ export async function fetchReplay(id: string): Promise<FetchedReplay | null> {
  * Worker sets), so most visitors are served by the CDN and never reach it.
  */
 export async function listRecentReplays(): Promise<ReplayListItem[]> {
-  const res = await fetch(API);
+  // Revalidate even a response cached under an older, longer-lived policy.
+  // Replay bytes keep their immutable cache; only the changing list needs this.
+  const res = await fetch(API, { cache: "no-cache" });
   if (!res.ok) await apiError(res);
   const { items } = (await res.json()) as { items: WireListItem[] };
   // The Worker already emits camelCase and nulls, so the only work left is

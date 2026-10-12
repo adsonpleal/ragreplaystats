@@ -23,7 +23,7 @@ import { listRecentReplays, type ReplayListItem } from "./api.js";
  * cached set. Tuned by feel: short enough that a stale leaderboard isn't a
  * surprise, long enough to dedupe rapid route switches and HMR reloads.
  */
-const STALE_MS = 5 * 60 * 1000;
+export const STALE_MS = 5 * 60 * 1000;
 
 let items: ReplayListItem[] = [];
 let loadedAt: number | null = null;
