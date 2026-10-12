@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-10-11
+
+- **Os endereços antigos do RagnaRecap levam ao site atual.** Links de `ragnarecap.web.app` e `ragnarecap.firebaseapp.com`, incluindo os links de replay, agora redirecionam para `recap.latam-tools.com.br`.
+- **O leaderboard e os replays recentes voltam a atualizar com a aba aberta.** As listas conferem novos dados a cada cinco minutos enquanto a página está visível e ao voltar para ela. Antes, só buscavam dados ao abrir a tela e podiam continuar mostrando a mesma lista por toda a visita.
+
 ## 2026-09-30
 
 - **124 itens novos ganharam nome nos replays.** Entre eles estão as asas de borboleta coloridas, os Sabres Celestial e Infernal, pedras visuais de classe, visuais de Halloween e as Roletas de Outubro.
