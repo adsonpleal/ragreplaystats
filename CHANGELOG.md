@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-10-15
+
+- **165 itens novos ganharam nome nos replays.** Entre eles estão as armas do Glaciar Sombrio, as cartas de Remakina, Calamaring e Aquila, os Feitiços da Flor de Neve, os Colares Consagrados e os itens do evento gastronômico.
+- **Dois nomes de itens foram atualizados** para acompanhar o cliente: Atraso pós-ataque Nv. 5 passa a se chamar **Anti-Atraso 5**, e Pedra de Pós (Dual) passa a ser **Pedra de Demora (Dual)**.
+
 ## 2026-10-11
 
 - **Os endereços antigos do RagnaRecap levam ao site atual.** Links de `ragnarecap.web.app` e `ragnarecap.firebaseapp.com`, incluindo os links de replay, agora redirecionam para `recap.latam-tools.com.br`.
