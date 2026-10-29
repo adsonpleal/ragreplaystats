@@ -2,6 +2,13 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-10-29
+
+- **527 itens novos ganharam nome nos replays.** A maioria é da linha Invernal de Issgard: o conjunto completo (Coroa, Armadura, Veste, Manto, Sobrepeliz, botas, acessórios e uma arma de cada tipo), os encantamentos **Flor Invernal** e **Cristal Invernal** com as Peças e Pétalas usadas para fazer cada um, os **Cristais de Issgard**, o Martelo de Refino de Issgard e os materiais de Rgan, Limacina, Escaragélido e companhia. Também entraram as caixas e baús do **JCoin Rush**, os prêmios da **Roleta de Novembro**, as caixas de ovos, de combate e de vida de novembro, 20 visuais e os tickets de mascote (Zangão, Angelgolt Azul, Relógio e Cavaleiro Branco).
+- **83 nomes de itens foram atualizados** para acompanhar o último patch do cliente. Toda a linha do **Glaciar Sombrio** virou **Vil Invernal**, arma por arma, os **Feitiços da Flor de Gelo** e **da Flor de Neve** passaram a se chamar **Flor Invernal** e **Cristal Invernal**, e várias cartas ganharam o nome definitivo do monstro: **Carta Escaragélido**, **Carta Minhogelix**, **Carta Limacina**, **Carta Garoupa Glaciflor** e as Cartas **Dollocaris Monocular** e **Binocular**.
+- **6 habilidades novas ganharam nome**: Baforada Draconiana, Explosão de Faíscas, Laser Triplo, Poder Esmagador, Pólen Explosivo e Espinhos Furiosos — os golpes concedidos pelos Cristais Invernais.
+- **11 nomes de habilidades foram atualizados**, entre eles a correção de "Domínio Musicial" para **Domínio Musical**. Os golpes extras — a explosão da Flecha Escarlate, o ataque da Espada Alada, cada elemento do Círculo Elemental — agora aparecem com o nome da habilidade de origem, sem o complemento entre parênteses.
+
 ## 2026-10-15
 
 - **165 itens novos ganharam nome nos replays.** Entre eles estão as armas do Glaciar Sombrio, as cartas de Remakina, Calamaring e Aquila, os Feitiços da Flor de Neve, os Colares Consagrados e os itens do evento gastronômico.
