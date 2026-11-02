@@ -2,6 +2,11 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-11-02
+
+- **Nova aba "Drops".** Todo item que caiu no chão dentro do seu alcance de visão durante a gravação agora aparece numa aba própria: um resumo com quedas, unidades caídas, unidades coletadas e itens distintos, um gráfico de **drops ao longo do tempo** que compara o que caiu com o que você pegou, a tabela de **itens por tipo** com **itens/hora** de cada um, e a lista completa de eventos com o horário, a célula onde o item caiu e o momento em que ele saiu do chão. Dá para mostrar só os coletados, só os que ficaram para trás, ou tudo, e baixar as duas tabelas em **CSV** — separado por `;` e com acentuação, do jeito que o Excel brasileiro abre. Um item só conta como **coletado** quando a gravação também viu ele entrar na sua bolsa; o que outra pessoa pegou, ou o que ficou no chão, fica de fora da conta. Vale lembrar que drop fora do seu alcance de visão não chega ao replay, e que a gravação não diz de qual monstro cada item caiu. Reportado por **Vitor Marsh**.
+- **As abas cabem na tela do celular.** A faixa de abas não quebrava em duas linhas, então a última ficava cortada e não dava para tocar nela. Agora ela quebra, e todas as abas ficam acessíveis.
+
 ## 2026-10-29
 
 - **527 itens novos ganharam nome nos replays.** A maioria é da linha Invernal de Issgard: o conjunto completo (Coroa, Armadura, Veste, Manto, Sobrepeliz, botas, acessórios e uma arma de cada tipo), os encantamentos **Flor Invernal** e **Cristal Invernal** com as Peças e Pétalas usadas para fazer cada um, os **Cristais de Issgard**, o Martelo de Refino de Issgard e os materiais de Rgan, Limacina, Escaragélido e companhia. Também entraram as caixas e baús do **JCoin Rush**, os prêmios da **Roleta de Novembro**, as caixas de ovos, de combate e de vida de novembro, 20 visuais e os tickets de mascote (Zangão, Angelgolt Azul, Relógio e Cavaleiro Branco).

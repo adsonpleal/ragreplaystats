@@ -8,6 +8,7 @@ import { Breadcrumb } from "./Breadcrumb";
 import { ByMonsterTab } from "./ByMonsterTab";
 import { ByPlayerTab } from "./ByPlayerTab";
 import { DpsAnalysisTab } from "./DpsAnalysisTab";
+import { DropsTab } from "./DropsTab";
 import { ExplorerToolbar } from "./ExplorerToolbar";
 import { StatsTab } from "./StatsTab";
 
@@ -34,6 +35,7 @@ export function Explorer({ replay }: { replay: Replay }) {
       {mode === "byPlayer" && <ByPlayerTab replay={replay} />}
       {mode === "byMonster" && <ByMonsterTab replay={replay} />}
       {mode === "dpsAnalysis" && <DpsAnalysisTab replay={replay} />}
+      {mode === "drops" && <DropsTab replay={replay} />}
       {printTab !== null && <PrintReport replay={replay} tabIndex={printTab} />}
     </section>
   );

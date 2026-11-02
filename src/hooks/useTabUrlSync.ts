@@ -7,6 +7,7 @@ const VALID_MODES: ReadonlySet<Mode> = new Set([
   "byMonster",
   "stats",
   "dpsAnalysis",
+  "drops",
 ]);
 
 export function readTabFromUrl(): Mode | null {

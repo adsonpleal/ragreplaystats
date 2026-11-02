@@ -7,10 +7,13 @@
 // without any server round-trip.
 
 import writeXlsxFile, { type Row, type CellObject } from "write-excel-file/browser";
+import { dropsByItem } from "../aggregate/drops.js";
+import { groundDropsFor } from "../aggregate/groundDrops.js";
 import {
   allyName,
   computeResumo,
   consumablesByItem,
+  effectiveDuration,
   killsByPlayerAndMob,
   lootByItem,
   monstersWhoTookDamage,
@@ -118,6 +121,8 @@ function tableSheet(
 export async function buildReplayXlsxBlob(
   replay: Replay,
   db: ReferenceDb | null,
+  /** The loaded `.rrf` bytes — the floor drops are read straight off them. */
+  replayBytes: Uint8Array<ArrayBuffer> | null,
 ): Promise<Blob> {
   const resolveSkill = (id: number) =>
     id === 0 ? t.autoAttack : db?.resolveSkill(id) ?? t.skillFallback(id);
@@ -297,6 +302,36 @@ export async function buildReplayXlsxBlob(
           it.itemId ? num(it.itemId) : str(""),
           num(it.count),
           num(it.quantity),
+        ]),
+      ),
+    );
+  }
+
+  // --- Drops ---------------------------------------------------------------
+  const drops = dropsByItem(
+    groundDropsFor(replayBytes, replay.itemAdds),
+    effectiveDuration(replay, null),
+    resolveItem,
+  );
+  if (drops.length) {
+    sheets.push(
+      tableSheet(
+        t.exportSheetDrops,
+        [
+          { label: t.dropsColItem, width: 28 },
+          { label: t.colId, width: 10, align: "right" },
+          { label: t.dropsColDrops, width: 10, align: "right" },
+          { label: t.dropsColQuantity, width: 12, align: "right" },
+          { label: t.dropsColCollectedQty, width: 12, align: "right" },
+          { label: t.dropsColPerHour, width: 12, align: "right" },
+        ],
+        drops.map((d) => [
+          str(d.name),
+          num(d.itemId),
+          num(d.drops),
+          num(d.quantity),
+          num(d.collected),
+          { value: d.perHour, type: Number, format: "#,##0.00", align: "right" },
         ]),
       ),
     );

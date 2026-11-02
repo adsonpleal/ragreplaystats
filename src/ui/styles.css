@@ -588,8 +588,11 @@ main > section {
   letter-spacing: 0.05em;
 }
 
+/* Wraps because the row no longer fits a phone: with five tabs the last one
+   was clipped by the overflow and could not be reached at all. */
 .mode-toggle {
   display: inline-flex;
+  flex-wrap: wrap;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
@@ -1270,19 +1273,23 @@ a.cell-link {
   text-decoration: none;
 }
 
-.mob-skills-filter {
+/* A label + control row above a table: the mob-skill target picker, the drops
+   filter and its CSV buttons. Wraps so a phone drops the controls onto a second
+   line instead of overflowing. */
+.filter-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin: 0.5rem 0 0.75rem;
   font-size: 0.85rem;
 }
 
-.mob-skills-filter label {
+.filter-row label {
   color: var(--muted);
 }
 
-.mob-skills-filter select {
+.filter-row select {
   background: var(--bg);
   color: inherit;
   border: 1px solid var(--border);
@@ -1428,6 +1435,13 @@ td.num, th.num {
   body.printing-report .table-wrap {
     max-height: none;
     overflow: visible;
+  }
+
+  /* PrintReport snapshots the live tabs, so their controls come along. A
+     dropdown and a "Baixar CSV" button mean nothing on paper. */
+  body.printing-report .filter-row,
+  body.printing-report .brush-actions {
+    display: none;
   }
 
   @page {
