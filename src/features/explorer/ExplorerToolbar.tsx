@@ -7,6 +7,7 @@ const MODES: ReadonlyArray<{ mode: Mode; label: string }> = [
   { mode: "byPlayer", label: t.modeByPlayer },
   { mode: "byMonster", label: t.modeByMonster },
   { mode: "dpsAnalysis", label: t.modeDpsAnalysis },
+  { mode: "drops", label: t.modeDrops },
 ];
 
 // Pulls in three.js + the whole sim chunk; only fetched when the viewer opens.

@@ -21,7 +21,8 @@ function inRange(t: number, range: Range): boolean {
   return t >= range.startMs && t <= range.endMs;
 }
 
-function effectiveDuration(replay: Replay, range: Range): number {
+/** The window every per-second / per-hour rate in the app divides by. */
+export function effectiveDuration(replay: Replay, range: Range): number {
   if (!range) return Math.max(1, replay.sessionInfo.durationMs);
   return Math.max(1, range.endMs - range.startMs);
 }

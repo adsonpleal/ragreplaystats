@@ -3,6 +3,7 @@ import type { Replay } from "rrfparser";
 import { ByMonsterTab } from "../explorer/ByMonsterTab";
 import { ByPlayerTab } from "../explorer/ByPlayerTab";
 import { DpsAnalysisTab } from "../explorer/DpsAnalysisTab";
+import { DropsTab } from "../explorer/DropsTab";
 import { StatsTab } from "../explorer/StatsTab";
 import { SessionSummary } from "../replay/SessionSummary";
 
@@ -11,6 +12,7 @@ export const PRINT_TABS = [
   { title: t.modeByPlayer, Comp: ByPlayerTab },
   { title: t.modeByMonster, Comp: ByMonsterTab },
   { title: t.modeDpsAnalysis, Comp: DpsAnalysisTab },
+  { title: t.modeDrops, Comp: DropsTab },
 ] as const;
 
 /**

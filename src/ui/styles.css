@@ -1278,6 +1278,30 @@ a.cell-link {
   font-size: 0.85rem;
 }
 
+/* Drops tab: the list filter and its two CSV buttons on one row. Wraps on a
+   phone so the buttons drop under the select instead of overflowing. */
+.drops-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0 0.25rem;
+  font-size: 0.85rem;
+}
+
+.drops-toolbar label {
+  color: var(--muted);
+}
+
+.drops-toolbar select {
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+}
+
 .mob-skills-filter label {
   color: var(--muted);
 }

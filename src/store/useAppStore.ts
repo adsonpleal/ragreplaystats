@@ -10,7 +10,7 @@ import type { Range } from "../aggregate/index";
 import { type BossPhases, findBossPhases, mergeBossPhases, NO_BOSS_PHASES } from "../aggregate/bossPhases";
 import type { Replay } from "rrfparser";
 
-export type Mode = "byPlayer" | "byMonster" | "stats" | "dpsAnalysis";
+export type Mode = "byPlayer" | "byMonster" | "stats" | "dpsAnalysis" | "drops";
 
 export type DragRange = { startMs: number; endMs: number } | null;
 
