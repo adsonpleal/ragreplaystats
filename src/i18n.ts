@@ -112,6 +112,7 @@ export const t = {
   exportSheetKills: "Abates",
   exportSheetConsumed: "Itens consumidos",
   exportSheetLoot: "Itens recebidos",
+  exportSheetDrops: "Drops",
 
   // Mode toggle
   modeByPlayer: "Por jogador",
@@ -430,6 +431,7 @@ export const t = {
   dropsColItem: "Item",
   dropsColAmount: "Qtd.",
   dropsColCell: "Célula",
+  dropsColIdentified: "Identificado",
   dropsColCollected: "Coletado",
   dropsColRemovedAt: "Saiu do chão",
   dropsColDrops: "Quedas",

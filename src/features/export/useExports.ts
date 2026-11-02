@@ -12,13 +12,13 @@ export function useExports(runPrintReport?: () => Promise<void>) {
   const [pdfBusy, setPdfBusy] = useState(false);
 
   const exportXlsx = async () => {
-    const { replay, db } = useAppStore.getState();
+    const { replay, db, replayBytes } = useAppStore.getState();
     if (!replay || xlsxBusy) return;
     setXlsxBusy(true);
     try {
       // Lazy-load the xlsx writer so its ~70 kB only ships when actually used.
       const { buildReplayXlsxBlob } = await import("../../ui/export-xlsx");
-      const blob = await buildReplayXlsxBlob(replay, db);
+      const blob = await buildReplayXlsxBlob(replay, db, replayBytes);
       downloadBlob(blob, `${reportBaseName(replay)}.xlsx`);
     } finally {
       setXlsxBusy(false);

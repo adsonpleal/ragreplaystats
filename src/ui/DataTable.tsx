@@ -28,7 +28,7 @@ export function DataTable<T>({
   options = {},
 }: {
   cols: Column<T>[];
-  rows: T[];
+  rows: readonly T[];
   options?: TableOptions<T>;
 }) {
   const [sortKey, setSortKey] = useState(options.initialSort?.key ?? cols[0].key);

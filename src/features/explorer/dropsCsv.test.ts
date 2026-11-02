@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { DropItemRow, GroundDrop } from "../../aggregate/drops";
+import type { DropItemRow } from "../../aggregate/drops";
+import type { GroundDrop } from "../../aggregate/groundDrops";
 import { dropEventsCsv, dropItemsCsv } from "./dropsCsv";
 
 function drop(over: Partial<GroundDrop> = {}): GroundDrop {
@@ -42,8 +43,8 @@ describe("dropEventsCsv", () => {
 
   it("writes one semicolon-separated row per drop", () => {
     const out = lines(dropEventsCsv([drop({ collected: true, removedAt: 125_000 })], resolveItem));
-    expect(out[0].split(";")).toHaveLength(7);
-    expect(out[1]).toBe("2:03,456;617;Caixa Azul Antiga;1;160,242;Sim;2:05,000");
+    expect(out[0].split(";")).toHaveLength(9);
+    expect(out[1]).toBe("2:03,456;617;Caixa Azul Antiga;1;160;242;Sim;Sim;2:05,000");
   });
 
   it("leaves the removal column empty for an item still on the ground", () => {

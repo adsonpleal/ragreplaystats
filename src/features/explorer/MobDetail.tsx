@@ -271,7 +271,7 @@ export function MobSkills({
     <div>
       <h2 className="section-title">{t.mobSkillsTitle(monsterLabel)}</h2>
       <p className="section-hint">{t.mobSkillsHint}</p>
-      <div className="mob-skills-filter">
+      <div className="filter-row">
         <label htmlFor="mob-skills-target">{t.mobSkillsFilterLabel}</label>
         <select
           id="mob-skills-target"

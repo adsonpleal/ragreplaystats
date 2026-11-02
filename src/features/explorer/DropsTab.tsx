@@ -4,21 +4,22 @@ import { effectiveDuration } from "../../aggregate/index";
 import {
   type DropFilter,
   type DropItemRow,
-  type GroundDrop,
+  type DropsSummary,
   dropTimeline,
   dropsByItem,
+  dropsSummary,
   filterDrops,
-  groundDropsFor,
-  pickBucketMs,
 } from "../../aggregate/drops";
-import { locale, t } from "../../i18n";
-import { fmt, formatDuration } from "../../lib/format";
+import { type GroundDrop, groundDropsFor } from "../../aggregate/groundDrops";
+import { t } from "../../i18n";
+import { fmt, fmtDecimal, formatClock, formatDuration } from "../../lib/format";
 import { useAppStore } from "../../store/useAppStore";
 import { DataTable, type Column } from "../../ui/DataTable";
 import { LineChart } from "../../ui/LineChart";
 import { SummaryCard, type SummaryCell } from "../../ui/SummaryCard";
+import { csvBlob } from "../export/csv";
 import { downloadBlob, reportBaseName } from "../export/reportName";
-import { csvBlob, dropEventsCsv, dropItemsCsv } from "./dropsCsv";
+import { dropEventsCsv, dropItemsCsv } from "./dropsCsv";
 import { itemDpUrl, resolveItemName } from "./resolvers";
 
 const FILTERS: ReadonlyArray<{ value: DropFilter; label: string }> = [
@@ -26,12 +27,6 @@ const FILTERS: ReadonlyArray<{ value: DropFilter; label: string }> = [
   { value: "collected", label: t.dropsFilterCollected },
   { value: "uncollected", label: t.dropsFilterUncollected },
 ];
-
-/** `12345` → `"0:12"` — the chart's x axis is seconds, so rows line up with it. */
-function clock(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-}
 
 function Intro() {
   return (
@@ -43,55 +38,45 @@ function Intro() {
   );
 }
 
-function Totals({ drops, durationMs }: { drops: readonly GroundDrop[]; durationMs: number }) {
-  const units = drops.reduce((s, d) => s + d.amount, 0);
-  const collected = drops.reduce((s, d) => (d.collected ? s + d.amount : s), 0);
-  const stillOnGround = drops.filter((d) => d.removedAt == null).length;
-  const perHour = units / (Math.max(1, durationMs) / 3_600_000);
-
+function Totals({ summary, durationMs }: { summary: DropsSummary; durationMs: number }) {
   const cells: SummaryCell[] = [
-    { label: t.dropsCellTotalDrops, value: fmt(drops.length) },
-    { label: t.dropsCellTotalUnits, value: fmt(units) },
-    { label: t.dropsCellCollectedUnits, value: fmt(collected) },
-    { label: t.dropsCellDistinctItems, value: fmt(new Set(drops.map((d) => d.itemId)).size) },
+    { label: t.dropsCellTotalDrops, value: fmt(summary.drops) },
+    { label: t.dropsCellTotalUnits, value: fmt(summary.units) },
+    { label: t.dropsCellCollectedUnits, value: fmt(summary.collectedUnits) },
+    { label: t.dropsCellDistinctItems, value: fmt(summary.distinctItems) },
     {
       label: t.dropsCellPerHour,
-      value: perHour.toLocaleString(locale, { maximumFractionDigits: 1 }),
+      value: fmtDecimal(summary.unitsPerHour, 1),
       hint: t.cellSessionDuration + ": " + formatDuration(durationMs),
     },
     {
       label: t.dropsCellStillOnGround,
-      value: fmt(stillOnGround),
+      value: fmt(summary.stillOnGround),
       hint: t.dropsCellStillOnGroundHint,
     },
   ];
   return <SummaryCard title={t.statsResumoTitle} cells={cells} />;
 }
 
-function Timeline({
-  drops,
-  durationMs,
-}: {
-  drops: readonly GroundDrop[];
-  durationMs: number;
-}) {
-  const bucketMs = pickBucketMs(durationMs);
-  const series = dropTimeline(drops, durationMs, bucketMs);
+function Timeline({ drops, durationMs }: { drops: readonly GroundDrop[]; durationMs: number }) {
+  // uPlot reloads and repaints whenever these arrays change identity, so they
+  // must not be rebuilt on every render.
+  const series = useMemo(() => dropTimeline(drops, durationMs), [drops, durationMs]);
+  const lines = useMemo(
+    () => [
+      { label: t.dropsChartDropped, values: series.dropped, paletteIndex: 0 },
+      { label: t.dropsChartCollected, values: series.collected, paletteIndex: 4 },
+    ],
+    [series],
+  );
   if (!series.ts.length) return null;
   return (
     <div>
       <h2 className="section-title">{t.dropsChartTitle}</h2>
       <div className="stats-chart">
-        <LineChart
-          xs={series.ts}
-          series={[
-            { label: t.dropsChartDropped, values: series.dropped, paletteIndex: 0 },
-            { label: t.dropsChartCollected, values: series.collected, paletteIndex: 4 },
-          ]}
-          height={240}
-        />
+        <LineChart xs={series.ts} series={lines} height={240} />
       </div>
-      <p className="section-hint">{t.dropsChartBucketHint(Math.round(bucketMs / 1000))}</p>
+      <p className="section-hint">{t.dropsChartBucketHint(Math.round(series.bucketMs / 1000))}</p>
     </div>
   );
 }
@@ -107,19 +92,14 @@ const itemCols: Column<DropItemRow>[] = [
     numeric: true,
     format: (r) => fmt(r.collected),
   },
-  {
-    key: "perHour",
-    label: t.dropsColPerHour,
-    numeric: true,
-    format: (r) => r.perHour.toLocaleString(locale, { maximumFractionDigits: 2 }),
-  },
-  { key: "firstMs", label: t.dropsColFirst, numeric: true, format: (r) => clock(r.firstMs) },
-  { key: "lastMs", label: t.dropsColLast, numeric: true, format: (r) => clock(r.lastMs) },
+  { key: "perHour", label: t.dropsColPerHour, numeric: true, format: (r) => fmtDecimal(r.perHour) },
+  { key: "firstMs", label: t.dropsColFirst, numeric: true, format: (r) => formatClock(r.firstMs) },
+  { key: "lastMs", label: t.dropsColLast, numeric: true, format: (r) => formatClock(r.lastMs) },
 ];
 
 function eventColumns(resolveItem: (id: number) => string): Column<GroundDrop>[] {
   return [
-    { key: "time", label: t.dropsColTime, numeric: true, format: (d) => clock(d.time) },
+    { key: "time", label: t.dropsColTime, numeric: true, format: (d) => formatClock(d.time) },
     { key: "itemId", label: t.colId, numeric: true, href: (d) => itemDpUrl(d.itemId) },
     {
       key: "name",
@@ -139,7 +119,7 @@ function eventColumns(resolveItem: (id: number) => string): Column<GroundDrop>[]
       key: "removedAt",
       label: t.dropsColRemovedAt,
       numeric: true,
-      format: (d) => (d.removedAt == null ? t.none : clock(d.removedAt)),
+      format: (d) => (d.removedAt == null ? t.none : formatClock(d.removedAt)),
       sortValue: (d) => d.removedAt ?? Number.MAX_SAFE_INTEGER,
     },
   ];
@@ -148,20 +128,23 @@ function eventColumns(resolveItem: (id: number) => string): Column<GroundDrop>[]
 /**
  * Drops tab — every item the recording saw hit the floor: totals, a timeline of
  * what fell against what was picked up, the per-item table with items/hour, the
- * raw event list, and both as CSV.
+ * raw event list, and both tables as CSV.
  */
 export function DropsTab({ replay }: { replay: Replay }) {
   const db = useAppStore((s) => s.db);
+  const namesVersion = useAppStore((s) => s.namesVersion);
   const bytes = useAppStore((s) => s.replayBytes);
   const [filter, setFilter] = useState<DropFilter>("all");
 
   const resolveItem = (id: number) => resolveItemName(db, id);
-  // Resolving names needs the reference DB, which lands after the first render;
-  // the decode itself does not, so keep them in separate memos.
-  const all = useMemo(() => groundDropsFor(bytes, replay.itemAdds), [bytes, replay.itemAdds]);
+  const all = groundDropsFor(bytes, replay.itemAdds);
   const durationMs = effectiveDuration(replay, null);
-  const shown = useMemo(() => filterDrops(all, filter), [all, filter]);
+  const shown = filterDrops(all, filter);
   const itemRows = dropsByItem(shown, durationMs, resolveItem);
+  // Rebuilt, the column array makes DataTable re-sort every event on each
+  // render; it only changes when a name can resolve differently.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const eventCols = useMemo(() => eventColumns(resolveItem), [db, namesVersion]);
 
   const exportCsv = (text: string, suffix: string) =>
     downloadBlob(csvBlob(text), `${reportBaseName(replay)}-${suffix}.csv`);
@@ -178,9 +161,9 @@ export function DropsTab({ replay }: { replay: Replay }) {
   return (
     <>
       <Intro />
-      <Totals drops={all} durationMs={durationMs} />
+      <Totals summary={dropsSummary(all, durationMs)} durationMs={durationMs} />
       <Timeline drops={all} durationMs={durationMs} />
-      <div className="drops-toolbar">
+      <div className="filter-row">
         <label htmlFor="drops-filter">{t.dropsFilterLabel}</label>
         <select
           id="drops-filter"
@@ -193,7 +176,11 @@ export function DropsTab({ replay }: { replay: Replay }) {
             </option>
           ))}
         </select>
-        <button type="button" className="export-btn" onClick={() => exportCsv(dropItemsCsv(itemRows), "drops-por-item")}>
+        <button
+          type="button"
+          className="export-btn"
+          onClick={() => exportCsv(dropItemsCsv(itemRows), "drops-por-item")}
+        >
           {t.dropsExportItems}
         </button>
         <button
@@ -214,7 +201,7 @@ export function DropsTab({ replay }: { replay: Replay }) {
           />
           <h2 className="section-title">{t.dropsEventsTitle}</h2>
           <DataTable
-            cols={eventColumns(resolveItem)}
+            cols={eventCols}
             rows={shown}
             options={{ initialSort: { key: "time", asc: true } }}
           />
