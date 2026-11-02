@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropTimeline, dropsByItem, dropsSummary, filterDrops } from "./drops";
+import { dropsByItem, dropsSummary, filterDrops } from "./drops";
 import type { GroundDrop } from "./groundDrops";
 
 function drop(over: Partial<GroundDrop> = {}): GroundDrop {
@@ -116,37 +116,5 @@ describe("dropsByItem", () => {
 
   it("has no rows for a recording with no drops", () => {
     expect(dropsByItem([], 60_000, resolveItem)).toEqual([]);
-  });
-});
-
-describe("dropTimeline", () => {
-  it("buckets what fell against what was picked up", () => {
-    const series = dropTimeline(
-      [
-        drop({ time: 1_000, amount: 1, collected: true }),
-        drop({ time: 4_000, amount: 2 }),
-        drop({ time: 11_000, amount: 5, collected: true }),
-      ],
-      15_000,
-    );
-    expect(series.bucketMs).toBe(5_000);
-    expect(series.ts).toEqual([2_500, 7_500, 12_500]);
-    expect(series.dropped).toEqual([3, 0, 5]);
-    expect(series.collected).toEqual([1, 0, 5]);
-  });
-
-  it("extends past the declared duration rather than dropping a late drop", () => {
-    const series = dropTimeline([drop({ time: 12_000, amount: 1 })], 5_000);
-    expect(series.dropped).toEqual([0, 0, 1]);
-  });
-
-  it("coarsens the buckets on a long recording instead of drawing a thousand points", () => {
-    const series = dropTimeline([drop({ time: 1_000 })], 7_200_000);
-    expect(series.bucketMs).toBe(120_000);
-    expect(series.ts.length).toBeLessThanOrEqual(80);
-  });
-
-  it("is empty for a recording with no drops", () => {
-    expect(dropTimeline([], 60_000).ts).toEqual([]);
   });
 });

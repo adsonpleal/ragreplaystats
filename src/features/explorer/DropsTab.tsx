@@ -5,7 +5,6 @@ import {
   type DropFilter,
   type DropItemRow,
   type DropsSummary,
-  dropTimeline,
   dropsByItem,
   dropsSummary,
   filterDrops,
@@ -15,7 +14,6 @@ import { t } from "../../i18n";
 import { fmt, fmtDecimal, formatClock, formatDuration } from "../../lib/format";
 import { useAppStore } from "../../store/useAppStore";
 import { DataTable, type Column } from "../../ui/DataTable";
-import { LineChart } from "../../ui/LineChart";
 import { SummaryCard, type SummaryCell } from "../../ui/SummaryCard";
 import { csvBlob } from "../export/csv";
 import { downloadBlob, reportBaseName } from "../export/reportName";
@@ -56,29 +54,6 @@ function Totals({ summary, durationMs }: { summary: DropsSummary; durationMs: nu
     },
   ];
   return <SummaryCard title={t.statsResumoTitle} cells={cells} />;
-}
-
-function Timeline({ drops, durationMs }: { drops: readonly GroundDrop[]; durationMs: number }) {
-  // uPlot reloads and repaints whenever these arrays change identity, so they
-  // must not be rebuilt on every render.
-  const series = useMemo(() => dropTimeline(drops, durationMs), [drops, durationMs]);
-  const lines = useMemo(
-    () => [
-      { label: t.dropsChartDropped, values: series.dropped, paletteIndex: 0 },
-      { label: t.dropsChartCollected, values: series.collected, paletteIndex: 4 },
-    ],
-    [series],
-  );
-  if (!series.ts.length) return null;
-  return (
-    <div>
-      <h2 className="section-title">{t.dropsChartTitle}</h2>
-      <div className="stats-chart">
-        <LineChart xs={series.ts} series={lines} height={240} />
-      </div>
-      <p className="section-hint">{t.dropsChartBucketHint(Math.round(series.bucketMs / 1000))}</p>
-    </div>
-  );
 }
 
 const itemCols: Column<DropItemRow>[] = [
@@ -126,9 +101,8 @@ function eventColumns(resolveItem: (id: number) => string): Column<GroundDrop>[]
 }
 
 /**
- * Drops tab — every item the recording saw hit the floor: totals, a timeline of
- * what fell against what was picked up, the per-item table with items/hour, the
- * raw event list, and both tables as CSV.
+ * Drops tab — every item the recording saw hit the floor: totals, the per-item
+ * table with items/hour, the raw event list, and both tables as CSV.
  */
 export function DropsTab({ replay }: { replay: Replay }) {
   const db = useAppStore((s) => s.db);
@@ -162,7 +136,6 @@ export function DropsTab({ replay }: { replay: Replay }) {
     <>
       <Intro />
       <Totals summary={dropsSummary(all, durationMs)} durationMs={durationMs} />
-      <Timeline drops={all} durationMs={durationMs} />
       <div className="filter-row">
         <label htmlFor="drops-filter">{t.dropsFilterLabel}</label>
         <select

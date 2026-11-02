@@ -1,6 +1,6 @@
-// Aggregations over the floor drops: the headline numbers, the per-item table
-// with items/hour, and the timeline series. Reading the drops off the file is
-// `groundDrops.ts`; nothing here knows what a packet is.
+// Aggregations over the floor drops: the headline numbers and the per-item
+// table with items/hour. Reading the drops off the file is `groundDrops.ts`;
+// nothing here knows what a packet is.
 
 import type { GroundDrop } from "./groundDrops";
 
@@ -102,59 +102,4 @@ export function dropsByItem(
   return [...map.values()]
     .map((row) => ({ ...row, perHour: perHour(row.quantity, durationMs) }))
     .sort((a, b) => b.quantity - a.quantity || a.itemId - b.itemId);
-}
-
-/**
- * Bucket widths the timeline may use. The smallest one that keeps the chart
- * under `MAX_BUCKETS` points wins, so a 3-minute recording gets 5s buckets and
- * a 2-hour one gets 2-minute buckets instead of 1440 near-empty points.
- */
-const BUCKET_LADDER_MS = [5_000, 10_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000];
-const MAX_BUCKETS = 80;
-
-function pickBucketMs(spanMs: number): number {
-  return (
-    BUCKET_LADDER_MS.find((ms) => spanMs / ms <= MAX_BUCKETS) ??
-    BUCKET_LADDER_MS[BUCKET_LADDER_MS.length - 1]
-  );
-}
-
-export type DropTimeline = {
-  /** Bucket centres, in milliseconds from recording start. */
-  ts: number[];
-  dropped: number[];
-  collected: number[];
-  /** The width this series chose — the chart labels its points with it. */
-  bucketMs: number;
-};
-
-/**
- * Drops per bucket over the recording, as two series: everything that fell, and
- * the part the recorder picked up. Both on the same scale so the gap between
- * them reads as the loot left behind.
- */
-export function dropTimeline(
-  drops: readonly GroundDrop[],
-  durationMs: number,
-): DropTimeline {
-  // A drop after the declared duration is still a drop — take the later end so
-  // none falls off the right edge.
-  let span = durationMs;
-  for (const d of drops) if (d.time > span) span = d.time;
-  const bucketMs = pickBucketMs(span);
-  if (!drops.length) return { ts: [], dropped: [], collected: [], bucketMs };
-
-  const bucketCount = Math.ceil(Math.max(bucketMs, span) / bucketMs);
-  const ts: number[] = [];
-  for (let i = 0; i < bucketCount; i++) ts.push(i * bucketMs + bucketMs / 2);
-  const dropped = new Array<number>(bucketCount).fill(0);
-  const collected = new Array<number>(bucketCount).fill(0);
-
-  for (const d of drops) {
-    const idx = Math.min(bucketCount - 1, Math.floor(d.time / bucketMs));
-    dropped[idx] += d.amount;
-    if (d.collected) collected[idx] += d.amount;
-  }
-
-  return { ts, dropped, collected, bucketMs };
 }
