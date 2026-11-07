@@ -4,7 +4,7 @@ All notable user-facing changes to RagnaRecap. Newest first.
 
 ## 2026-11-07
 
-- **Dá para dar zoom na linha do tempo da Análise de DPS.** O gráfico de dano e mensagens só sabia mostrar a gravação inteira de ponta a ponta, e numa sessão longa os golpes ficavam amontoados demais para dar para ler. Agora a roda do mouse aproxima e afasta no ponto onde o cursor está, Shift + roda — ou a rolagem horizontal do trackpad — desloca a janela visível para os lados, e quatro botões abaixo do gráfico fazem o mesmo sem mouse: **Aproximar**, **Afastar**, **Ampliar na seleção**, que enquadra exatamente a janela que você arrastou, e **Sessão inteira**, que volta para a gravação toda. O zoom muda só o que você vê: as estatísticas continuam seguindo a janela selecionada. Reportado por **pazzoLino**.
+- **Dá para dar zoom na linha do tempo da Análise de DPS.** O gráfico de dano e mensagens só sabia mostrar a gravação inteira de ponta a ponta, e numa sessão longa os golpes ficavam amontoados demais para dar para ler. Agora a roda do mouse aproxima e afasta no ponto onde o cursor está, Shift + roda — ou a rolagem horizontal do trackpad — desloca a janela visível para os lados, e quatro botões abaixo do gráfico fazem o mesmo sem mouse: aproximar, afastar, **ampliar na seleção**, que enquadra exatamente a janela que você arrastou, e voltar para a **sessão inteira**. Os botões são ícones — passe o mouse sobre um para ver o nome dele. O zoom muda só o que você vê: as estatísticas continuam seguindo a janela selecionada. Reportado por **pazzoLino**.
 
 ## 2026-11-02
 
