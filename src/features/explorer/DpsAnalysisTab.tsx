@@ -1,9 +1,16 @@
 import { useMemo } from "react";
 import { dpsAnalysisStats } from "../../aggregate/index";
 import { t } from "../../i18n";
-import { fmt, formatClock, formatDuration } from "../../lib/format";
+import { fmt, formatDuration } from "../../lib/format";
 import type { Replay } from "rrfparser";
 import { DpsScatter } from "../../ui/DpsScatter";
+import {
+  IconButton,
+  ZOOM_FULL,
+  ZOOM_IN,
+  ZOOM_OUT,
+  ZOOM_SELECTION,
+} from "../../ui/IconButton";
 import { SummaryCard, type SummaryCell } from "../../ui/SummaryCard";
 import { fitSpan, zoomAt, ZOOM_STEP_BUTTON, type TimelineSpan } from "../../ui/timelineZoom";
 import { type DragRange, useAppStore } from "../../store/useAppStore";
@@ -45,6 +52,10 @@ function DpsAnalysisHelp() {
  * Zoom controls under the timeline. They exist next to the wheel gesture
  * because the wheel is both undiscoverable and absent on a touch screen —
  * "Ampliar na seleção" is the only way in for anyone on a phone.
+ *
+ * Icons rather than labels, right-aligned under the chart: four words in a row
+ * read as a paragraph competing with the chart, and three of the four are only
+ * ever clicked once each.
  */
 function DpsZoomControls({
   full,
@@ -58,28 +69,34 @@ function DpsZoomControls({
   setZoom: (range: DragRange) => void;
 }) {
   return (
-    <div className="brush-actions">
-      <button type="button" onClick={() => setZoom(zoomAt(zoom, full, 1 / ZOOM_STEP_BUTTON))}>
-        {t.dpsAnalysisZoomIn}
-      </button>
-      <button
-        type="button"
+    <div className="brush-actions brush-actions--zoom">
+      <IconButton
+        path={ZOOM_IN}
+        label={t.dpsAnalysisZoomIn}
+        tip
+        onClick={() => setZoom(zoomAt(zoom, full, 1 / ZOOM_STEP_BUTTON))}
+      />
+      <IconButton
+        path={ZOOM_OUT}
+        label={t.dpsAnalysisZoomOut}
+        tip
         disabled={!zoom}
         onClick={() => setZoom(zoomAt(zoom, full, ZOOM_STEP_BUTTON))}
-      >
-        {t.dpsAnalysisZoomOut}
-      </button>
-      <button type="button" disabled={!range} onClick={() => range && setZoom(fitSpan(range, full))}>
-        {t.dpsAnalysisZoomToSelection}
-      </button>
-      <button type="button" disabled={!zoom} onClick={() => setZoom(null)}>
-        {t.dpsAnalysisZoomReset}
-      </button>
-      <span>
-        {zoom
-          ? t.dpsAnalysisZoomLabel(formatClock(zoom.startMs), formatClock(zoom.endMs))
-          : t.dpsAnalysisZoomFullLabel}
-      </span>
+      />
+      <IconButton
+        path={ZOOM_SELECTION}
+        label={t.dpsAnalysisZoomToSelection}
+        tip
+        disabled={!range}
+        onClick={() => range && setZoom(fitSpan(range, full))}
+      />
+      <IconButton
+        path={ZOOM_FULL}
+        label={t.dpsAnalysisZoomReset}
+        tip
+        disabled={!zoom}
+        onClick={() => setZoom(null)}
+      />
     </div>
   );
 }

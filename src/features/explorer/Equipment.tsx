@@ -3,7 +3,7 @@ import { t } from "../../i18n";
 import { formatDuration } from "../../lib/format";
 import type { ReferenceDb } from "../../db/loader";
 import type { Replay } from "rrfparser";
-import { CHEVRON_LEFT, CHEVRON_RIGHT, ChevronButton } from "../../ui/ChevronButton";
+import { CHEVRON_LEFT, CHEVRON_RIGHT, IconButton } from "../../ui/IconButton";
 import { CharacterViewer } from "../../ui/CharacterViewer";
 import { useAppStore } from "../../store/useAppStore";
 import { itemIconUrl } from "../../sim/ragassets";
@@ -175,14 +175,14 @@ export function Equipment({ replay }: { replay: Replay }) {
       {pages.length > 1 && (
         <div id="equipment-pager">
           <div className="equip-pager">
-            <ChevronButton
+            <IconButton
               path={CHEVRON_LEFT}
               label={t.paginationPrev}
               disabled={safePage === 0}
               onClick={() => setPageIdx((i) => Math.max(0, i - 1))}
             />
             <span className="equip-page-counter">{t.equipmentPageOf(safePage + 1, pages.length)}</span>
-            <ChevronButton
+            <IconButton
               path={CHEVRON_RIGHT}
               label={t.paginationNext}
               disabled={safePage === pages.length - 1}

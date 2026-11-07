@@ -286,7 +286,7 @@ export const t = {
     "O DPS médio usa o primeiro e o último golpe dentro da janela selecionada como base de tempo, não as bordas da seleção. Em fórmula: DPS = dano total na janela ÷ (tempo do último golpe − tempo do primeiro golpe). Isso evita que tempo morto antes do primeiro hit ou depois do último diluam o DPS.",
   dpsAnalysisHelpZoom: "Como dar zoom.",
   dpsAnalysisHelpZoomBody:
-    "Gire a roda do mouse sobre o gráfico para aproximar e afastar no ponto onde o cursor está. Shift + roda — ou a rolagem horizontal do trackpad — desloca a janela visível para os lados. Sem mouse, use os botões abaixo do gráfico: eles aproximam, afastam, ampliam exatamente na janela que você selecionou e voltam para a sessão inteira. O zoom muda só o que você vê; as estatísticas continuam seguindo a janela selecionada.",
+    "Gire a roda do mouse sobre o gráfico para aproximar e afastar no ponto onde o cursor está. Shift + roda — ou a rolagem horizontal do trackpad — desloca a janela visível para os lados. Sem mouse, use os quatro botões abaixo do gráfico — passe o mouse sobre um para ver o que ele faz: eles aproximam, afastam, ampliam exatamente na janela que você selecionou e voltam para a sessão inteira. O zoom muda só o que você vê; as estatísticas continuam seguindo a janela selecionada.",
   dpsAnalysisHelpTimeMetrics: "Diferença entre as métricas de tempo.",
   dpsAnalysisHelpTimeMetricsBody:
     "\"Janela selecionada\" mostra o tamanho do retângulo que você arrastou. \"Janela de combate\" mostra último golpe − primeiro golpe — sempre menor ou igual à janela selecionada. \"Maior intervalo\" é o maior salto entre dois golpes consecutivos dentro da janela (útil para identificar pausas).",
@@ -299,8 +299,6 @@ export const t = {
   dpsAnalysisZoomOut: "Afastar",
   dpsAnalysisZoomToSelection: "Ampliar na seleção",
   dpsAnalysisZoomReset: "Sessão inteira",
-  dpsAnalysisZoomLabel: (s: string, e: string) => `Visível: ${s} – ${e}`,
-  dpsAnalysisZoomFullLabel: "Visível: sessão inteira",
   dpsAnalysisStatsTitle: "Estatísticas da janela",
   dpsAnalysisEmpty: "Nenhum evento de dano do jogador neste recorte.",
   cellSelectionDuration: "Janela selecionada",

@@ -972,7 +972,9 @@ a.equip-popover-card-row:hover {
   margin: 0 0 0.5rem;
 }
 
-.equip-arrow {
+/* Shared icon-only button: the equipment and character-viewer pagers, and the
+   timeline zoom row. Geometry for every icon is in src/ui/IconButton.tsx. */
+.icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -986,7 +988,7 @@ a.equip-popover-card-row:hover {
   padding: 0.25rem 0.5rem;
 }
 
-.equip-arrow svg {
+.icon-btn svg {
   display: block;
   width: 1em;
   height: 1em;
@@ -997,14 +999,49 @@ a.equip-popover-card-row:hover {
   stroke-linejoin: round;
 }
 
-.equip-arrow:hover:not(:disabled) {
+.icon-btn:hover:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent);
 }
 
-.equip-arrow:disabled {
+.icon-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* A button with no text says nothing until it is hovered, so the label arrives
+   as a tooltip. The delay is the point: these sit in a row of four, and an
+   instant bubble would flash under the pointer on its way across them. */
+.icon-btn[data-tip] {
+  position: relative;
+}
+
+.icon-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  /* Grows leftwards from the button's right edge. The rows that use this are
+     right-aligned, and a bubble centred on the last button would hang off the
+     page — which on a phone means a sideways scroll. */
+  right: 0;
+  bottom: calc(100% + 0.35rem);
+  z-index: 5;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+/* The delay lives here, not in the base rule, so the bubble leaves at once. */
+.icon-btn[data-tip]:hover::after,
+.icon-btn[data-tip]:focus-visible::after {
+  opacity: 1;
+  transition-delay: 0.5s;
 }
 
 .equip-page-counter {
@@ -1248,6 +1285,30 @@ button {
 .brush-actions button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Icon-only variant: sits under the right edge of the chart it zooms. */
+.brush-actions--zoom {
+  justify-content: flex-end;
+}
+
+.brush-actions--zoom .icon-btn {
+  /* Square, and a step larger than the row's 0.85rem text, which no longer has
+     anything to line up with. `.brush-actions button` wins on specificity, so
+     padding and font-size have to be restated here rather than left to
+     `.icon-btn`. */
+  font-size: 1rem;
+  padding: 0.3rem;
+}
+
+/* A finger is not a cursor: the labels used to make these buttons wide, and an
+   icon shrinks them to about 28px, which is under every touch-target guide.
+   "Ampliar na seleção" is also the only way to zoom without a wheel.
+   0.8rem lands the button on 44px, the size every touch-target guide asks for. */
+@media (pointer: coarse) {
+  .brush-actions--zoom .icon-btn {
+    padding: 0.8rem;
+  }
 }
 
 .bar-chart {
