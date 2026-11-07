@@ -1,0 +1,95 @@
+name: Preview deploy on PR
+
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# One preview per pull request: a second push should replace the first build,
+# not race it to the same alias.
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_preview:
+    # Fork pull requests cannot read the deployment secrets.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Same toolchain as deploy.yml: wrangler 4.127 refuses to run below v22.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The Worker is bundled by wrangler itself, so nothing else typechecks it.
+      - name: Typecheck the Worker
+        run: npm run typecheck:worker
+
+      - run: npm run build
+
+      # AFTER the build, for the reason spelled out in deploy.yml:
+      # tools/cache-headers.test.ts checks the _headers patterns for overlap
+      # against the real dist/ file list and skips those assertions when dist/
+      # is absent, so running it first passes vacuously.
+      - run: npm test
+
+      # A Worker *version*, not a deploy: the code and the assets go up and get
+      # a URL of their own, while production traffic stays on whatever main
+      # deployed. This is the Cloudflare equivalent of the Firebase Hosting
+      # preview channel the sibling projects use — and it is a fuller preview
+      # than theirs, because the real /api/* Worker comes along with the build.
+      #
+      # --preview-alias keeps that URL stable across pushes, so the comment
+      # below can be edited in place instead of piling up a link per commit.
+      - name: Upload a preview version
+        id: preview
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ALIAS: pr-${{ github.event.pull_request.number }}
+          # Through the environment, never interpolated into the script: a title
+          # is attacker-controlled text on any pull request.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          npx wrangler versions upload \
+            --preview-alias "$ALIAS" \
+            --tag "$ALIAS" \
+            --message "$ALIAS: $PR_TITLE" | tee upload.log
+          # wrangler prints both the per-version URL and the alias URL, and the
+          # labels have moved between releases — so match on the host, and
+          # prefer the alias one.
+          urls=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' upload.log || true)
+          url=$(echo "$urls" | grep "//$ALIAS-" | tail -1 || true)
+          [ -n "$url" ] || url=$(echo "$urls" | tail -1)
+          if [ -z "$url" ]; then
+            echo "::error::wrangler uploaded the version but printed no preview URL. Preview URLs are probably disabled for this Worker."
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the preview URL
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          URL: ${{ steps.preview.outputs.url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          cat > comment.md <<EOF
+          **Preview:** $URL — \`${SHA:0:7}\`
+
+          A Worker version, so production traffic is untouched. The preview serves
+          the real \`/api/*\` Worker, which means it reads and writes the production
+          D1 and R2 — as the Firebase preview did with Firestore before the migration.
+          EOF
+          # One comment per pull request, edited on every push.
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" \
+            --edit-last --create-if-none --body-file comment.md
