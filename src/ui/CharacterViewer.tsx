@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { t } from "../i18n";
 import { RAGASSETS_BASE, resolveSex } from "../sim/ragassets";
-import { CHEVRON_LEFT, CHEVRON_RIGHT, ChevronButton } from "./ChevronButton";
+import { CHEVRON_LEFT, CHEVRON_RIGHT, IconButton } from "./IconButton";
 import { attackActionType } from "./weapon-action";
 
 // ragassets/zrenderer gateway. zrenderer encodes body direction AND animation
@@ -194,12 +194,12 @@ export function CharacterViewer({
       <div className="character-controls">
         <div className="character-control-row">
           <span className="character-control-label">{t.characterBodyLabel}</span>
-          <ChevronButton
+          <IconButton
             path={CHEVRON_LEFT}
             label={t.characterRotatePrev}
             onClick={() => setBodyDir((d) => (d + 7) % 8)}
           />
-          <ChevronButton
+          <IconButton
             path={CHEVRON_RIGHT}
             label={t.characterRotateNext}
             onClick={() => setBodyDir((d) => (d + 1) % 8)}
@@ -207,13 +207,13 @@ export function CharacterViewer({
         </div>
         <div className="character-control-row">
           <span className="character-control-label">{t.characterHeadLabel}</span>
-          <ChevronButton
+          <IconButton
             path={CHEVRON_LEFT}
             label={t.characterRotatePrev}
             disabled={!headAllowed}
             onClick={() => setHeadDirIdx((i) => (i + HEAD_DIRS.length - 1) % HEAD_DIRS.length)}
           />
-          <ChevronButton
+          <IconButton
             path={CHEVRON_RIGHT}
             label={t.characterRotateNext}
             disabled={!headAllowed}

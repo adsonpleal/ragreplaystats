@@ -158,6 +158,12 @@ There is **one** Worker and it runs on **one** prefix, named by `run_worker_firs
 
 **Asset URLs are absolute** (`base: "/"` in `vite.config.ts`, and `/db` in `src/db/manifest.ts`). Relative URLs are not safe here: Workers assets 307s `/leaderboard` to `/leaderboard/`, from which `./assets/index-<hash>.js` resolves to `/leaderboard/assets/…`, misses, and gets answered by the SPA fallback with HTML — the browser then tries to execute HTML as a module and the app never boots. Firebase Hosting masked this with `trailingSlash: false`.
 
+### Previews on pull requests
+
+`.github/workflows/preview.yml` runs on every pull request from this repository: it typechecks the Worker, builds, tests, then publishes the build with `wrangler versions upload` and comments the URL on the pull request, editing the same comment on each push.
+
+A *version*, not a deploy — production traffic stays on whatever `main` shipped — but the version carries the real `worker/index.ts` and its bindings, so `/api/*` works in a preview and therefore reads and writes the **production** D1 and R2. That is what the Firebase preview channel did with Firestore before the migration, and it is why share links can be tested at all. `--preview-alias pr-<n>` keeps the URL stable for the life of the pull request.
+
 ### Firebase, retired
 
 The old `ragnarecap.web.app` and `ragnarecap.firebaseapp.com` addresses permanently redirect to `https://recap.latam-tools.com.br`, preserving paths and query strings so existing replay links keep working. `firebase.json` targets only the `ragnarecap` Hosting site and uploads no files. Publish the redirect with `firebase deploy --only hosting:ragnarecap --project ragreplaystats`; the app itself still deploys to Cloudflare.

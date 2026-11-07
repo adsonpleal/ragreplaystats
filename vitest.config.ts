@@ -14,6 +14,7 @@ export default defineConfig({
       "tools/**/*.test.ts",
       "src/aggregate/**/*.test.ts",
       "src/features/**/*.test.ts",
+      "src/ui/**/*.test.ts",
     ],
   },
 });
