@@ -47,6 +47,12 @@ export type AppState = {
   selectedTimeRange: Range;
   selectedMobSkillTarget: number | null;
   dpsAnalysisRange: DragRange;
+  /**
+   * Visible window of the Análise de DPS timeline — `null` is the whole
+   * session. Purely how much of the chart you are looking at: the stats below
+   * it follow `dpsAnalysisRange`, which is a different thing you drag.
+   */
+  dpsAnalysisZoom: DragRange;
   byPlayerCompareRange: DragRange;
   shareId: string | null;
   /** Always ArrayBuffer-backed (never Shared), so it can go straight into
@@ -81,6 +87,7 @@ export type AppState = {
   setSelectedTimeRange: (range: Range) => void;
   setSelectedMobSkillTarget: (aid: number | null) => void;
   setDpsAnalysisRange: (range: DragRange) => void;
+  setDpsAnalysisZoom: (range: DragRange) => void;
   setByPlayerCompareRange: (range: DragRange) => void;
 };
 
@@ -91,6 +98,7 @@ const CLEARED_SELECTION = {
   selectedTimeRange: null,
   selectedMobSkillTarget: null,
   dpsAnalysisRange: null,
+  dpsAnalysisZoom: null,
   byPlayerCompareRange: null,
 } as const;
 
@@ -107,6 +115,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedTimeRange: null,
   selectedMobSkillTarget: null,
   dpsAnalysisRange: null,
+  dpsAnalysisZoom: null,
   byPlayerCompareRange: null,
   shareId: null,
   replayBytes: null,
@@ -242,5 +251,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedMobSkillTarget: (selectedMobSkillTarget) =>
     set({ selectedMobSkillTarget }),
   setDpsAnalysisRange: (dpsAnalysisRange) => set({ dpsAnalysisRange }),
+  setDpsAnalysisZoom: (dpsAnalysisZoom) => set({ dpsAnalysisZoom }),
   setByPlayerCompareRange: (byPlayerCompareRange) => set({ byPlayerCompareRange }),
 }));

@@ -1226,6 +1226,7 @@ button {
 
 .brush-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.4rem;
@@ -1240,6 +1241,13 @@ button {
   background: var(--bg-elev);
   color: var(--fg);
   border-radius: 4px;
+}
+
+/* The zoom row has buttons that do not always apply — "Afastar" with the whole
+   session already showing, "Ampliar na seleção" with nothing selected. */
+.brush-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .bar-chart {

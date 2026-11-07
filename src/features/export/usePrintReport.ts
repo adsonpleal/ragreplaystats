@@ -26,6 +26,7 @@ export function usePrintReport(replay: Replay) {
       selectedTimeRange: store.selectedTimeRange,
       selectedMobSkillTarget: store.selectedMobSkillTarget,
       dpsAnalysisRange: store.dpsAnalysisRange,
+      dpsAnalysisZoom: store.dpsAnalysisZoom,
       byPlayerCompareRange: store.byPlayerCompareRange,
     };
     // Render every tab at top level (no drill-down) for the report.
@@ -35,6 +36,7 @@ export function usePrintReport(replay: Replay) {
       selectedTimeRange: null,
       selectedMobSkillTarget: null,
       dpsAnalysisRange: null,
+      dpsAnalysisZoom: null,
       byPlayerCompareRange: null,
     });
 
