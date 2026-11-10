@@ -2,6 +2,13 @@
 
 All notable user-facing changes to RagnaRecap. Newest first.
 
+## 2026-11-10
+
+- **73 itens novos ganharam nome nos replays.** Entre eles estão o **Episódio 19** (a Caixa e os Selecionáveis do episódio, mais os pacotes de Pedra Visual 19, 20 e 21), a linha **Ambivalente** (Coroas e Botas Imperial, Arcana e Mecânica), o conjunto **Magistral dos Falcões** (malha, greva, brinco e colar), as armas **Celestial** e **Infernal** que faltavam — Rapieira, Punhal, Ceifeira e Marreta — com os **Dons** e as **Essências** Celestial e Infernal, os encantamentos de **Alma** (Alma Veloz, Crítica, Terrestre, Sombria, Ardente, Zéfira e companhia), as caixas de **Automagia**, de **EXP Sombrio** e de **Mega Repente**, os **Artefatos Ovais ROStars** e seis visuais novos: os cabelos de **Leon**, **Juncea** e **Aurelie**, o **Véu de Friederike**, as **Asas de Juncea** e o **Elmo do Rei do Norte**.
+- **5 nomes de itens foram atualizados** para acompanhar o último patch do cliente: o Brasão de Honra passou a ser a **Marca de Honra de Schwartz**, o Dispositivo de Aprimoramento do Glaciar Sombrio virou **Dispositivo de Aprimoramento Vil Invernal**, o Minério Mágico da Flor de Neve virou **Minério Mágico de Flor Invernal**, a Célula de Forma de Vida Estranha virou **Célula de Criatura Estranha** e a Flor-Sino de Isca virou **Isca de Flor Sino**.
+- **119 Bônus Aleatórios foram reescritos** com o texto atual do cliente — eles aparecem no balão que abre ao clicar numa peça de equipamento, na aba Estatísticas. O que era "ATQ da arma" agora é **Dano físico**; os bônus por raça e por tamanho dizem de que raça ou tamanho falam (**Dano físico contra raça Demônio**, **Resist. a raça Dragão**, **Dano físico contra alvo Grande**); o dano mágico elemental ganhou a palavra propriedade (**Dano mágico de propriedade Fogo**); e os pontos finais e espaços sobrando saíram de **POD +10**, **TEN +5** e companhia.
+- **Uma habilidade teve o nome corrigido**: "Procurar Pedras" passa a ser **Procurar Pedra**.
+
 ## 2026-11-07
 
 - **Dá para dar zoom na linha do tempo da Análise de DPS.** O gráfico de dano e mensagens só sabia mostrar a gravação inteira de ponta a ponta, e numa sessão longa os golpes ficavam amontoados demais para dar para ler. Agora a roda do mouse aproxima e afasta no ponto onde o cursor está, Shift + roda — ou a rolagem horizontal do trackpad — desloca a janela visível para os lados, e quatro botões abaixo do gráfico fazem o mesmo sem mouse: aproximar, afastar, **ampliar na seleção**, que enquadra exatamente a janela que você arrastou, e voltar para a **sessão inteira**. Os botões são ícones — passe o mouse sobre um para ver o nome dele. O zoom muda só o que você vê: as estatísticas continuam seguindo a janela selecionada. Reportado por **pazzoLino**.

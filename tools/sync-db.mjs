@@ -16,8 +16,13 @@
 //
 // The /raw shapes (compact JSON arrays, sorted by id):
 //   items.json     { id, name, slots, aegisName, resourceName, description,
-//                    view, equipSlots, costume }   — `name` is the BARE name
-//                    and is null for rows the client never labels
+//                    view, spriteView, spriteBlank, viewKind, equipSlots,
+//                    costume }                     — `name` is the BARE name
+//                    and is null for rows the client never labels. We read
+//                    `view` (the literal client ClassNum); `spriteView` is the
+//                    same id with a fallback for the 92 named items whose
+//                    ClassNum is 0 and whose real view lives only in the
+//                    accessory/robe name tables — see the note on buildItems.
 //   jobs.json      { id, jt, name, hasIcon }       — `jt`/`name` may be null
 //   classes.json   { id, renderId, jt, name, race, … }  — one row per PLAYABLE
 //                    class, including every class pcidentity.lub never numbers
@@ -25,7 +30,10 @@
 //                    `renderId` is the id the packets carry; `id` is the
 //                    client's own (they differ only for the expanded 4th
 //                    classes, whose always-mounted sprite sits at 4309-4315)
-//   skills.json    { id, name }
+//   skills.json    { id, name, maxLevel, description, delay, parent? } —
+//                    `parent` is on a follow-up hit (and stays there after a
+//                    patch gives the follow-up a client name of its own); we
+//                    read `name` and `parent` and ignore the rest
 //   randomopt.json { id, name }
 //   status.json    { id, name }
 //
@@ -151,6 +159,12 @@ export function buildItems(items) {
     const rec = { name: it.slots > 0 ? `${it.name} [${it.slots}]` : it.name };
     // `view` is the client's ClassNum — the sprite id the character viewer needs
     // for headgears/costumes/garments/weapons. Kept only when set.
+    //
+    // Deliberately `view` and not `spriteView`: the two never disagree where
+    // both are set, and `spriteView` only adds the 92 named items whose ClassNum
+    // is 0 (89 headgears, 3 garments). Taking those would also mean reading
+    // `viewKind` to pick the sprite table, since the equip slot the viewer
+    // infers today would render three of them from the wrong one.
     if (it.view > 0) rec.view = it.view;
     out[String(it.id)] = rec;
   }
