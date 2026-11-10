@@ -8,6 +8,15 @@
     "name": "Golpe Fulminante"
   },
   {
+    "id": 713,
+    "name": "Lâminas Dançantes"
+  },
+  {
+    "id": 714,
+    "name": "Lâminas Dançantes (ataque)",
+    "parent": 713
+  },
+  {
     "id": 2001,
     "name": "Encantar Lâmina"
   },
@@ -17,7 +26,7 @@
   },
   {
     "id": 5236,
-    "name": "Flecha Escarlate (explosão)",
+    "name": "Flecha Escarlate",
     "parent": 5235
   }
 ]

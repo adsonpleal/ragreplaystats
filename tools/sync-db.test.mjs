@@ -130,7 +130,13 @@ describe("buildSkills", () => {
   });
 
   it("keeps the link from a second hit to its parent", () => {
-    expect(skills[5236]).toEqual({ name: "Flecha Escarlate (explosão)", parent: 5235 });
+    // ragassets names a follow-up after its parent plus a suffix while the
+    // client leaves it unnamed, and keeps `parent` either way.
+    expect(skills[714]).toEqual({ name: "Lâminas Dançantes (ataque)", parent: 713 });
+    // 5236 is the other half of the rule: the client now ships its own name for
+    // Flecha Escarlate's explosion — word for word the parent's — and `parent`
+    // survives that, which is the whole reason counting one use still works.
+    expect(skills[5236]).toEqual({ name: "Flecha Escarlate", parent: 5235 });
   });
 });
 
