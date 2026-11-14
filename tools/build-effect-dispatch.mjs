@@ -15,6 +15,7 @@
 //   struck  an extra effect on either side when damage lands
 //   used    what a no-damage skill (ZC_USE_SKILL) shows, per side
 //   ground  what a ground skill shows at its cell / on its caster
+//   unit    what a skill's UNIT standing on the ground shows, by unit TYPE
 //
 // rustnarok-client (a from-scratch native RO client, MIT OR Apache-2.0) keeps
 // all nine in one hand-verified text table. Measured against OUR renderable
@@ -32,11 +33,30 @@
 // both would draw those skills twice over, so the runtime suppresses the main
 // effect wherever one of these kinds has a row.
 //
+// THE UNIT ROWS ARE KEYED BY UNIT TYPE, NOT BY SKILL. Every other kind above is
+// keyed by skill id; `unit`, `rsm` and `area` are keyed by rathena's UNT_ number,
+// which is what the client itself keys a ground unit's visual off. We read that
+// number straight off 0x09ca (`GroundSkillUnit.unitType`, rrfparser >= 1.5.0)
+// instead of the `skillId` beside it, which is only CORRELATED from the caster's
+// latest cast and is 0 when nothing could be attributed. That is the whole point
+// of importing them: a Storm Gust's ice and a trap's model stop depending on a
+// guess. Unit types outside the table do occur in real recordings (21292 shows
+// up in 73 records of one replay), so the runtime needs a fall-through.
+//
 // WHAT IS DELIBERATELY NOT IMPORTED
 //   skill   superseded by our own skill-map (see above)
 //   str/part/ring/spr/func/wav   asset rows; the gateway already serves these
-//   status/item/unit/area/every/keep/trap/rsm   later phases; needs packet
-//           fields we do not decode yet (skill-unit type, item use)
+//   status/item   later phases; needs packet fields we do not decode yet
+//   trap    what a trap shows WHEN IT GOES OFF. 0x09ca carries the unit's type,
+//           not the later state change that fires it, so there is no event to
+//           hang these 23 rows on. `visible` does tell us a trap is HIDDEN
+//           (false for exactly one type, 145/HT_ANKLESNARE), which the runtime
+//           uses to draw nothing at all.
+//   keep/every/unitr/unitw   9 rows between them, and each one drives a
+//           procedural prim we do not have (Zenkai's and Makibishi's self-launch,
+//           Severe Rainstorm's periodic rain, Poison Smoke's random puffs,
+//           Epiclesis' tree). Importing the numbers without the renderers would
+//           only let the runtime draw the wrong thing.
 //   misc/minid/quake  no 0x019b events, no /mineffect, no camera shake
 //
 // `-1` IS DATA, NOT ABSENCE. The client's default caster/cast effect is 16
@@ -137,6 +157,8 @@ const effect = (raw) => {
  * row of a duplicated skill is the live one — mirrored here).
  * cast: a list per skill — the first entry is the aura, the rest start alongside it.
  * used/struck/ground: an ordered list of [side, effect] per skill.
+ * unit/unitModel/unitArea: keyed by UNIT TYPE (rathena's UNT_ number), not by
+ * skill. One row per type wins, like hit/caster — upstream inserts into a map.
  *
  * Columns are split on a SINGLE tab, like upstream: collapsing runs of tabs
  * would silently shift every column right of an empty one.
@@ -155,6 +177,10 @@ export function parseEffects(text) {
     struck: {},
     ground: {},
     length: {},
+    unit: {},
+    unitOnce: [],
+    unitModel: {},
+    unitArea: {},
   };
 
   for (const r of rows) {
@@ -188,6 +214,40 @@ export function parseEffects(text) {
         const id = effect(r[3]);
         if (!Number.isFinite(skill) || id == null) break;
         (out[kind][skill] ??= []).push([side, id]);
+        break;
+      }
+      case "unit": {
+        // `unit <unit type> <effect> [once]` — what the unit shows while it
+        // stands. Without `once` the client restarts the effect for as long as
+        // the unit is there, so a one-shot STR would flash once under a Storm
+        // Gust that lasts seconds.
+        const type = Number(r[1]);
+        const id = effect(r[2]);
+        if (!Number.isFinite(type) || id == null) break;
+        out.unit[type] = id;
+        if (r[3]?.trim() === "once" && !out.unitOnce.includes(type)) out.unitOnce.push(type);
+        break;
+      }
+      case "rsm": {
+        // `rsm <unit type> <model>` — the unit stands as a 3D MODEL, not an
+        // effect: a Hunter's trap, a Blast Mine. The path is a GRF model name
+        // (Korean, backslash-separated) and is kept exactly as upstream has it;
+        // our RSW loader already reads this format for map objects.
+        const type = Number(r[1]);
+        const file = r[2];
+        if (!Number.isFinite(type) || !file) break;
+        out.unitModel[type] = file;
+        break;
+      }
+      case "area": {
+        // `area <unit type> <effect> <lift>` — an effect spread over the unit's
+        // whole area rather than its one cell, lifted `lift` units off the
+        // ground. Sized by the unit's radius, which 0x09ca carries.
+        const type = Number(r[1]);
+        const id = effect(r[2]);
+        const lift = Number(r[3]);
+        if (!Number.isFinite(type) || id == null || !Number.isFinite(lift)) break;
+        out.unitArea[type] = [id, lift];
         break;
       }
       case "length": {
@@ -225,7 +285,9 @@ async function main() {
     `effect-dispatch.json written to ${outPath}\n` +
       `  hit ${count(out.hit)} · cast ${count(out.cast)} · caster ${count(out.caster)} · ` +
       `used ${count(out.used)} · struck ${count(out.struck)} · ground ${count(out.ground)} · ` +
-      `length ${count(out.length)}`,
+      `length ${count(out.length)}\n` +
+      `  unit ${count(out.unit)} (${out.unitOnce.length} once) · model ${count(out.unitModel)} · ` +
+      `area ${count(out.unitArea)}`,
   );
 }
 

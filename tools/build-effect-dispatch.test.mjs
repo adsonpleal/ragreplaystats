@@ -57,6 +57,59 @@ describe("parseEffects", () => {
     expect(out.cast[400]).toEqual([null]);
   });
 
+  it("reads a unit row by type, flagging the ones that play once", () => {
+    const out = parseEffects(
+      table(["unit", "126", "315"], ["unit", "135", "138", "once"], ["unit", "190", "-1"]),
+    );
+    expect(out.unit[126]).toBe(315);
+    expect(out.unit[135]).toBe(138);
+    expect(out.unitOnce).toEqual([135]);
+    // Unlike `caster`, a `-1` unit row has nothing to suppress — there is no
+    // default unit effect — so it is dropped rather than stored as null.
+    expect(Object.hasOwn(out.unit, "190")).toBe(false);
+  });
+
+  it("lets the last unit row for a type win, and never doubles a `once`", () => {
+    const out = parseEffects(
+      table(["unit", "126", "315"], ["unit", "126", "316", "once"], ["unit", "126", "317", "once"]),
+    );
+    expect(out.unit[126]).toBe(317);
+    expect(out.unitOnce).toEqual([126]);
+  });
+
+  it("reads a model row as a GRF path, backslashes intact", () => {
+    const out = parseEffects(
+      table(["rsm", "145", "외부소품\\트랩01"], ["rsm", "20852", "effect\\deepblindtrap\\deep_trap.rsm2"]),
+    );
+    expect(out.unitModel[145]).toBe("외부소품\\트랩01");
+    expect(out.unitModel[20852]).toBe("effect\\deepblindtrap\\deep_trap.rsm2");
+  });
+
+  it("reads an area row as effect plus lift, keeping a zero lift", () => {
+    const out = parseEffects(table(["area", "245", "959", "20"], ["area", "246", "964", "0"]));
+    expect(out.unitArea[245]).toEqual([959, 20]);
+    // A 0 lift is a real value (flat on the ground), not a missing column.
+    expect(out.unitArea[246]).toEqual([964, 0]);
+  });
+
+  it("ignores the unit kinds it has no renderer for", () => {
+    // keep/every/unitr/unitw each drive a procedural prim we do not have. They
+    // must not leak into `unit`, where the runtime would draw them at a cell.
+    const out = parseEffects(
+      table(
+        ["keep", "248", "992"],
+        ["every", "219", "1276", "992"],
+        ["unitr", "225", "1546", "1"],
+        ["unitw", "202", "1654"],
+        ["trap", "143", "106"],
+      ),
+    );
+    expect(out.unit).toEqual({});
+    expect(out.unitOnce).toEqual([]);
+    expect(out.unitModel).toEqual({});
+    expect(out.unitArea).toEqual({});
+  });
+
   it("reads used/struck/ground as ordered side/effect pairs", () => {
     const out = parseEffects(
       table(
@@ -131,7 +184,18 @@ describe("the shipped public/db/effect-dispatch.json", () => {
   });
 
   it("carries every kind the runtime reads, none of them empty", () => {
-    for (const kind of ["hit", "cast", "caster", "used", "struck", "ground", "length"]) {
+    for (const kind of [
+      "hit",
+      "cast",
+      "caster",
+      "used",
+      "struck",
+      "ground",
+      "length",
+      "unit",
+      "unitModel",
+      "unitArea",
+    ]) {
       expect(Object.keys(shipped[kind]).length, kind).toBeGreaterThan(0);
     }
   });
@@ -168,5 +232,87 @@ describe("the shipped public/db/effect-dispatch.json", () => {
     for (const kind of ["hit", "cast", "caster", "used", "struck", "ground"]) {
       expect(Object.hasOwn(shipped[kind], "0"), kind).toBe(false);
     }
+  });
+
+  it("has no unit row for type 0 — that is a truncated record, not a unit", () => {
+    // rrfparser decodes a truncated 0x09ca with `unitType` 0 rather than
+    // dropping it (the unit→caster link still matters for AoE attribution). If
+    // type 0 ever gained a row, every truncated record would draw it.
+    for (const kind of ["unit", "unitModel", "unitArea"]) {
+      expect(Object.hasOwn(shipped[kind], "0"), kind).toBe(false);
+    }
+    expect(shipped.unitOnce).not.toContain(0);
+  });
+
+  it("keys the unit kinds by unit type, in rathena's UNT_ range", () => {
+    // The client's table covers roughly 126-301. A type outside it does occur
+    // on the wire (21292), which is exactly why the runtime needs a
+    // fall-through rather than an assumption — but nothing in the TABLE should
+    // sit outside the range, or the import read the wrong column.
+    const types = [
+      ...Object.keys(shipped.unit),
+      ...Object.keys(shipped.unitModel),
+      ...Object.keys(shipped.unitArea),
+    ].map(Number);
+    expect(types.length).toBeGreaterThan(100);
+    for (const t of types) {
+      expect(t, String(t)).toBeGreaterThanOrEqual(126);
+      // The 2085x block is the newer trap models (deep blind, solid, swift, flame).
+      expect(t <= 301 || (t >= 20852 && t <= 20855), String(t)).toBe(true);
+    }
+  });
+
+  it("gives every `once` type a unit effect to play once", () => {
+    for (const type of shipped.unitOnce) {
+      expect(shipped.unit[type], String(type)).toBeTypeOf("number");
+    }
+  });
+
+  it("anchors the unit types rrfparser pinned the field's offset from", () => {
+    // The same four anchors that established where `unitType` sits in 0x09ca,
+    // read here from the other side: each skill's unit type must still name the
+    // effect the client draws for it. If the import ever shifts a column, these
+    // move together.
+    expect(shipped.unit[126]).toBe(315); // MG_SAFETYWALL's unit
+    expect(shipped.unit[127]).toBe(25); // MG_FIREWALL's
+    expect(shipped.unit[131]).toBe(319); // PR_SANCTUARY's
+    expect(shipped.unit[132]).toBe(318); // PR_MAGNUS'
+    expect(shipped.unit[133]).toBe(141); // AL_PNEUMA's
+    expect(shipped.unit[135]).toBe(138); // WZ_FIREPILLAR's
+    // Sanctuary's and Magnus' squares are placed once per unit and left to
+    // stand; the Fire Wall's flame restarts for as long as the wall is there.
+    expect(shipped.unitOnce).toContain(131);
+    expect(shipped.unitOnce).toContain(132);
+    expect(shipped.unitOnce).not.toContain(127);
+    // 134 is UNT_DUMMYSKILL — the type every skill with no ground graphic of
+    // its own lands on, which is what that member exists for. A row here would
+    // draw something for all of them.
+    expect(Object.hasOwn(shipped.unit, "134")).toBe(false);
+    expect(Object.hasOwn(shipped.unitModel, "134")).toBe(false);
+    expect(Object.hasOwn(shipped.unitArea, "134")).toBe(false);
+  });
+
+  it("keeps the model paths as GRF names, not URLs", () => {
+    for (const [type, file] of Object.entries(shipped.unitModel)) {
+      expect(file, type).not.toMatch(/^https?:/);
+      // GRF model names are backslash-separated and mostly Korean; a forward
+      // slash would mean the path was rewritten somewhere it should not be.
+      expect(file, type).not.toContain("/");
+      expect(file.length, type).toBeGreaterThan(0);
+    }
+    // Ankle Snare's trap, the one unit the server can hide from a viewer.
+    expect(shipped.unitModel[145]).toBe("외부소품\\트랩01");
+  });
+
+  it("gives every area row an effect and a lift", () => {
+    for (const [type, row] of Object.entries(shipped.unitArea)) {
+      expect(row.length, type).toBe(2);
+      const [effect, lift] = row;
+      expect(effect, type).toBeTypeOf("number");
+      expect(lift, type).toBeTypeOf("number");
+      expect(lift, type).toBeGreaterThanOrEqual(0);
+    }
+    expect(shipped.unitArea[245]).toEqual([959, 20]);
+    expect(shipped.unitArea[246]).toEqual([964, 0]);
   });
 });
