@@ -54,7 +54,11 @@ const TABLE = {
   //   148  a model that ALSO shows an effect (one of exactly two such types)
   //   245  an area type: the effect covers the whole area, lifted off the ground
   unit: { 127: 25, 131: 319, 148: 145 },
-  unitOnce: [131],
+  // 145 and 245 are in here ON PURPOSE even though neither has a `unit` row:
+  // the real table would never do that, but it is exactly the input that tells
+  // whether `unitVisual` qualifies `once` by the cell effect or just reads the
+  // list. Without them the test below passes with that check deleted.
+  unitOnce: [131, 145, 245],
   unitModel: { 145: "외부소품\\트랩01", 148: "외부소품\\트랩03_6" },
   unitArea: { 245: [959, 20] },
 };

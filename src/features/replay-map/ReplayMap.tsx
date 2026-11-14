@@ -671,39 +671,48 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         // Persistent ground effect (Storm Gust/Arrow Storm/…) at the unit's
         // cell. Anchored in scene space (X/Y negated like the actors).
         //
-        // TWO ROUTES, AND THE CLIENT'S OWN COMES FIRST. The client keys a ground
-        // unit's visual off the unit's TYPE — rathena's UNT_ number, which
-        // 0x09ca carries — so that is what we read. The `skillId` beside it is
-        // only CORRELATED by rrfparser from the caster's latest cast and is 0
-        // when nothing could be attributed, which is why the second route below
-        // used to leave those units blank. The type is on the wire and needs no
-        // guessing, so a type the client's table knows REPLACES the skill route
-        // rather than joining it — otherwise a Fire Wall would draw its flame
-        // from the table and its skill-map ground effect on top.
+        // TWO THINGS HAPPEN HERE, AND THEY ARE NOT ALTERNATIVES. In the client
+        // they are two different events: the ground-skill USE packet plays the
+        // skill's `ground` rows at the cell and on the caster, and 0x09ca — the
+        // unit itself — plays what the UNIT shows. Upstream handles them in
+        // separate arms (`MapEvent::GroundSkill` and `MapEvent::SkillUnit`) and
+        // both fire for one cast. We have no separate use event, so both hang
+        // off this cursor; short-circuiting either one deletes a visual the
+        // client draws.
+        //
+        // The unit's half is the new one. Its visual comes from the unit's TYPE
+        // — rathena's UNT_ number, which 0x09ca carries — and NOT from the
+        // `skillId` beside it, which rrfparser only CORRELATES from the caster's
+        // latest cast and reports as 0 when it cannot attribute one. That is why
+        // the skill half below begins by giving up on an unattributed unit while
+        // this half does not have to.
         const unit = unitVisual(ev.unitType);
-        if (unit) {
-          // A trap the server is hiding from this viewer. Exactly one type is
-          // ever hidden (145, Ankle Snare's) and `visible` is true on every
-          // other record in rrfparser's corpus, so this is a narrow case — but
-          // drawing a hidden trap would give away what the client does not show.
-          if (!ev.visible) return;
-          // `model` without `effectId`: 21 of the 23 model types stand as a 3D
-          // model and show no effect at all. We can parse and draw RSM (the map's
-          // objects are RSM) but there is no gateway route that serves one by
-          // path, so there is nothing to fetch — and a stand-in effect would be
-          // worse than the blank. The data is in the table for when there is.
-          if (unit.effectId == null) return;
-          // `areaLift` set: the effect covers the unit's whole AREA, which the
-          // client fills by spawning it over a (2·radius+1)² grid of jittered
-          // points and repeating on a period we do not import. Four types, up to
-          // 729 spawns a period between them — a grid spawner, not a one-line
-          // change, so these four draw nothing until it exists rather than one
-          // lone copy at the centre of an area that should be covered.
-          if (unit.areaLift != null) return;
-          // PER UNIT, not per cast. The client plays a unit's effect at each
-          // unit's own cell, so every cell of a Fire Wall burns; the skill route
-          // below deliberately collapses a cast's burst into one spawn, which is
-          // the right call when all it has is one guessed skill id for the lot.
+        // A trap the server is hiding from this viewer: show nothing at all, not
+        // even the skill's own ground effect, which would give away a trap the
+        // client does not draw. Exactly one type is ever hidden (145, Ankle
+        // Snare's); `visible` is true on every other record in rrfparser's
+        // corpus, and a truncated record decodes as true, so this cannot
+        // mis-fire into hiding something that should show.
+        if (unit && !ev.visible) return;
+        // Drawn only when the table gives this type an effect we can place at a
+        // cell. Two kinds of row deliberately do not:
+        //   · model-only (21 of the 23): the unit stands as a 3D model. We can
+        //     parse and draw RSM, but no gateway route serves one by path yet,
+        //     so there is nothing to fetch and a stand-in would be worse.
+        //   · area (4): the client spreads the effect over a (2·radius+1)² grid
+        //     of jittered points on a period we do not import — up to 729 spawns
+        //     a period, a grid spawner rather than a one-line change. One lone
+        //     copy at the centre of an area that should be covered is worse than
+        //     the blank.
+        // Either way the skill half below still runs, exactly as it did before
+        // any of this existed.
+        if (unit?.effectId != null && unit.areaLift == null) {
+          // PER UNIT, not per cast: the client plays a unit's effect at each
+          // unit's own cell, so every cell of a Fire Wall burns. (A Sanctuary in
+          // the replay this was checked against arrives as 18 separate unit
+          // aids, one per cell.) The skill half below collapses a cast's burst
+          // into one spawn instead, which is the right call when all it has is
+          // one guessed skill id for the lot.
           //
           // ONE LIVE EFFECT PER UNIT, which is why the window is the effect's
           // whole lifetime and not the short burst-collapsing one. The client
@@ -717,36 +726,44 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           // churn of overlapping one-shots; at the effect's lifetime it is one
           // live effect per unit, re-placed as each run ends, which also lets it
           // follow a unit that drifts.
-          if (dispatchOnce(`gu:${ev.unitAid}`, ev.time, GROUND_EFFECT_MS) && o.visuals) {
+          //
+          // `o.visuals` FIRST, unlike the skill half. That half advances its
+          // window during a silent catch-up on purpose, so a seek lands on the
+          // state normal playback would have reached; at its 600 ms window the
+          // seek's 2 s visible replay absorbs the stamp. This window is 4500 ms,
+          // which does not fit in that replay: a stamp laid during the silent
+          // phase would keep every standing unit blank from the seek until
+          // 2.5 s after it. Not stamping while invisible means the visible
+          // replay re-places each standing unit once, which is the point of
+          // seeking onto a standing Fire Wall in the first place.
+          if (o.visuals && dispatchOnce(`gu:${ev.unitAid}`, ev.time, GROUND_EFFECT_MS)) {
             const ucs = world!.cellSize;
             const uh = world!.gat.heightAt(ev.gx, ev.gy, 0.5, 0.5);
             groundWorldTmp.set(-((ev.gx + 0.5) * ucs), -uh, (ev.gy + 0.5) * ucs);
-            // `once` is the client's own flag: the effect is laid down once and
-            // left to stand (Sanctuary's square), as opposed to restarting for
-            // as long as the unit is there (a Fire Wall's flame). A looping
-            // effect gets the same lifetime cap as the skill route; a `once`
-            // effect runs its own length and stops, since neither of our
-            // renderers can hold a last frame the way the client does.
+            // `once` is the client's own flag, and it means KEPT: laid down once
+            // and held for as long as the unit stands (Sanctuary's square), as
+            // against restarting over and over (a Fire Wall's flame). Neither of
+            // our renderers can hold a last frame, so the nearest thing to
+            // "kept" is to loop it under the same lifetime cap: a square that
+            // quietly re-places itself reads as standing, where a one-shot would
+            // end at its own length and leave the cell empty until the window
+            // reopened. The flag still earns its keep — it is why the sound
+            // below is tied to the spawn rather than to the loop.
             effectsLayer!.spawn(unit.effectId, ev.unitAid, groundWorldTmp, ev.time, {
-              loop: !unit.once,
-              durationMs: unit.once ? 0 : GROUND_EFFECT_MS,
+              loop: true,
+              durationMs: GROUND_EFFECT_MS,
             });
+            // The unit's own sound, with its spawn. No separate dedup: the audio
+            // layer already throttles a repeat of the same name to one play per
+            // 60 ms, so a Sanctuary's 18 cells arriving in one drain are heard
+            // once, while the same caster dropping a second wall later is heard
+            // again — which a window keyed on caster and type would have eaten.
+            if (o.audible) playSounds(soundsForEffect(unit.effectId));
           }
-          // Sound once per CAST, not per cell: a five-cell Fire Wall playing its
-          // sound five times over is a different bug from drawing five flames,
-          // which is right. Keyed on caster + type so a second wall seconds later
-          // is heard again, and on the same lifetime window as the visual — a
-          // standing AoE re-sent every 21 ms must not retrigger its sound at that
-          // rate (the skill route's 600 ms window already errs that way).
-          if (o.audible && dispatchOnce(`gus:${ev.casterAid}:${ev.unitType}`, ev.time, GROUND_EFFECT_MS)) {
-            playSounds(soundsForEffect(unit.effectId));
-          }
-          return;
         }
-        // No row for this type — an unknown one (21292 turns up in real
-        // recordings) or UNT_DUMMYSKILL, where every skill with no ground
-        // graphic of its own lands. Fall back to the skill the caster was last
-        // seen casting, which is all this had before the table.
+        // The skill's own half, unchanged: `ground` rows and the skill-map's
+        // groundEffectId, from the correlated skill id. 0 means rrfparser could
+        // attribute nothing, and there is nothing here to draw without it.
         if (!ev.skillId) return;
         const eff = skillEntry(ev.skillId);
         // `ground`: what the client shows at the cell and/or on the caster for a

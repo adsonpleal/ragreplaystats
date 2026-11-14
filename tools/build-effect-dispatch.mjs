@@ -150,6 +150,15 @@ const effect = (raw) => {
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
 
+/** A column upstream reads with `parse::<u32>()`: a run of digits and nothing
+ *  else. Stricter than `Number.isFinite` on purpose — `Number("")` is 0, and 0
+ *  is the one unit type that must never have a row, since rrfparser decodes a
+ *  truncated 0x09ca as type 0 rather than dropping the record. A blank column
+ *  in some future upstream edit would otherwise mint `unit[0]` and draw that
+ *  effect for every truncated record in every replay. Negatives, fractions and
+ *  `0x…` are rejected for the same reason: upstream skips the row, so we do. */
+const u32 = (raw) => (/^\d+$/.test(String(raw ?? "").trim()) ? Number(raw) : null);
+
 /**
  * Read effects.txt into the six dispatch kinds plus `length`.
  *
@@ -221,9 +230,9 @@ export function parseEffects(text) {
         // stands. Without `once` the client restarts the effect for as long as
         // the unit is there, so a one-shot STR would flash once under a Storm
         // Gust that lasts seconds.
-        const type = Number(r[1]);
-        const id = effect(r[2]);
-        if (!Number.isFinite(type) || id == null) break;
+        const type = u32(r[1]);
+        const id = u32(r[2]);
+        if (type == null || id == null) break;
         out.unit[type] = id;
         if (r[3]?.trim() === "once" && !out.unitOnce.includes(type)) out.unitOnce.push(type);
         break;
@@ -233,9 +242,11 @@ export function parseEffects(text) {
         // effect: a Hunter's trap, a Blast Mine. The path is a GRF model name
         // (Korean, backslash-separated) and is kept exactly as upstream has it;
         // our RSW loader already reads this format for map objects.
-        const type = Number(r[1]);
+        const type = u32(r[1]);
         const file = r[2];
-        if (!Number.isFinite(type) || !file) break;
+        // Upstream matches `["rsm", _, file]` exactly, so a row with a trailing
+        // column is not an rsm row at all.
+        if (type == null || !file || r.length !== 3) break;
         out.unitModel[type] = file;
         break;
       }
@@ -243,10 +254,12 @@ export function parseEffects(text) {
         // `area <unit type> <effect> <lift>` — an effect spread over the unit's
         // whole area rather than its one cell, lifted `lift` units off the
         // ground. Sized by the unit's radius, which 0x09ca carries.
-        const type = Number(r[1]);
-        const id = effect(r[2]);
-        const lift = Number(r[3]);
-        if (!Number.isFinite(type) || id == null || !Number.isFinite(lift)) break;
+        const type = u32(r[1]);
+        const id = u32(r[2]);
+        const lift = u32(r[3]);
+        // Upstream matches `["area", kind, effect, lift]` exactly — four fields,
+        // no more.
+        if (type == null || id == null || lift == null || r.length !== 4) break;
         out.unitArea[type] = [id, lift];
         break;
       }

@@ -227,14 +227,21 @@ export function sideEffects(
  *  (asserted in the build tool's tests), so such a record falls through here. */
 export function unitVisual(unitType: number): UnitVisual | null {
   if (!table) return null;
-  const cell = hasOwn(table.unit, unitType) ? table.unit[String(unitType)] : null;
-  const area = hasOwn(table.unitArea, unitType) ? table.unitArea[String(unitType)] : null;
-  const model = hasOwn(table.unitModel, unitType) ? table.unitModel[String(unitType)] : null;
+  // Every key is read through `?? {}` / `?? []`, not straight off the table.
+  // This runs inside the per-frame drain, and a JSON served without these keys
+  // — a stale cached build, an older file still in a browser's cache — would
+  // otherwise throw on `hasOwnProperty.call(undefined, …)` once a frame and
+  // take the whole map down. Treating it as absent costs the unit's visual and
+  // falls back to the skill, which is the behaviour before this table existed.
+  const units = table.unit ?? {};
+  const areas = table.unitArea ?? {};
+  const models = table.unitModel ?? {};
+  const cell = hasOwn(units, unitType) ? units[String(unitType)] : null;
+  const area = hasOwn(areas, unitType) ? areas[String(unitType)] : null;
+  const model = hasOwn(models, unitType) ? models[String(unitType)] : null;
   if (cell == null && area == null && model == null) return null;
   return {
     effectId: cell ?? area?.[0] ?? null,
-    // `?? []` for the same reason as isSustainedCastAura: a stale cached build
-    // of the JSON without the key must not throw inside the per-frame drain.
     once: cell != null && (table.unitOnce ?? []).includes(unitType),
     areaLift: area ? area[1] : null,
     model,
