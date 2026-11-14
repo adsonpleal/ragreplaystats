@@ -13,6 +13,16 @@
 // to ~380 skills that previously drew nothing — with no new renderer and no new
 // assets, since every effect id they name already resolves through the gateway.
 //
+// A SEVENTH KIND IS KEYED DIFFERENTLY. Everything above is keyed by skill id.
+// The ground-unit rows — `unit`, `unitArea`, `unitModel` — are keyed by the
+// unit's TYPE, rathena's UNT_ number, because that is what the client itself
+// keys a ground unit's visual off. We read that number straight off 0x09ca
+// (`GroundSkillUnit.unitType`), where before we only had the `skillId` beside
+// it, which rrfparser CORRELATES from the caster's latest cast and reports as 0
+// when it cannot attribute one. A type the table does not know is normal — real
+// recordings carry 21292 — so `unitVisual` returns null and the caller falls
+// back to the skill's own ground effect.
+//
 // ABSENT IS NOT NONE. The client's default caster/cast effect is 16 (Bash's
 // burst); a table row of `-1` SUPPRESSES it, and arrives here as `null`. So
 // `caster[skill] === null` means "this skill shows nothing", while a missing key
@@ -46,6 +56,40 @@ interface DispatchTable {
   ground: Record<string, [Side, number][]>;
   /** effect → its own run length in 16 ms client ticks. */
   length: Record<string, number>;
+  /** unit TYPE → the effect it shows at its cell while it stands. */
+  unit: Record<string, number>;
+  /** The unit types whose effect is placed once rather than restarted. */
+  unitOnce: number[];
+  /** unit TYPE → the GRF model path it stands as. */
+  unitModel: Record<string, string>;
+  /** unit TYPE → [effect, lift] covering the unit's whole area. */
+  unitArea: Record<string, [number, number]>;
+}
+
+/** What the client draws for a ground skill unit of a given type.
+ *
+ *  The parts are independent because the table's are: 92 types name an effect at
+ *  the cell, 4 name one over the whole area (never both — they are disjoint in
+ *  the data), 23 stand as a model, and exactly two of those also show an effect.
+ *  So this is a record of optional parts, not a choice between them. */
+export interface UnitVisual {
+  /** The effect at the unit's cell, or null when the unit is a model only. */
+  effectId: number | null;
+  /** True when the effect is placed ONCE and left to stand. False means the
+   *  client restarts it for as long as the unit is there — the difference
+   *  between Sanctuary's square, laid down once, and a Fire Wall's flame, which
+   *  burns for the wall's whole life. A one-shot STR on a looping unit would
+   *  flash once under an effect that lasts seconds. */
+  once: boolean;
+  /** Set when the effect covers the unit's whole AREA rather than its one cell,
+   *  lifted this many units off the ground. Sized by the unit's radius, which
+   *  0x09ca carries. Null for a per-cell effect. */
+  areaLift: number | null;
+  /** The GRF model path (Korean, backslash-separated) the unit stands as, or
+   *  null. Reading one needs a gateway route that can serve an arbitrary model,
+   *  which does not exist yet — so a model-only type still draws nothing, and
+   *  that is the correct nothing rather than a stand-in. */
+  model: string | null;
 }
 
 /** One client tick. An effect's `length` is counted in these. */
@@ -169,6 +213,32 @@ export function sideEffects(
     else out.target.push(id);
   }
   return out;
+}
+
+/** What to draw for a ground skill unit of this type, or null when the client's
+ *  table says nothing about it — an unknown type (21292 appears in real
+ *  recordings), or UNT_DUMMYSKILL (134), the type every skill with no ground
+ *  graphic of its own lands on. A null is the caller's cue to fall back to the
+ *  skill's own ground effect, which is all we had before this table.
+ *
+ *  Type 0 is deliberately never a hit: rrfparser decodes a truncated 0x09ca
+ *  with `unitType` 0 rather than dropping the record, because the unit→caster
+ *  link still matters for attributing AoE damage. The table has no row for 0
+ *  (asserted in the build tool's tests), so such a record falls through here. */
+export function unitVisual(unitType: number): UnitVisual | null {
+  if (!table) return null;
+  const cell = hasOwn(table.unit, unitType) ? table.unit[String(unitType)] : null;
+  const area = hasOwn(table.unitArea, unitType) ? table.unitArea[String(unitType)] : null;
+  const model = hasOwn(table.unitModel, unitType) ? table.unitModel[String(unitType)] : null;
+  if (cell == null && area == null && model == null) return null;
+  return {
+    effectId: cell ?? area?.[0] ?? null,
+    // `?? []` for the same reason as isSustainedCastAura: a stale cached build
+    // of the JSON without the key must not throw inside the per-frame drain.
+    once: cell != null && (table.unitOnce ?? []).includes(unitType),
+    areaLift: area ? area[1] : null,
+    model,
+  };
 }
 
 /** An effect's own run length in ms — the client's authority on how long it

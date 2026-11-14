@@ -39,6 +39,7 @@ import {
   isSustainedCastAura,
   preloadEffectDispatch,
   sideEffects,
+  unitVisual,
 } from "../../sim/render/effectDispatch";
 import { AudioManager } from "../../sim/render/audio";
 import { weaponSwingSound } from "../../sim/render/weaponSound";
@@ -668,9 +669,84 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
       });
       groundCursor!.advanceTo(untilMs, (ev) => {
         // Persistent ground effect (Storm Gust/Arrow Storm/…) at the unit's
-        // cell. The skill is attributed from the caster's recent use/cast; one
-        // effect per activation (the cell burst is deduped), looped for a fixed
-        // lifetime. Anchored in scene space (X/Y negated like the actors).
+        // cell. Anchored in scene space (X/Y negated like the actors).
+        //
+        // TWO ROUTES, AND THE CLIENT'S OWN COMES FIRST. The client keys a ground
+        // unit's visual off the unit's TYPE — rathena's UNT_ number, which
+        // 0x09ca carries — so that is what we read. The `skillId` beside it is
+        // only CORRELATED by rrfparser from the caster's latest cast and is 0
+        // when nothing could be attributed, which is why the second route below
+        // used to leave those units blank. The type is on the wire and needs no
+        // guessing, so a type the client's table knows REPLACES the skill route
+        // rather than joining it — otherwise a Fire Wall would draw its flame
+        // from the table and its skill-map ground effect on top.
+        const unit = unitVisual(ev.unitType);
+        if (unit) {
+          // A trap the server is hiding from this viewer. Exactly one type is
+          // ever hidden (145, Ankle Snare's) and `visible` is true on every
+          // other record in rrfparser's corpus, so this is a narrow case — but
+          // drawing a hidden trap would give away what the client does not show.
+          if (!ev.visible) return;
+          // `model` without `effectId`: 21 of the 23 model types stand as a 3D
+          // model and show no effect at all. We can parse and draw RSM (the map's
+          // objects are RSM) but there is no gateway route that serves one by
+          // path, so there is nothing to fetch — and a stand-in effect would be
+          // worse than the blank. The data is in the table for when there is.
+          if (unit.effectId == null) return;
+          // `areaLift` set: the effect covers the unit's whole AREA, which the
+          // client fills by spawning it over a (2·radius+1)² grid of jittered
+          // points and repeating on a period we do not import. Four types, up to
+          // 729 spawns a period between them — a grid spawner, not a one-line
+          // change, so these four draw nothing until it exists rather than one
+          // lone copy at the centre of an area that should be covered.
+          if (unit.areaLift != null) return;
+          // PER UNIT, not per cast. The client plays a unit's effect at each
+          // unit's own cell, so every cell of a Fire Wall burns; the skill route
+          // below deliberately collapses a cast's burst into one spawn, which is
+          // the right call when all it has is one guessed skill id for the lot.
+          //
+          // ONE LIVE EFFECT PER UNIT, which is why the window is the effect's
+          // whole lifetime and not the short burst-collapsing one. The client
+          // forgets a unit's previous effect before playing it again, so a unit
+          // never has two; we cannot cancel a spawned effect by unit, so the
+          // equivalent is to not spawn again until the last one has run out.
+          // That matters more than it sounds: a recording re-sends a standing
+          // unit constantly — in the replay this was checked against, each of 46
+          // units arrives ~1390 times over 30 s, a median 21 ms apart, drifting
+          // across 9 cells. At the burst window that would be ~2300 spawns and a
+          // churn of overlapping one-shots; at the effect's lifetime it is one
+          // live effect per unit, re-placed as each run ends, which also lets it
+          // follow a unit that drifts.
+          if (dispatchOnce(`gu:${ev.unitAid}`, ev.time, GROUND_EFFECT_MS) && o.visuals) {
+            const ucs = world!.cellSize;
+            const uh = world!.gat.heightAt(ev.gx, ev.gy, 0.5, 0.5);
+            groundWorldTmp.set(-((ev.gx + 0.5) * ucs), -uh, (ev.gy + 0.5) * ucs);
+            // `once` is the client's own flag: the effect is laid down once and
+            // left to stand (Sanctuary's square), as opposed to restarting for
+            // as long as the unit is there (a Fire Wall's flame). A looping
+            // effect gets the same lifetime cap as the skill route; a `once`
+            // effect runs its own length and stops, since neither of our
+            // renderers can hold a last frame the way the client does.
+            effectsLayer!.spawn(unit.effectId, ev.unitAid, groundWorldTmp, ev.time, {
+              loop: !unit.once,
+              durationMs: unit.once ? 0 : GROUND_EFFECT_MS,
+            });
+          }
+          // Sound once per CAST, not per cell: a five-cell Fire Wall playing its
+          // sound five times over is a different bug from drawing five flames,
+          // which is right. Keyed on caster + type so a second wall seconds later
+          // is heard again, and on the same lifetime window as the visual — a
+          // standing AoE re-sent every 21 ms must not retrigger its sound at that
+          // rate (the skill route's 600 ms window already errs that way).
+          if (o.audible && dispatchOnce(`gus:${ev.casterAid}:${ev.unitType}`, ev.time, GROUND_EFFECT_MS)) {
+            playSounds(soundsForEffect(unit.effectId));
+          }
+          return;
+        }
+        // No row for this type — an unknown one (21292 turns up in real
+        // recordings) or UNT_DUMMYSKILL, where every skill with no ground
+        // graphic of its own lands. Fall back to the skill the caster was last
+        // seen casting, which is all this had before the table.
         if (!ev.skillId) return;
         const eff = skillEntry(ev.skillId);
         // `ground`: what the client shows at the cell and/or on the caster for a

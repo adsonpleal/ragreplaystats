@@ -16,6 +16,7 @@ import {
   isSustainedCastAura,
   preloadEffectDispatch,
   sideEffects,
+  unitVisual,
 } from "./effectDispatch";
 
 /**
@@ -44,6 +45,18 @@ const TABLE = {
   struck: { 800: [["c", 750], ["t", 666]] },
   ground: { 900: [["g", 235], ["c", 12]] },
   length: { 25: 40, 215: 500 },
+  // Ground units, keyed by unit TYPE rather than by skill. Every row here is
+  // the real one, and between them they cover each shape the table has:
+  //   127  MG_FIREWALL's unit — an effect that RESTARTS while the wall stands
+  //   131  PR_SANCTUARY's — laid down once and left to stand
+  //   145  HT_ANKLESNARE's — a model, no effect, and the one type the server
+  //        ever hides from a viewer
+  //   148  a model that ALSO shows an effect (one of exactly two such types)
+  //   245  an area type: the effect covers the whole area, lifted off the ground
+  unit: { 127: 25, 131: 319, 148: 145 },
+  unitOnce: [131],
+  unitModel: { 145: "외부소품\\트랩01", 148: "외부소품\\트랩03_6" },
+  unitArea: { 245: [959, 20] },
 };
 
 beforeAll(async () => {
@@ -187,5 +200,74 @@ describe("before the table has loaded", () => {
     expect(fresh.isSustainedCastAura(12)).toBe(false);
     expect(fresh.sideEffects("used", 700)).toEqual({ caster: [], target: [], ground: [] });
     expect(fresh.effectLengthMs(25)).toBeNull();
+  });
+});
+
+describe("ground units", () => {
+  it("reads the restarting kind as a looping cell effect", () => {
+    // A Fire Wall's flame: the client restarts it for as long as the wall is
+    // there, so `once` false is what tells the caller to loop it.
+    expect(unitVisual(127)).toEqual({ effectId: 25, once: false, areaLift: null, model: null });
+  });
+
+  it("flags the kind that is laid down once", () => {
+    expect(unitVisual(131)).toEqual({ effectId: 319, once: true, areaLift: null, model: null });
+  });
+
+  it("gives a model-only type its model and no effect", () => {
+    // 21 of the 23 model types look like this. The caller draws nothing until a
+    // gateway route can serve a model by path — but it must be able to tell
+    // "this unit is a model we cannot fetch" from "this unit is not in the
+    // table", because the second falls back to the skill and the first must not.
+    expect(unitVisual(145)).toEqual({
+      effectId: null,
+      once: false,
+      areaLift: null,
+      model: "외부소품\\트랩01",
+    });
+  });
+
+  it("carries both parts for a type that is a model AND an effect", () => {
+    expect(unitVisual(148)).toEqual({
+      effectId: 145,
+      once: false,
+      areaLift: null,
+      model: "외부소품\\트랩03_6",
+    });
+  });
+
+  it("marks an area type with its lift, so the caller can tell it apart", () => {
+    // The effect covers a (2·radius+1)² grid, not one cell. A caller that drew
+    // this like a cell effect would put one lone copy at the centre of an area
+    // that should be covered, which is why the lift is surfaced rather than
+    // folded into effectId.
+    const area = unitVisual(245);
+    expect(area?.effectId).toBe(959);
+    expect(area?.areaLift).toBe(20);
+    expect(area?.model).toBeNull();
+  });
+
+  it("returns null for a type the client's table does not know", () => {
+    // Both of these are normal, not errors: 21292 is a real value seen in 73
+    // records of one recording, and 134 is UNT_DUMMYSKILL, where every skill
+    // with no ground graphic of its own lands. A null is the caller's cue to
+    // fall back to the correlated skill id.
+    expect(unitVisual(21292)).toBeNull();
+    expect(unitVisual(134)).toBeNull();
+  });
+
+  it("returns null for type 0 — a truncated record, not a unit", () => {
+    // rrfparser decodes a truncated 0x09ca with unitType 0 rather than dropping
+    // it, so this path is reached in practice and must not resolve to a visual.
+    expect(unitVisual(0)).toBeNull();
+  });
+
+  it("never reports `once` for a type with no cell effect", () => {
+    // `once` qualifies the cell effect. A model-only or area type has none, so
+    // the flag would be meaningless — and a caller branching on it first would
+    // take the wrong path.
+    for (const type of [145, 245]) {
+      expect(unitVisual(type)?.once, String(type)).toBe(false);
+    }
   });
 });
