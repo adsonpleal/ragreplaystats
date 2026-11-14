@@ -12,6 +12,8 @@
     "test": "vitest run",
     "build:db": "node tools/sync-db.mjs",
     "build:monsters": "node tools/build-monsters.mjs",
+    "build:effects": "node tools/build-effect-dispatch.mjs",
+    "build:world-str": "node tools/build-world-str.mjs",
     "deploy": "npm run build && wrangler deploy",
     "typecheck:worker": "tsc -p worker/tsconfig.json"
   },

@@ -25,10 +25,21 @@ import { type AuraTier, EffectsLayer } from "./Effects";
 import {
   hasSkillEffect,
   preloadSkillMap,
+  preloadWorldStr,
   skillEntry,
   soundsForEffect,
   soundsForSkill,
 } from "../../sim/render/effectAssets";
+import {
+  castAlongside,
+  castAura,
+  casterEffect,
+  effectLengthMs,
+  hitEffects,
+  isSustainedCastAura,
+  preloadEffectDispatch,
+  sideEffects,
+} from "../../sim/render/effectDispatch";
 import { AudioManager } from "../../sim/render/audio";
 import { weaponSwingSound } from "../../sim/render/weaponSound";
 import { EntityTable } from "./Entities";
@@ -78,6 +89,12 @@ const MAIN_EFFECT_DEDUP_MS = 500;
 // Collapse a doubled server-effect (0x01f3) packet, while still letting a genuine
 // re-use (a potion used again seconds later) spawn again.
 const NOTIFY_DEDUP_MS = 200;
+// Dedup window for the dispatch-table effects (caster flash, per-hit pair,
+// struck, used, ground extras). Shorter than MAIN_EFFECT_DEDUP_MS on purpose:
+// these are the quick per-packet flashes the client repeats on every hit, so
+// collapsing half a second of them would swallow a real combo. This only has to
+// absorb a packet that arrives doubled in the same instant.
+const DISPATCH_DEDUP_MS = 120;
 
 // A played sound can't be un-played, so SFX fire ONLY for events crossing the
 // playhead during normal forward playback. A per-frame `audible` flag gates them;
@@ -375,6 +392,39 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     // collapse a packet that arrives doubled while still letting a genuine re-use
     // (a potion used again seconds later) fire again. Cleared on restart.
     const lastNotifyEffect = new Map<string, number>();
+    // One dedup table for every dispatch-table family, keyed `${kind}:${aid}:${effectId}`.
+    // Cleared on restart like the others.
+    const lastDispatch = new Map<string, number>();
+
+    /** True when this (kind, anchor, effect) hasn't fired inside the dedup
+     *  window — and records it as fired. Each call sits next to the spawn it
+     *  guards, so on the damage path (which bails before any visual work when
+     *  `visuals` is off) the window simply restarts after a seek; at 120 ms that
+     *  can only ever let one extra flash through on the first visible frame. */
+    const dispatchOnce = (key: string, atMs: number, windowMs = DISPATCH_DEDUP_MS): boolean => {
+      const last = lastDispatch.get(key);
+      if (last != null && atMs - last < windowMs) return false;
+      lastDispatch.set(key, atMs);
+      return true;
+    };
+
+    /** Spawn one dispatch-table effect, with the client's own per-effect
+     *  lifetime (`length`) applied as a cull cap. Every new dispatch kind goes
+     *  through here, so that cap lives in exactly one place. `attached` effects
+     *  follow the entity; a flash pinned where it landed does not. */
+    const spawnDispatched = (
+      effectId: number,
+      aid: number,
+      anchor: Vector3 | null,
+      atMs: number,
+      attached = false,
+    ): void => {
+      if (!effectsLayer || !anchor) return;
+      effectsLayer.spawn(effectId, aid, anchor, atMs, {
+        attached,
+        durationMs: effectLengthMs(effectId) ?? 0,
+      });
+    };
 
     // Spawn a skill's main effect ON THE TARGET, attached (follows it), and play
     // its main sound. This is the arrow-rain / bolt / heal-sparkle that belongs
@@ -510,6 +560,11 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
     const groundWorldTmp = new Vector3();
     const mainEffectTmp = new Vector3();
     const notifyWorldTmp = new Vector3();
+    // Anchors for the dispatch-table spawns. Two are enough however many effects
+    // one packet fires: EffectsLayer clones the anchor it is handed, so a temp is
+    // free again the moment spawn returns.
+    const dispatchCasterTmp = new Vector3();
+    const dispatchTargetTmp = new Vector3();
     const camUpTmp = new Vector3();
     // Reused each frame to reconcile level auras by tier (see syncAuras below).
     const auraTiers = new Map<number, AuraTier>();
@@ -556,11 +611,60 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         // packet below), not on the caster at cast start.
         const casterPos = entities!.worldPosOf(ev.source, castWorldTmp);
         if (casterPos) effectsLayer!.spawnCastCircle(ev.source, casterPos, ev.time, ev.castMs);
+        // The cast AURA — the bands that glow under the caster for as long as the
+        // bar fills. This is the visual the client actually draws for a cast; the
+        // lock-on circle above is a separate thing (the client's own ground
+        // targeting) and both are kept. Looped for the cast's duration and
+        // attached, so it tracks a caster who gets knocked back mid-cast.
+        //
+        // Element: the aura is tinted by the cast's element in the client, which
+        // rides in the 0x013e/0x07fb `property` field — a field rrfparser decodes
+        // and then drops, so it never reaches us. Passing 0 gives the neutral
+        // white-blue bands: right shape, right timing, not element-tinted. Wiring
+        // the real element is a one-argument change here once the parser keeps it.
+        if (ev.castMs > 0 && casterPos) {
+          const aura = castAura(ev.skillId, 0);
+          if (aura != null && isSustainedCastAura(aura)) {
+            effectsLayer!.spawn(aura, ev.source, casterPos, ev.time, {
+              attached: true,
+              loop: true,
+              durationMs: ev.castMs,
+            });
+          } else if (aura != null) {
+            // Not a band aura — the client's fallback for an unlisted skill is
+            // Bash's burst (16), a single pop at cast start. Play it once.
+            spawnDispatched(aura, ev.source, casterPos, ev.time, true);
+          }
+          // A handful of skills start further effects alongside the aura.
+          for (const id of castAlongside(ev.skillId)) {
+            spawnDispatched(id, ev.source, casterPos, ev.time, true);
+          }
+        }
       });
       useCursor!.advanceTo(untilMs, (ev) => {
+        // `used`: what a ZC_USE_SKILL skill draws, split between the caster and
+        // the target. These REPLACE the skill's own effect rather than joining
+        // it: the client takes the skill-line effectId/effectIdOnCaster only
+        // when the skill has no `used` row at all. 172 of the rows name the very
+        // effect the skill-map already gives, so adding them on top would simply
+        // draw 359 skills' visuals twice over. The sound is unaffected — that is
+        // played from the skill, not from whichever effect represents it.
+        const targetAid = ev.target || ev.source;
+        const used = sideEffects("used", ev.skillId);
+        const usedCovers = used.caster.length > 0 || used.target.length > 0 || used.ground.length > 0;
         // No-damage skills (heals/buffs) land via skill-use: play the main
         // effect + sound on the target it was used on (self for a buff).
-        spawnMainEffect(ev.skillId, ev.target || ev.source, ev.time, o.audible, o.visuals);
+        spawnMainEffect(ev.skillId, targetAid, ev.time, o.audible, o.visuals && !usedCovers);
+        for (const id of used.caster) {
+          if (!dispatchOnce(`u:${ev.source}:${id}`, ev.time) || !o.visuals) continue;
+          spawnDispatched(id, ev.source, entities!.worldPosOf(ev.source, dispatchCasterTmp), ev.time, true);
+        }
+        // Anything not marked "caster" lands on the target — the client has one
+        // `else` branch for both, so a stray ground-side row is not dropped.
+        for (const id of [...used.target, ...used.ground]) {
+          if (!dispatchOnce(`u:${targetAid}:${id}`, ev.time) || !o.visuals) continue;
+          spawnDispatched(id, targetAid, entities!.worldPosOf(targetAid, dispatchTargetTmp), ev.time, true);
+        }
       });
       groundCursor!.advanceTo(untilMs, (ev) => {
         // Persistent ground effect (Storm Gust/Arrow Storm/…) at the unit's
@@ -569,21 +673,56 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         // lifetime. Anchored in scene space (X/Y negated like the actors).
         if (!ev.skillId) return;
         const eff = skillEntry(ev.skillId);
+        // `ground`: what the client shows at the cell and/or on the caster for a
+        // ground skill. Like `used`, these REPLACE the skill-map's single
+        // groundEffectId rather than joining it (the client reads the skill line
+        // only for a skill with no `ground` row). Keyed on the same
+        // per-activation dedup as the main ground effect below, but resolved
+        // first so a skill with no groundEffectId still gets these.
+        const groundKey = `${ev.casterAid}:${ev.skillId}`;
+        const extras = sideEffects("ground", ev.skillId);
+        // Everything not marked "caster" belongs at the cell.
+        const atCell = [...extras.ground, ...extras.target];
+        const extrasCover = atCell.length > 0 || extras.caster.length > 0;
+        if (extrasCover) {
+          // GROUND_DEDUP_MS, not the short dispatch window: one cast drops a
+          // burst of unit cells spread over a few hundred ms and they must
+          // collapse into one spawn, exactly like the main ground effect.
+          if (dispatchOnce(`g:${groundKey}`, ev.time, GROUND_DEDUP_MS) && o.visuals) {
+            const cs0 = world!.cellSize;
+            const h0 = world!.gat.heightAt(ev.gx, ev.gy, 0.5, 0.5);
+            groundWorldTmp.set(-((ev.gx + 0.5) * cs0), -h0, (ev.gy + 0.5) * cs0);
+            for (const id of atCell) {
+              // Looped for the unit's lifetime like the main ground effect: the
+              // client restarts a ground-unit effect while the unit stands, so a
+              // one-shot would flash once over a multi-second Storm Gust.
+              effectsLayer!.spawn(id, ev.casterAid, groundWorldTmp, ev.time, {
+                loop: true,
+                durationMs: GROUND_EFFECT_MS,
+              });
+            }
+            for (const id of extras.caster) {
+              spawnDispatched(id, ev.casterAid, entities!.worldPosOf(ev.casterAid, dispatchCasterTmp), ev.time, true);
+            }
+          }
+        }
         if (eff?.groundEffectId == null) return;
-        const key = `${ev.casterAid}:${ev.skillId}`;
+        const key = groundKey;
         const last = lastGroundSpawn.get(key);
         if (last != null && ev.time - last < GROUND_DEDUP_MS) return;
         // The dedup window advances even with visuals off, so a silent catch-up
         // leaves the map in the state normal playback would have reached.
         lastGroundSpawn.set(key, ev.time);
         if (!o.visuals) return;
-        const cs = world!.cellSize;
-        const h = world!.gat.heightAt(ev.gx, ev.gy, 0.5, 0.5);
-        groundWorldTmp.set(-((ev.gx + 0.5) * cs), -h, (ev.gy + 0.5) * cs);
-        effectsLayer!.spawn(eff.groundEffectId, ev.casterAid, groundWorldTmp, ev.time, {
-          loop: true,
-          durationMs: GROUND_EFFECT_MS,
-        });
+        if (!extrasCover) {
+          const cs = world!.cellSize;
+          const h = world!.gat.heightAt(ev.gx, ev.gy, 0.5, 0.5);
+          groundWorldTmp.set(-((ev.gx + 0.5) * cs), -h, (ev.gy + 0.5) * cs);
+          effectsLayer!.spawn(eff.groundEffectId, ev.casterAid, groundWorldTmp, ev.time, {
+            loop: true,
+            durationMs: GROUND_EFFECT_MS,
+          });
+        }
         // Ground effect sound once per activation (already deduped above).
         if (o.audible) playSounds(soundsForEffect(eff.groundEffectId));
       });
@@ -608,17 +747,63 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         const pos = entities!.worldPosOf(ev.target, targetWorldTmp);
         if (pos) {
           damageLayer!.spawn(ev.target, pos, ev.damage, ev.hitType, ev.source === playerAid, ev.time, ev.hits);
+          // `struck`: further effects either side shows when damage lands. A
+          // struck row REPLACES the skill's own effect on the target (the
+          // client reads the skill line only when the skill has no struck row),
+          // so resolve it before the main effect — 71 of the rows name the very
+          // effect the skill-map gives, which would otherwise double up.
+          const struck = sideEffects("struck", ev.skillId);
+          const struckCovers =
+            struck.caster.length > 0 || struck.target.length > 0 || struck.ground.length > 0;
           // Damage skills land via their damage packet: the main effect once on
           // the target (Arrow Storm rain, bolt impact), plus the per-hit effect
           // pinned where each hit landed (a quick flash, not attached).
-          spawnMainEffect(ev.skillId, ev.target, ev.time, o.audible, o.visuals);
+          spawnMainEffect(ev.skillId, ev.target, ev.time, o.audible, o.visuals && !struckCovers);
           const eff = skillEntry(ev.skillId);
-          if (eff?.hitEffectId != null) {
-            effectsLayer!.spawn(eff.hitEffectId, ev.target, pos, ev.time);
+          // Per-hit effects on the target. The dispatch table carries the
+          // client's TWO of them and disagrees with the gateway's single
+          // hitEffectId on 38 skills, so it wins where it has a row; the
+          // gateway's value stays the fallback for everything it doesn't cover.
+          const hits = hitEffects(ev.skillId);
+          const onTarget = hits
+            ? hits.filter((id): id is number => id != null)
+            : eff?.hitEffectId != null
+              ? [eff.hitEffectId]
+              : [];
+          for (const id of onTarget) {
+            spawnDispatched(id, ev.target, pos, ev.time);
+          }
+          if (onTarget.length) {
             // Hit-spark sound once per damage event — not per hit (ev.hits is a
             // single multi-hit packet; the same-name throttle collapses any
-            // rapid repeats at speed).
-            if (o.audible) playSounds(soundsForEffect(eff.hitEffectId));
+            // rapid repeats at speed). Only the first effect carries the sound;
+            // the second is a visual companion in every row that has one.
+            if (o.audible) playSounds(soundsForEffect(onTarget[0]));
+          }
+          // SKILL damage only, from here down. An auto-attack arrives on this
+          // same cursor with skillId 0, and the client handles the two apart:
+          // the caster/struck block belongs to the skill-damage packet, while a
+          // plain swing never reaches it. Without this guard `casterEffect(0)`
+          // finds no row, falls through to the client's default of 16, and every
+          // swing of every actor plants Bash's burst under the attacker.
+          if (ev.skillId) {
+            // `caster`: the flash a damaging skill puts on its own caster as the
+            // packet lands — the client's default is Bash's burst (16) for every
+            // skill that doesn't opt out, which is why so much of a fight's
+            // feedback was missing. Attached, so it rides the caster's sprite.
+            const onCaster = casterEffect(ev.skillId);
+            if (onCaster != null && dispatchOnce(`k:${ev.source}:${onCaster}`, ev.time)) {
+              spawnDispatched(onCaster, ev.source, entities!.worldPosOf(ev.source, dispatchCasterTmp), ev.time, true);
+            }
+            for (const id of struck.caster) {
+              if (!dispatchOnce(`s:${ev.source}:${id}`, ev.time)) continue;
+              spawnDispatched(id, ev.source, entities!.worldPosOf(ev.source, dispatchCasterTmp), ev.time, true);
+            }
+            // Anything not marked "caster" lands on the target.
+            for (const id of [...struck.target, ...struck.ground]) {
+              if (!dispatchOnce(`s:${ev.target}:${id}`, ev.time)) continue;
+              spawnDispatched(id, ev.target, pos, ev.time, true);
+            }
           }
           // Auto-attack (skillId 0): the weapon's swing sound, resolved from the
           // ATTACKER's equipped weapon — a sword's clash, a bow's twang, bare
@@ -888,7 +1073,14 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
         // "ready" — it's ~20KB while the map is dozens of textures, but on a slow
         // link an unawaited fetch could land after the first casts drained,
         // silently skipping their effects. Never rejects (falls back to {}).
-        const skillMapReady = preloadSkillMap();
+        // Same deal for the dispatch table (cast auras, caster flash, per-hit
+        // pair, struck/used/ground extras): ~40 KB from our own public/db, read
+        // synchronously by the drain, so it is awaited alongside the skill map.
+        const skillMapReady = Promise.all([
+          preloadSkillMap(),
+          preloadEffectDispatch(),
+          preloadWorldStr(),
+        ]);
         const base = `${MAPS_ROOT}${mapName}/`;
         const manifest = (await fetch(`${base}manifest.json`).then((r) => r.json())) as MapManifest;
         if (disposed) return;
@@ -952,6 +1144,7 @@ export default function ReplayMap({ replay, db, onClose }: { replay: Replay; db:
           lastGroundSpawn.clear();
           lastMainEffect.clear();
           lastNotifyEffect.clear();
+          lastDispatch.clear();
           buffsDirty = true; // force one reconcile so a rewind clears the strip
           drainedToMs = 0;
           audio.stopAll(); // cut any live voices before the fresh drain

@@ -147,16 +147,52 @@ export function effectTableUrl(): string {
   return `${RAGASSETS_BASE}/effect/table`;
 }
 
+// Korean asset names reach us MOJIBAKE. roBrowser's effect table was built by
+// reading the GRF's CP949 file names one byte per character, so "버서크" is
+// stored as "¹ö¼­Å©" — eight characters in the 0x80-0xFF range that are really
+// six CP949 bytes. The gateway serves these files under their real UTF-8 names
+// and 404s the byte-wise spelling, so every such effect silently failed to load.
+// Re-reading the characters as the bytes they stand for recovers the name:
+// checked one by one against the gateway, all 18 byte-wise .str names 404 as
+// stored and 200 decoded. 8 of them are reachable from the skill map or the
+// dispatch table — Berserk (220, 756), Dispel (235), Magic Rod (244), Soul Burn
+// (406), Tracking (646), Bull's Eye (649), Ignition Break (722) and 연환 (273).
+//
+// It is applied to the texture URL as well, which is defensive rather than a
+// fix for anything today: the 72 byte-wise names in non-STR rows are GRF paths
+// the texture endpoint cannot serve under either spelling, and the layer
+// textures inside the Korean .str files are all plain ASCII.
+//
+// A name is only mojibake if EVERY character fits in a byte and at least one is
+// above ASCII — a real UTF-8 Korean name (which world-str.json carries) has
+// code points past 0xFF and is left alone, as is every plain ASCII name.
+const cp949 = typeof TextDecoder === "undefined" ? null : new TextDecoder("euc-kr", { fatal: true });
+
+function fromMojibake(name: string): string {
+  let high = false;
+  for (let i = 0; i < name.length; i++) {
+    const c = name.charCodeAt(i);
+    if (c > 0xff) return name;
+    if (c >= 0x80) high = true;
+  }
+  if (!high || !cp949) return name;
+  try {
+    return cp949.decode(Uint8Array.from(name, (c) => c.charCodeAt(0)));
+  } catch {
+    return name; // not valid CP949 after all — ask for it exactly as given
+  }
+}
+
 /** Parsed .str keyframe animation for one effect file (name relative to the
  *  GRF's data/, with the %d variant already substituted by the caller). */
 export function effectStrUrl(file: string): string {
-  return `${RAGASSETS_BASE}/effect/str?file=${encodeURIComponent(file)}`;
+  return `${RAGASSETS_BASE}/effect/str?file=${encodeURIComponent(fromMojibake(file))}`;
 }
 
 /** One .str layer texture as an RGBA PNG (colorkey already applied). `file` is
  *  the texture name relative to data/texture/effect/. */
 export function effectTextureUrl(file: string): string {
-  return `${RAGASSETS_BASE}/effect/texture?file=${encodeURIComponent(file)}`;
+  return `${RAGASSETS_BASE}/effect/texture?file=${encodeURIComponent(fromMojibake(file))}`;
 }
 
 /** A played-sprite (.spr/.act) effect bundle: /effects/sprites/<key>/sprite.json =

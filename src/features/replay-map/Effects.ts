@@ -22,6 +22,7 @@ import { GroundAuraEffect } from "../../sim/render/groundAuraEffect";
 import { SwirlingAuraEffect } from "../../sim/render/swirlingAuraEffect";
 import { Level99BubbleEffect } from "../../sim/render/level99BubbleEffect";
 import { MaxLevelAuraEffect } from "../../sim/render/maxLevelAuraEffect";
+import { BandedEffect } from "../../sim/render/bandedEffect";
 import {
   AURA_GOLD,
   type LoadedPart,
@@ -48,7 +49,8 @@ type EffectRenderer =
   | GroundAuraEffect
   | SwirlingAuraEffect
   | Level99BubbleEffect
-  | MaxLevelAuraEffect;
+  | MaxLevelAuraEffect
+  | BandedEffect;
 
 interface LiveEffect {
   effect: EffectRenderer;
@@ -64,12 +66,16 @@ interface LiveEffect {
   /** Persistent ground effect: loop the STR and cull at `durationMs` instead of
    *  at the STR's natural end. false for one-shot cast/hit effects. */
   loop: boolean;
-  /** Lifetime for looped effects (ms); ignored when loop is false. */
+  /** Lifetime cap (ms), or 0 for none. For a looped effect this IS its length.
+   *  For a one-shot it's a one-way clamp: the effect still ends on its own when
+   *  the animation finishes first, so a cap longer than the animation never
+   *  fires. That's how the client's per-effect `length` table is applied. */
   durationMs: number;
 }
 
 /** Per-spawn placement. `attached` follows `aid`; `loop`+`durationMs` make a
- *  persistent ground effect (Storm Gust, Arrow Storm, …). */
+ *  persistent ground effect (Storm Gust, Arrow Storm, …); `durationMs` on its
+ *  own caps a one-shot's lifetime (the client's per-effect `length`). */
 export interface SpawnOpts {
   attached?: boolean;
   loop?: boolean;
@@ -189,7 +195,7 @@ export class EffectsLayer {
         if (this.disposed || !this.effectsEnabled || !parts.length) return;
         if (gen !== this.generation) return;
         for (const part of parts) {
-          const { effect, delayMs } = this.buildRenderer(part);
+          const { effect, delayMs } = this.buildRenderer(part, durationMs);
           this.live.push({
             effect,
             spawnMs: nowMs,
@@ -205,8 +211,14 @@ export class EffectsLayer {
       .catch((err) => console.warn("[effects] spawn failed", label, err));
   }
 
-  /** Construct the renderer for one loaded part, plus its part-stagger delay. */
-  private buildRenderer(part: LoadedPart): { effect: EffectRenderer; delayMs: number } {
+  /** Construct the renderer for one loaded part, plus its part-stagger delay.
+   *  `durationMs` is the spawn's own lifetime cap, which a band aura needs up
+   *  front: the client's cast auras shape their whole bloom around how long the
+   *  cast runs, so it is an input to the animation, not just a cull. */
+  private buildRenderer(
+    part: LoadedPart,
+    durationMs: number,
+  ): { effect: EffectRenderer; delayMs: number } {
     switch (part.kind) {
       case "str":
         return { effect: new StrEffect(this.scene, part.str), delayMs: part.str.startDelayMs ?? 0 };
@@ -224,6 +236,8 @@ export class EffectsLayer {
         return { effect: new SwirlingAuraEffect(this.scene, part.texture, this.cellSize), delayMs: 0 };
       case "levelBubble":
         return { effect: new Level99BubbleEffect(this.scene, part.texture, this.cellSize), delayMs: 0 };
+      case "banded":
+        return { effect: new BandedEffect(this.scene, part.banded, durationMs), delayMs: 0 };
       case "maxLevelAura":
         return {
           effect: new MaxLevelAuraEffect(this.scene, part.max.frames, part.max.rings, part.max.color, this.cellSize),
@@ -249,7 +263,7 @@ export class EffectsLayer {
     for (const [aid, tier] of qualifying) {
       if (this.auras.has(aid)) continue;
       const parts = tier === "max" ? maxLevelAuraParts(AURA_GOLD) : levelAuraParts();
-      const effects = parts.map((p) => this.buildRenderer(p).effect);
+      const effects = parts.map((p) => this.buildRenderer(p, 0).effect);
       this.auras.set(aid, { effects, spawnMs: nowMs, tier });
     }
   }
@@ -276,9 +290,12 @@ export class EffectsLayer {
         this.live.splice(i, 1);
         continue;
       }
-      // Looped ground effects run for a fixed lifetime (the STR wraps); cull when
-      // it elapses rather than at the STR's natural end.
-      if (l.loop && l.durationMs > 0 && elapsed > l.durationMs) {
+      // Lifetime cap. A looped ground effect has no natural end (the STR wraps),
+      // so this is its whole length; a one-shot ends itself when its animation
+      // finishes, so this only ever cuts it short — which is what the client's
+      // per-effect `length` does. Measured from the part's own start, so a
+      // staggered part gets its full length rather than the leader's remainder.
+      if (l.durationMs > 0 && elapsed - l.delayMs > l.durationMs) {
         l.effect.dispose();
         this.live.splice(i, 1);
         continue;
