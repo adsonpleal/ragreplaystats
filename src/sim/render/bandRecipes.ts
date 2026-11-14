@@ -2,8 +2,8 @@
 // recipe rather than roBrowser's.
 //
 // roBrowser has no DRAWABLE row for the 3rd/4th-class casting auras: they are
-// built in client code, so the gateway's EffectTable has no entry for 23 of the
-// 25 below, a sound-only row for Aura Blade (367) and a `FUNC` row we do not
+// built in client code, so the gateway's EffectTable has no entry for 27 of the
+// 29 below, a sound-only row for Aura Blade (367) and a `FUNC` row we do not
 // render for Tetra Vortex's (805). Either way nothing was drawn. The rule in
 // effectAssets.ts is "nothing in the table resolved to a renderer", not "the
 // table has no row" — so the day the gateway starts serving a supported type
@@ -62,6 +62,8 @@ const SHADOW_CAST = 826;
 const DARK_CASTING = 454;
 const BUBBLE_CAST = 830;
 const COMET_CAST = 1418;
+/** Jack Frost's cast: the only aura here that TURNS rather than blooms. */
+const JACK_CAST = 1449;
 const MAELSTROM_CAST = 1556;
 const CLEARANCE_CAST = 1560;
 const VARETYR_CAST = 1565;
@@ -114,6 +116,43 @@ const LOOKS: Record<number, AuraLook> = {
     additive: false,
   },
   [CART_CAST]: { texture: "ring_white.tga", color: [0xf4, 0xbb, 0x7c], additive: true },
+  // THE FOUR NAMES BELOW ARE NOT THE CLIENT'S, and that is deliberate. Each of
+  // these auras names a texture that does not exist, so all four used to 404 and
+  // were left out of BAND_EFFECTS rather than drawn with a stand-in. The real
+  // files were found on the gateway (adsonpleal/ragassets#9) and all four answer
+  // 200 today; three separate causes, none of them the gateway's:
+  //   1449 asks for a bare `ring_ice.tga`, as if it sat beside ring_white and
+  //        ring_red at the top of effect\. The only one is in the skill's own
+  //        folder, new_jackfrost\.
+  //   1910 asks for `ring_infinity.tga` — a typo in the CLIENT's own data, which
+  //        ships the file as `ring_infinty.tga`, missing the second i.
+  //   1902 and 1918 append a `_ring` suffix the ABR folders do not use. They
+  //        name the band after the skill, which is how 1938 below — an ABR aura
+  //        that already drew — reaches abr_battle_warior.tga.
+  // Fuzzy-matching these at the gateway was considered and rejected there: an
+  // asset server whose contract is "the name exists or it 404s" is exactly the
+  // wrong place to guess. So the real names live here, with the client's own in
+  // this comment so a future reader can tell a correction from a typo.
+  [JACK_CAST]: {
+    texture: "new_jackfrost\\ring_ice.tga",
+    color: [0xc3, 0xc3, 0xff],
+    additive: false,
+  },
+  1902: {
+    texture: "new_abr_mother\\abr_mother.tga",
+    color: [0xff, 0xff, 0xff],
+    additive: true,
+  },
+  1910: {
+    texture: "new_abr_infinity\\ring_infinty.tga",
+    color: [0xff, 0xff, 0xff],
+    additive: true,
+  },
+  1918: {
+    texture: "new_d_cannon\\abr_dual_cannon.tga",
+    color: [0xff, 0xff, 0xff],
+    additive: true,
+  },
   1923: { texture: "ring_red.tga", color: [0xb4, 0x37, 0x1e], additive: false },
   [FRAMI_CAST]: { texture: "new_pramen\\ring_blue.tga", color: [0x64, 0x64, 0xff], additive: true },
   1938: { texture: "new_battle_w\\abr_battle_warior.tga", color: [0xff, 0xff, 0xff], additive: true },
@@ -132,13 +171,12 @@ const LOOKS: Record<number, AuraLook> = {
 
 /** Every effect this module draws.
  *
- *  It is NOT every band effect the client has, by two cuts. One: an effect the
- *  gateway already serves a drawable row for is left alone (see SCOPE above) —
- *  so no plain `turning` aura (12, 54-59) is here, only the blooming ones and
- *  Earth Grave's pair. Two: four of the client's auras name a texture the
- *  gateway has no file for — Jack Frost's cast (1449, `ring_ice`) and the three
- *  ABR casts (1902, 1910, 1918) — and an aura drawn with the wrong picture is
- *  worse than one that stays dark, so they are out until the asset exists. */
+ *  It is NOT every band effect the client has: an effect the gateway already
+ *  serves a drawable row for is left alone (see SCOPE above), so the plain
+ *  `turning` auras the gateway draws with its own CYLINDER rows (12, 54-59) are
+ *  not here. What IS here is every blooming aura, Earth Grave's pair, and Jack
+ *  Frost's — the one aura that turns and that the gateway still draws nothing
+ *  for. */
 export const BAND_EFFECTS: readonly number[] = [
   AURA_BLADE,
   TETRA_CASTING,
@@ -149,12 +187,16 @@ export const BAND_EFFECTS: readonly number[] = [
   BLUE_CASTING,
   GREEN_CASTING,
   COMET_CAST,
+  JACK_CAST,
   MAELSTROM_CAST,
   CLEARANCE_CAST,
   VARETYR_CAST,
   EARTH_CAST,
   EARTH_DRIVE_CAST,
   CART_CAST,
+  1902,
+  1910,
+  1918,
   1923,
   FRAMI_CAST,
   1938,
@@ -258,8 +300,10 @@ const BLOOM_TURNS = [180, 270, 0, 90];
  *  BAND_EFFECTS: within that set everything blooms except Earth Grave's and
  *  Earth Drive's casts, so this reads off LOOKS rather than repeating the
  *  client's full list (which also names ids the gateway already draws). */
+const NOT_BLOOM = new Set([EARTH_CAST, EARTH_DRIVE_CAST, JACK_CAST]);
+
 export function isBloom(effect: number): boolean {
-  return effect !== EARTH_CAST && effect !== EARTH_DRIVE_CAST && effect in LOOKS;
+  return effect in LOOKS && !NOT_BLOOM.has(effect);
 }
 
 /** How many sets of cones a blooming aura makes: Comet's and Frami's only the
@@ -427,6 +471,17 @@ export function bandsAt(effect: number, ticks: number, age: number): ShapedBand[
       }
     }
     return out;
+  }
+  // Jack Frost (1449) turns like the elemental casts the gateway draws: three
+  // crescents at 3, 4 and 5 degrees a tick around a faint column, fading over
+  // the last 40 ticks. Plain `turning`, not Earth Grave's variant of it.
+  if (effect === JACK_CAST) {
+    const ice: ShapedBand[] = [];
+    for (let band = 0; band < 4; band++) {
+      const shape = turning(band, ticks, age);
+      ice.push({ band: shape, set: 0, heights: heightsOf(band, shape.height, age, turningHeight) });
+    }
+    return ice;
   }
   // Earth Grave (1664) and Earth Drive (1709): turning arcs with their own alpha
   // curve and a breathing sheet.

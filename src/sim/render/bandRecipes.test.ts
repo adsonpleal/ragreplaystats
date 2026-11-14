@@ -43,10 +43,19 @@ describe("the effects this module claims", () => {
     for (const id of BAND_EFFECTS) expect(auraLook(id), `effect ${id}`).not.toBeNull();
   });
 
-  it("leaves out the four whose texture the gateway has no file for", () => {
-    // Jack Frost's cast (ring_ice) and the three ABR casts. An aura drawn with
-    // the wrong picture is worse than one that stays dark.
-    for (const id of [1449, 1902, 1910, 1918]) expect(BAND_EFFECTS).not.toContain(id);
+  it("names no texture the gateway cannot answer", () => {
+    // The four that used to be left out of this list were left out because
+    // their textures 404'd, and an aura drawn with the wrong picture is worse
+    // than one that stays dark. They are in now, under names that resolve —
+    // see "the four auras whose textures were missing" at the bottom of this
+    // file. What this pins is the shape of the rule: a texture path is a real
+    // file path, so nothing here may carry the placeholder-ish markers that a
+    // half-finished entry would.
+    for (const id of BAND_EFFECTS) {
+      const texture = auraLook(id)?.texture ?? "";
+      expect(texture, `effect ${id}`).toMatch(/\.tga$/);
+      expect(texture, `effect ${id}`).not.toMatch(/[%*?]|TODO/);
+    }
   });
 
   it("claims no effect the gateway already draws", () => {
@@ -352,6 +361,69 @@ describe("writeBandStrip", () => {
       expect(scaled[i]).toBeCloseTo(-plain[i] * 0.2, 5);
       expect(scaled[i + 1]).toBeCloseTo(plain[i + 1] * 0.2, 5);
       expect(scaled[i + 2]).toBeCloseTo(plain[i + 2] * 0.2, 5);
+    }
+  });
+});
+
+describe("the four auras whose textures were missing", () => {
+  // These shipped dark: the client names a texture for each that does not exist
+  // under that name, and drawing a cast aura with the wrong picture is worse
+  // than drawing none. The real files were found (adsonpleal/ragassets#9) and
+  // the names here are the gateway's, not the client's — so these assertions
+  // are not redundant with the table, they are the record of a deliberate
+  // divergence that a future "fix the typo" would otherwise silently undo.
+  const JACK = 1449;
+  const ABR = [1902, 1910, 1918];
+
+  it("carries the names that resolve, not the ones the client asks for", () => {
+    expect(auraLook(JACK)?.texture).toBe("new_jackfrost\\ring_ice.tga");
+    // The client asks for `ring_infinity`; its own file is missing the second i.
+    expect(auraLook(1910)?.texture).toBe("new_abr_infinity\\ring_infinty.tga");
+    // The client appends `_ring`; the ABR folders name the band after the skill,
+    // which is how 1938 — never broken — reaches its own texture.
+    expect(auraLook(1902)?.texture).toBe("new_abr_mother\\abr_mother.tga");
+    expect(auraLook(1918)?.texture).toBe("new_d_cannon\\abr_dual_cannon.tga");
+    expect(auraLook(1938)?.texture).toBe("new_battle_w\\abr_battle_warior.tga");
+  });
+
+  it("all four are drawn now", () => {
+    for (const id of [JACK, ...ABR]) expect(BAND_EFFECTS).toContain(id);
+  });
+
+  it("blooms the three ABR casts, floored at 56 like their siblings", () => {
+    for (const id of ABR) {
+      expect(isBloom(id)).toBe(true);
+      expect(auraSets(id)).toBe(1);
+      expect(auraSetAdditive(id, 0)).toBe(true);
+      expect(auraLook(id)?.color).toEqual([0xff, 0xff, 0xff]);
+      expect(auraTicks(id, 0)).toBe(56);
+      expect(auraTicks(id, 2000)).toBe(125);
+      // One texture set, both cone sets: all eight cones in the one pass.
+      expect(bandsInSet(id, 100, 0, 0)).toHaveLength(8);
+    }
+  });
+
+  it("TURNS Jack Frost instead — the one aura here that does", () => {
+    // isBloom used to be "has a look and is not one of the two earth casts".
+    // Jack Frost has a look and is neither, so that shortcut would have given it
+    // the blooming recipe: cones opening out of the ground instead of crescents
+    // sweeping round. Nothing would have errored.
+    expect(isBloom(JACK)).toBe(false);
+    expect(auraTicks(JACK, 0)).toBe(70); // the turning floor, not 56
+    expect(auraSetAdditive(JACK, 0)).toBe(false);
+    expect(auraLook(JACK)?.color).toEqual([0xc3, 0xc3, 0xff]);
+
+    const bands = bandsAt(JACK, 100, 0);
+    expect(bands).toHaveLength(4); // three crescents and the column
+    expect(bands.map((b) => b.band.arc)).toEqual([315, 315, 315, 360]);
+    // Plain `turning`, not Earth Grave's variant: the crescents hold 180 alpha
+    // and then fade 5 a tick over the last 40.
+    expect(bands[0].band.alpha).toBe(180);
+    expect([turning(0, 100, 60).alpha, turning(0, 100, 61).alpha, turning(0, 100, 99).alpha]).toEqual(
+      [180, 175, 0],
+    );
+    for (let age = 0; age < 70; age++) {
+      expect(bandsAt(JACK, 70, age), `tick ${age}`).toHaveLength(4);
     }
   });
 });
