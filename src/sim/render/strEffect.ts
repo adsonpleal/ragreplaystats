@@ -4,12 +4,21 @@
 // StrEffect.js (src/Renderer/Effects/StrEffect.js; cross-checked against the
 // maintained roBrowserLegacy fork), which our scene descends from.
 //
-// STR animation model (matches roBrowser exactly):
-//  - keyIndex advances at `(elapsedMs / 1000) * fps`; the effect ends at maxKey.
+// Two rules below came from the CLIENT's own reading of the format rather than
+// roBrowser's, cross-checked against rustnarok-client's `src/effect.rs` (MIT OR
+// Apache-2.0) — they are marked (client) where they differ.
+//
+// STR animation model:
+//  - keyIndex advances at `(elapsedMs / 1000) * fps`; the effect ends at its
+//    LAST KEYFRAME (client), not at the frame count in the file header, which
+//    many files overstate by a wide margin.
 //  - per layer, `from` = the LAST type-0 (snapshot) key with frame <= keyIndex and
 //    `to` = the LAST type-1 (velocity) key with frame <= keyIndex. The layer stops
 //    once keyIndex passes its last keyframe with no velocity key active
-//    (`fromId < 0 || (toId < 0 && lastFrame < keyIndex)`).
+//    (`fromId < 0 || (toId < 0 && lastFrame < keyIndex)`), and ALSO (client) once
+//    a velocity key has gone by that does not pair with `from` while `from` is
+//    the layer's last snapshot — that movement is over and the layer is spent,
+//    where roBrowser freezes the quad on its final state instead.
 //  - the morph applies ONLY when the velocity key is the snapshot's immediate
 //    next entry AND shares its frame; then every field drifts linearly:
 //        value = from.value + to.value * (keyIndex - from.frame)
@@ -29,6 +38,19 @@
 // so 3D objects still occlude the effect but the flat quads don't fight each
 // other. fog:false — RO never fogs foreground effect particles (and additive +
 // fog paints solid fog-coloured boxes over the transparent quad).
+//
+// DELIBERATELY NOT PORTED from the client's behaviour:
+//  - its distance cull (stop drawing an effect whose owner is more than ~130
+//    cells from the PLAYER). That is a client frame-rate measure keyed to the
+//    one character you control; a replay camera is free to look anywhere, so
+//    applying it would blank out exactly the fights the viewer panned to.
+//  - the per-effect head anchor (world-str's `head` field, set on 694 rows,
+//    which lifts an effect to the actor's head instead of its feet). It needs
+//    the actor's sprite height per frame; our flat feet + STR_RISE offset
+//    already lands within a few pixels for the humanoid sprites a replay shows.
+//  - `hold` (an effects.txt `str`-row flag: freeze on the last frame instead of
+//    ending). We do not import that column, and the length table already caps
+//    anything that would outlive its animation.
 
 import {
   AddEquation,
@@ -105,7 +127,7 @@ function clamp01(v: number): number {
 
 /** One layer's quad at a moment in time (STR space, fields still raw where the
  *  renderer applies the unit conversion). */
-interface Sample {
+export interface Sample {
   posX: number; // layer origin (STR px, absolute; content is corner offsets)
   posY: number;
   xy: ArrayLike<number>; // 4 corner offsets: x0..x3, y0..y3
@@ -123,6 +145,24 @@ interface Sample {
 // keyframe's own array).
 const xyTmp = new Float32Array(8);
 
+/** Euclidean remainder: always in [0, n), however negative `x` gets. */
+function wrap(x: number, n: number): number {
+  return n > 0 ? ((x % n) + n) % n : 0;
+}
+
+/**
+ * The texture a ping-pong animation (`anitype` 5) shows at step `c`: it counts
+ * up to the last texture, back down to the first, and up again. One texture (or
+ * none) has nowhere to go and stays put.
+ */
+export function pingPong(c: number, count: number): number {
+  if (count < 2) return 0;
+  const sweep = count - 1;
+  const step = Math.max(0, c);
+  const lap = Math.floor(step / sweep);
+  return lap % 2 === 1 ? (lap + 1) * sweep - step : step - lap * sweep;
+}
+
 // Reused per-sample result. sampleLayer runs once per layer per live effect
 // every frame and its result is fully consumed within that same loop iteration
 // (never stored), so a single shared instance avoids per-frame allocation.
@@ -131,14 +171,20 @@ const sampleTmp: Sample = {
 };
 
 /** Sample a layer at key-time `keyIndex`, following roBrowser's renderLayer.
- *  Returns null when the layer draws nothing at this time. */
-function sampleLayer(layer: StrLayer, keyIndex: number): Sample | null {
+ *  Returns null when the layer draws nothing at this time.
+ *
+ *  Exported for the sampler tests: the keyframe rules here are the whole of a
+ *  .str's behaviour, and they are far easier to pin on hand-built layers than
+ *  through a rendered scene. The returned object is REUSED between calls — read
+ *  what you need before sampling again. */
+export function sampleLayer(layer: StrLayer, keyIndex: number): Sample | null {
   const anims = layer.animations;
   if (!anims.length) return null;
 
   let fromId = -1;
   let toId = -1;
   let lastFrame = -1;
+  let lastSet = -1;
   for (let i = 0; i < anims.length; i++) {
     const a = anims[i];
     if (a.frame <= keyIndex) {
@@ -146,6 +192,7 @@ function sampleLayer(layer: StrLayer, keyIndex: number): Sample | null {
       else if (a.type === 1) toId = i;
     }
     if (a.frame > lastFrame) lastFrame = a.frame;
+    if (a.type === 0 && a.frame > lastSet) lastSet = a.frame;
   }
   // Not started yet, or finished (past the last key with no velocity active).
   if (fromId < 0 || (toId < 0 && lastFrame < keyIndex)) return null;
@@ -158,6 +205,14 @@ function sampleLayer(layer: StrLayer, keyIndex: number): Sample | null {
   let xy: ArrayLike<number>;
 
   const to = toId === fromId + 1 && anims[toId].frame === from.frame ? anims[toId] : null;
+  if (!to && toId >= 0 && lastSet <= from.frame) {
+    // The layer has run out. A velocity key exists at or before now, but it is
+    // not the one that pairs with `from`, and `from` is the LAST snapshot the
+    // layer has: whatever that pair was animating has finished and the layer
+    // shows nothing from here on. Without this the layer freezes on its last
+    // snapshot and the quad hangs in the air for the rest of the effect.
+    return null;
+  }
   if (!to) {
     // Static frame — the snapshot as-is.
     posX = from.pos[0];
@@ -186,12 +241,17 @@ function sampleLayer(layer: StrLayer, keyIndex: number): Sample | null {
         aniframe = Math.min(from.aniframe + to.delay * delta, texcnt - 1);
         break;
       case 3: // repeat
-        aniframe = texcnt > 0 ? (from.aniframe + to.delay * delta) % texcnt : 0;
+        aniframe = wrap(from.aniframe + to.delay * delta, texcnt);
         break;
       case 4: // reverse loop
-        aniframe = texcnt > 0 ? (from.aniframe - to.delay * delta) % texcnt : 0;
+        // `wrap`, not `%`: JS's remainder keeps the sign of the dividend, so a
+        // reverse loop would hand back a negative index for most of its run.
+        aniframe = wrap(from.aniframe - to.delay * delta, texcnt);
         break;
-      default:
+      case 5: // ping-pong: up to the last texture, back down, up again
+        aniframe = pingPong(Math.trunc(from.aniframe + to.delay * delta), texcnt);
+        break;
+      default: // no texture motion: the snapshot's own texture stays
         aniframe = from.aniframe;
         break;
     }
@@ -200,8 +260,10 @@ function sampleLayer(layer: StrLayer, keyIndex: number): Sample | null {
   a = clamp01(a / 255);
   if (a <= 0.001) return null; // fully faded — skip the draw
 
+  // Clamp, never wrap: modes 3-5 already come back in range, so the only way
+  // here is a negative drift under mode 1 or 2, where the client clamps to the
+  // first texture rather than jumping to the last.
   let texIdx = Math.floor(aniframe);
-  if (texIdx < 0) texIdx += texcnt; // reverse loop can go negative
   if (texIdx < 0) texIdx = 0;
   if (texcnt > 0 && texIdx >= texcnt) texIdx = texcnt - 1;
 
@@ -238,7 +300,19 @@ export class StrEffect {
 
   constructor(private readonly scene: Scene, effect: LoadedStr) {
     this.fps = effect.fps || 60;
-    this.maxKey = effect.maxKey;
+    // The effect ends at its LAST KEYFRAME, not at the frame count in the STR
+    // header — the client reads the header only to size its own buffers, and
+    // many files declare far more frames than they animate (new_arrowstorm_00
+    // says 120 and stops moving at 51). The difference is invisible for a
+    // one-shot, which just lingers doing nothing, but a looped effect would sit
+    // blank for the whole dead tail of every cycle.
+    let lastKey = 0;
+    for (const layer of effect.layers) {
+      for (const a of layer.animations) if (a.frame > lastKey) lastKey = a.frame;
+    }
+    // +1 because the last key is a frame that gets DRAWN, not the moment the
+    // effect is over: a file whose last key sits at frame 75 runs for 76.
+    this.maxKey = lastKey + 1;
     for (let li = 0; li < effect.layers.length; li++) {
       const layer = effect.layers[li];
       if (!layer.animations.length) continue; // empty layers draw nothing
@@ -295,13 +369,13 @@ export class StrEffect {
    *  caller culls those on its own duration/lifetime. */
   update(elapsedMs: number, camera: PerspectiveCamera, anchor: Vector3, loop = false): boolean {
     let keyIndex = (elapsedMs / 1000) * this.fps;
-    if (this.maxKey > 0) {
-      if (loop) {
-        keyIndex %= this.maxKey;
-      } else if (keyIndex >= this.maxKey) {
-        for (const l of this.layers) l.mesh.visible = false;
-        return false;
-      }
+    // No zero guard: maxKey is lastKey + 1, so it is at least 1 even for a file
+    // with no keyframes at all — which has no layer mesh to draw either way.
+    if (loop) {
+      keyIndex %= this.maxKey;
+    } else if (keyIndex >= this.maxKey) {
+      for (const l of this.layers) l.mesh.visible = false;
+      return false;
     }
 
     // Camera basis, shared by every layer this frame.

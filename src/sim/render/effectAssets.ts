@@ -24,6 +24,14 @@ import {
   effectTableUrl,
   effectTextureUrl,
 } from "../ragassets";
+import { dbUrl } from "../../db/manifest";
+import {
+  BAND_EFFECTS,
+  BUBBLE_CAST_EFFECT,
+  BUBBLE_TEXTURES,
+  auraSetTexture,
+  auraSets,
+} from "./bandRecipes";
 
 /** One STR keyframe — the raw /effect/str shape (color 0–255, srcalpha/destalpha
  *  are D3DBLEND ints; the renderer normalizes/maps them). */
@@ -34,8 +42,9 @@ interface StrAnim {
   uv: number[]; // [8] (unused in v1 — full texture)
   xy: number[]; // [8]: x of 4 corners then y of 4 corners (offsets from pos)
   aniframe: number; // texture index within the layer
-  anitype: number; // texture-frame advance mode (0 none, 2 stop, 3 loop, 4 reverse)
-  delay: number; // per-frame texture step (anitype 2/3/4)
+  anitype: number; // texture-frame advance mode: 0 none, 1 step by `aniframe`,
+  //                  2 stop at the last, 3 loop, 4 reverse loop, 5 ping-pong
+  delay: number; // per-frame texture step (anitype 2-5)
   angle: number; // degrees
   color: number[]; // [r, g, b, a] 0–255
   srcalpha: number; // D3DBLEND src factor
@@ -168,7 +177,16 @@ export type LoadedPart =
   | { kind: "groundAura"; aura: LoadedGroundAura }
   | { kind: "swirlingAura"; texture: Texture | null }
   | { kind: "levelBubble"; texture: Texture | null }
-  | { kind: "maxLevelAura"; max: LoadedMaxAura };
+  | { kind: "maxLevelAura"; max: LoadedMaxAura }
+  | { kind: "banded"; banded: LoadedBanded };
+
+/** A band aura (bandRecipes.ts) resolved to its textures: one entry per texture
+ *  set, in the client's order. A set holds one texture, except the bubble cast's
+ *  27-frame cycle. */
+export interface LoadedBanded {
+  effect: number;
+  textures: (Texture | null)[][];
+}
 
 /** The EXE-recovered max-level (150/160/185/250) aura's assets: the 27 W_bubble
  *  frames, the two flat ring textures (cir0002, emp shock), and the tier color
@@ -285,6 +303,104 @@ function effectTable(): Promise<Record<string, EffectTableEntry[]>> {
       });
   }
   return tablePromise;
+}
+
+// --- The client's own effect → .str table (public/db/world-str.json) ------
+// The gateway's roBrowser table runs out of real rows at the top of the id
+// space: of the 1198 ids the client names, it has a STR row for 21. For the
+// other 1177 the effect simply did not draw. world-str.json (built by
+// tools/build-world-str.mjs from rustnarok-client's world_str.txt) is the
+// client's own id → file list for exactly that range, so it fills them in.
+//
+// WHERE THEY DISAGREE, THIS WINS. The two tables name only 21 of the same ids.
+// They agree on 4 (141, 210, 211, 1094) and differ on 17, and every one of the
+// 17 is a case of the gateway being wrong: 1062 renders a Storm Gust placeholder
+// for RL_HAMMER_OF_GOD, 1873-1883 render enchantment-failure, intro and reset UI
+// flourishes where the client has the Windhawk traps, and 204-209 (빨간포션 and
+// friends) are stored under their CP949 mojibake, which the gateway 404s — it
+// serves those files under their real UTF-8 names, which is what this table has.
+//
+// Of those 17 replacements exactly ONE is reachable from the skill map or the
+// dispatch table — 1062, via Hammer of God's ground effect — so the rule changes
+// one visible thing today and adds 1177 ids that drew nothing. Of the 4 the
+// tables agree on, 141 (Pneuma) differs only in capitalisation, and the
+// base-name comparison below keeps the gateway's spelling rather than risking a
+// case-sensitive 404.
+
+interface WorldStrRow {
+  /** Under data\texture\effect\, forward slashes, no .str; `%d` = variant 1..3. */
+  file: string;
+  /** The file /mineffect plays instead. We always play the full effect. */
+  min?: string;
+  single?: true;
+  loop?: true;
+  owner?: true;
+  /** Where the STR sits: `"hat"` defers to the client's hat tables, `[dx,
+   *  adjust]` is its head-height rule, `{view}` a camera-relative offset from
+   *  the feet. Absent = the default rise over the feet. */
+  head?: "hat" | [number, number] | { view: [number, number] };
+  /** Alpha per tick the full-screen black fill gains (capped at 170 upstream). */
+  tint?: number;
+  /** `[msAfterStart, gateway sound name]`. */
+  sounds?: [number, string][];
+  /** Camera-shake times in ms after start. */
+  quakes?: number[];
+}
+
+interface WorldStrTable {
+  risePx: number;
+  noRise: number;
+  lowHead: number;
+  rows: Record<string, WorldStrRow>;
+}
+
+// The constants are the real ones, not zeroes: a reader that falls back to this
+// should get "no rows", not "every id anchors differently".
+const EMPTY_WORLD_STR: WorldStrTable = { risePx: 80, noRise: 1412, lowHead: 1817, rows: {} };
+
+/** The `%d` variant range world_str.txt documents (1..3), used for every row. */
+const WORLD_STR_RAND = [1, 3];
+
+let worldStrPromise: Promise<WorldStrTable> | null = null;
+
+function worldStr(): Promise<WorldStrTable> {
+  if (!worldStrPromise) {
+    worldStrPromise = dbUrl("world-str.json")
+      .then((url) => fetch(url))
+      .then((r) => {
+        if (!r.ok) throw new Error(`world-str HTTP ${r.status}`);
+        return r.json() as Promise<unknown>;
+      })
+      // A 200 carrying the wrong JSON — an SPA index fallback, a half-written
+      // deploy — would otherwise pass the cast and make `.rows[id]` throw on
+      // EVERY effect for the rest of the session, which reads as "effects are
+      // broken" rather than as a failed download.
+      .then((json) =>
+        json && typeof json === "object" && "rows" in json
+          ? (json as WorldStrTable)
+          : EMPTY_WORLD_STR,
+      )
+      .catch((err) => {
+        console.warn("[effects] world-str load failed", err);
+        return EMPTY_WORLD_STR;
+      });
+  }
+  return worldStrPromise;
+}
+
+/** Start the client effect table's fetch early, beside the skill map and the
+ *  dispatch table. Without it the first effect of a replay pays the round trip
+ *  itself and can land late enough to be culled. */
+export function preloadWorldStr(): Promise<void> {
+  return worldStr().then(() => undefined);
+}
+
+/** A STR file's bare base name, lowercased — what decides whether two tables are
+ *  naming the same asset. Mojibake and UTF-8 spellings compare as different on
+ *  purpose: they are different files as far as the gateway is concerned. */
+function strBaseName(file: string): string {
+  const path = file.replace(/\\/g, "/").replace(/\.str$/i, "");
+  return path.slice(path.lastIndexOf("/") + 1).toLowerCase();
 }
 
 // --- Textures (shared across effects) ------------------------------------
@@ -474,10 +590,22 @@ function strFileSoundName(file: string): string {
  *  when NO row carries a real `wav`; a miss 404s to silence, so it never adds a
  *  wrong sound — only a genuinely matching one. */
 export async function soundsForEffect(effectId: number): Promise<string[]> {
-  const table = await effectTable();
+  const [table, client] = await Promise.all([effectTable(), worldStr()]);
   const entries = table[String(effectId)];
-  if (!entries?.length) return [];
   const out = new Set<string>();
+  // The client's table names the sound outright for 272 ids, most of which have
+  // no gateway row at all — so it is read first and unconditionally.
+  //
+  // Only the ones that fire as the effect starts, though. A world-str row can
+  // schedule a sound at any age — 20 rows do, 33 sounds between them, the last
+  // at 3.2 s — and this function's callers play what it returns immediately:
+  // handing them a sound the client plays three seconds later would be worse
+  // than leaving it out, because a wrong-time sound cannot be un-heard the way a
+  // missing one can be added. Those wait for the per-effect event scheduling.
+  for (const [atMs, name] of client.rows[String(effectId)]?.sounds ?? []) {
+    if (atMs === 0) out.add(name);
+  }
+  if (!entries?.length) return [...out];
   for (const e of entries) {
     if (e.wav) out.add(resolveFileName(e.wav, e.rand));
   }
@@ -811,6 +939,24 @@ function loadFuncEntry(entry: EffectTableEntry): LoadedPart | null {
   }
 }
 
+/** The band aura for an effect the client builds in code, or null when it has
+ *  none (or names a texture the gateway has no file for — see BAND_EFFECTS). */
+function loadBandedPart(effectId: number): LoadedPart | null {
+  if (!BAND_EFFECTS.includes(effectId)) return null;
+  const cycle =
+    effectId === BUBBLE_CAST_EFFECT ? BUBBLE_TEXTURES.map((n) => loadEffectTexture(n)) : null;
+  const textures: (Texture | null)[][] = [];
+  for (let set = 0; set < auraSets(effectId); set++) {
+    if (cycle) {
+      textures.push(cycle);
+      continue;
+    }
+    const name = auraSetTexture(effectId, set);
+    textures.push([name ? loadEffectTexture(name) : null]);
+  }
+  return { kind: "banded", banded: { effect: effectId, textures } };
+}
+
 // Load a GPU texture from a full URL (sprite-effect frame PNGs, which — unlike STR
 // layer textures — already carry a complete gateway path). Cached by URL.
 function loadTextureByUrl(url: string): Texture {
@@ -903,8 +1049,32 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
     p = (async () => {
       const modern = MODERN_EFFECT_OVERRIDES[effectId];
       if (modern) return loadParts(modern);
-      const table = await effectTable();
-      const entries = table[String(effectId)] ?? [];
+      const [table, client] = await Promise.all([effectTable(), worldStr()]);
+      let entries = table[String(effectId)] ?? [];
+
+      // The client's own table wins over a gateway STR row that names a
+      // different file (see the WorldStrRow block above). Non-STR gateway
+      // entries — the ground ring under a flash, a sprite — are kept and keep
+      // their order; only the STR half is replaced.
+      const ws = client.rows[String(effectId)];
+      if (ws) {
+        const strEntries = entries.filter((e) => e.type === "STR" && e.file);
+        if (!strEntries.some((e) => strBaseName(e.file!) === strBaseName(ws.file))) {
+          // In place, at the first STR's position, so a ground ring the table
+          // listed BEFORE the flash still renders below it. (No id in today's
+          // data mixes the two, but the ordering rule a few lines down is the
+          // reason this is not just `[str, ...rest]`.)
+          //
+          // No `wav` on the replacement: the sound comes from soundsForEffect,
+          // which reads the client table itself and knows to take only the
+          // sounds that fire at t=0. Copying one here would hand the player a
+          // sound the client schedules seconds later.
+          const row: EffectTableEntry = { type: "STR", file: ws.file, rand: WORLD_STR_RAND };
+          const at = entries.findIndex((e) => e.type === "STR");
+          const rest = entries.filter((e) => e.type !== "STR");
+          entries = at < 0 ? [row, ...rest] : [...rest.slice(0, at), row, ...rest.slice(at)];
+        }
+      }
       const SUPPORTED = new Set(["STR", "CYLINDER", "3D", "2D", "SPR", "QuadHorn", "FUNC"]);
       const others = entries.filter((e) => e.type && !SUPPORTED.has(e.type));
       if (others.length) {
@@ -934,7 +1104,15 @@ export function loadEffect(effectId: number): Promise<LoadedPart[]> {
                         : null,
         ),
       );
-      return loaded.flat().filter((x): x is LoadedPart => x != null);
+      const parts = loaded.flat().filter((x): x is LoadedPart => x != null);
+      // The cast auras the client builds in code. Only reached when NOTHING in
+      // the table resolved to a renderer, so a band aura never shadows a row the
+      // gateway does serve — the same precedence as the world-str block above.
+      if (!parts.length) {
+        const banded = loadBandedPart(effectId);
+        if (banded) return [banded];
+      }
+      return parts;
     })();
     effectCache.set(effectId, p);
   }

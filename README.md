@@ -36,6 +36,14 @@ npm run build:monsters   # monster.json
 
 Run both after a LATAM client update — see `.claude/skills/sync-with-ragassets/SKILL.md` for the full workflow, including how to check the result before committing. Icons need nothing: they're fetched from ragassets at runtime, so a client update reaches them on deploy.
 
+```bash
+# Rebuild the replay viewer's effect tables (both pinned to an upstream
+# revision, NOT to a client patch — only run these to move to a newer
+# rustnarok-client):
+npm run build:effects     # which effect a skill plays, where and when
+npm run build:world-str   # what the client's own modern effect ids look like
+```
+
 ## Architecture
 
 ```
@@ -134,6 +142,8 @@ These files ship **content-hashed**. `tools/hash-db.mjs` runs after `vite build`
 | `public/db/monster.json` (built by `tools/build-monsters.mjs` from `/raw/mobs.json`) | Monster names + HP + level, keyed by mob id. This replaces the old Divine Pride scrape. |
 | `public/db/job.json` (built by `tools/sync-db.mjs` from `/raw/jobs.json` + `/raw/classes.json`) | Player-class display names, the source of strings like "Sentinela Trans". |
 | `https://assets.latam-tools.com.br/icons/{item,skill,job,status}/<id>.png` (built in `src/sim/ragassets.ts`) | Icon PNGs, loaded at runtime and keyed by the same numeric id the replay packets carry. Missing ids 404 and the `<img>` hides itself. |
+| `public/db/effect-dispatch.json` (built by `tools/build-effect-dispatch.mjs` from [rustnarok-client](https://github.com/kindraywind/rustnarok-client)'s `effects.txt`) | Which effect a skill plays, where and when: the cast aura, the caster's flash on a damaging hit, the per-hit pair on the target, and the extra `struck`/`used`/`ground` effects. The ragassets skill-map only answers three of those nine questions; this fills the other six. Not a ragassets table — it is pinned to an upstream commit, not to a client patch, so `npm run build:db` does not touch it. |
+| `public/db/world-str.json` (built by `tools/build-world-str.mjs` from [rustnarok-client](https://github.com/kindraywind/rustnarok-client)'s `world_str.txt`) | What a modern effect id looks like: its `.str` file, loop/owner flags, head anchor, screen tint and timed sounds. The gateway's roBrowser effect table has a row for 21 of the 1188 ids the client names here; of those 21 it agrees on 4 and is wrong on 17 (a Storm Gust placeholder for Hammer of God, UI flourishes for the Windhawk traps, CP949 spellings the gateway 404s), so the client's file wins on a disagreement unless both name the same asset. Pinned like the file above; `npm run build:db` does not touch it either. |
 
 The naming decisions stay on this side of the split, in `tools/sync-db.mjs`: the `[N]` slot suffix on gear, the pt-BR names for the food buffs the client titles `%s`, and — for classes — `PLAYER_JT_IDS` plus `JOB_NAME_OVERRIDE`. `/raw/jobs.json` pairs a label with an id only where the server's `admin/pcidentity.lub` numbers the class, and that table stops at Oboro — no 4th class, no Rebellion, no Summoner, no Star Emperor — which is why `job.json` is built from `/raw/classes.json` (a row per playable class) as well. `pcidentity.lub` still matters because the LATAM server uses non-standard ids: `JT_RANGER_H = 4062`, where kRO says `JT_MINSTREL = 4062`. `JOB_NAME_OVERRIDE` stays on top of both: the client's own strings predate the LATAM renames (it still says "Arquimágico", "Assassino", "Poeta").
 
@@ -189,4 +199,5 @@ Third-party terms that still apply to parts of the tree:
 
 - `src/features/replay-map/` is a port of rendering code from [roBrowser](https://github.com/vthibault/roBrowser), which is **GPL-3.0**. Reuse of that directory is governed by roBrowser's terms, not by the MIT grant above.
 - `public/fonts/Galmuri11*` is [Galmuri](https://github.com/quiple/galmuri) under the SIL Open Font License 1.1 — see `public/fonts/Galmuri11.OFL-NOTICE.txt`.
+- `public/db/effect-dispatch.json` and `public/db/world-str.json` are derived from `src/fx/effects.txt` and `src/fx/world_str.txt` in [rustnarok-client](https://github.com/kindraywind/rustnarok-client) by [kindraywind](https://github.com/kindraywind), a native Ragnarok client in Rust, under **MIT OR Apache-2.0**. A handful of constants in the first — the element→aura list, the default caster effect, the suppressed skill ranges and the sustained-aura set — are transcribed from that project's `src/main.rs` and `src/fx/effects.rs`; `_source.constants` in the generated file names them. `tools/build-effect-dispatch.mjs` and `tools/build-world-str.mjs` reshape the tables and record the exact upstream commit in each generated file's `_source` field. `src/sim/render/bandRecipes.ts` is a port, not a table: the band geometry and per-effect curves behind the 3rd/4th-class casting auras are transcribed from the same project's `src/fx/effects.rs` (and the bubble-cast texture list from `src/fx/prims/songs.rs`), keeping upstream's names so the two can be diffed. Two rules in `src/sim/render/strEffect.ts` — where a `.str` ends, and when a layer is spent — come from the same file, and are marked there. No rustnarok-client code is copied into this tree verbatim.
 - Bundled data under `public/db/` is extracted from Ragnarok Online client files and is © Gravity Co., Ltd. It ships for interoperability only and is not covered by the MIT grant.
