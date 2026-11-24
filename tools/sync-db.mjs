@@ -45,6 +45,11 @@
 //   node tools/sync-db.mjs --input <dir>         # use a local ragassets resources/raw/ instead
 //   node tools/sync-db.mjs --url <base>          # override the source base URL
 //   node tools/sync-db.mjs --out <dir>           # override the output directory
+//   node tools/sync-db.mjs --allow-name-loss     # write even if names disappear
+//
+// A rebuild that would take a name AWAY from the committed table (or replace one
+// with the client's "%s" placeholder) aborts instead of writing — see
+// findRegressions(). Upstream has published such a table twice.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -129,11 +134,22 @@ export const JOB_NAME_OVERRIDE = {
   JT_SHIRANUI: "Shiranui",
 };
 
+// The client's own printf placeholder. A /raw `name` that is exactly this is the
+// client saying "substitute a runtime value here", not a label — see
+// FOOD_STATUS_NAMES — and must never be written out as a name we display.
+export const CLIENT_PLACEHOLDER_NAME = "%s";
+
 // Stat/utility food buffs carry a bare "%s" title in the client (it substitutes
 // the food item name at runtime), so status.json would otherwise show a literal
 // "%s". Descriptive pt-BR names keyed by EFST id — the CASH variants (271-276)
 // are the same effect as the base ones (241-246). NOTE the client order is
 // STR/AGI/VIT/DEX/INT/LUK (DEX before INT). See efstids.lub EFST_FOOD_*.
+//
+// These 15 ids are load-bearing, not belt-and-braces: the 2026-11-24 /raw ships
+// 241-249 and 271-276 as the literal "%s" (36 status rows do, and these are the
+// 15 the app has pt-BR names for), so dropping this overlay would put "%s" in
+// the status column of every replay that ate a stat food. findRegressions()
+// below turns that into a hard failure rather than a silent data change.
 export const FOOD_STATUS_NAMES = {
   241: "Comida de FOR", 242: "Comida de AGI", 243: "Comida de VIT",
   244: "Comida de DES", 245: "Comida de INT", 246: "Comida de SOR",
@@ -210,6 +226,22 @@ export function buildJobs(jobs, classes = []) {
   // base class label when the client doesn't give them one of their own. The
   // suffixes stack, so this peels them one at a time: JT_KNIGHT2_H → JT_KNIGHT2
   // → JT_KNIGHT.
+  //
+  // This is what holds job.json steady across the 2026-11-24 /raw, where upstream
+  // dropped jobs.json from 158 named rows to 97 — every mounted / trans / baby
+  // variant came back `name: null`. 34 of the ids this table projects are now
+  // unnamed upstream, and all 34 keep their committed pt-BR name from here:
+  //   13, 21, 4014, 4022, 4080-4087          the mounted sprites (jt is null too,
+  //                                          so they reach us via PLAYER_JT_IDS)
+  //   4048                                   JT_STAR2
+  //   4060-4065, 4073-4079                   the trans 3rd classes (_H)
+  //   4278-4281                              the mounted 4th sprites, which have
+  //                                          no upstream row at all
+  //   4304, 4305, 4311, 4312                 Shinkiro / Shiranui, held by
+  //                                          JOB_NAME_OVERRIDE (unlabelled in
+  //                                          every client language)
+  // The peel only works while the BASE class is still named upstream, so it is a
+  // fallback, not a floor — findRegressions() below is the floor.
   const baseOf = (jt) => {
     if (jt.endsWith("_H") || jt.endsWith("_B")) return jt.slice(0, -2);
     if (jt.endsWith("2")) return jt.slice(0, -1);
@@ -265,6 +297,43 @@ export function buildStatus(status) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// The regression floor
+// ---------------------------------------------------------------------------
+
+// A table value is either a bare string (job, randomopt) or an object with a
+// `name` (item, skill, status). One accessor for both.
+function nameOf(value) {
+  if (value == null) return null;
+  return typeof value === "string" ? value : (value.name ?? null);
+}
+
+// What a rebuild TOOK AWAY from the table already in public/db/.
+//
+// A sync is additive by nature: the client gains items, renames a few, and a
+// name it has shipped for years does not stop existing. So a name that
+// disappears, or that turns into the client's "%s" placeholder, is an upstream
+// extraction fault far more often than a real client change — and because these
+// files are compact one-line JSON, such a loss reviews as a single changed line
+// and goes straight in. Both halves of the 2026-11-24 publish were exactly this:
+// 61 blanked job names and 15 "%s" food statuses.
+//
+// Renames and additions are NOT regressions and are not reported here.
+export function findRegressions(prev, next) {
+  const lost = [];
+  const placeholder = [];
+  for (const [id, before] of Object.entries(prev)) {
+    const was = nameOf(before);
+    if (!was) continue;
+    const now = nameOf(next[id]);
+    if (!now) lost.push({ id, was });
+    else if (now === CLIENT_PLACEHOLDER_NAME && was !== CLIENT_PLACEHOLDER_NAME) {
+      placeholder.push({ id, was });
+    }
+  }
+  return { lost, placeholder };
+}
+
 // Source table(s) → output file; `sources` are passed to `build` in order.
 // Order is the order they're written/logged in.
 const TABLES = [
@@ -296,6 +365,36 @@ async function main(argv) {
     }
     const table = build(...inputs);
     const outPath = join(outDir, out);
+
+    // Refuse to write a table that LOSES names the committed one already has.
+    // See findRegressions(): upstream blanking a name is a far likelier
+    // explanation than the client dropping one, and in compact JSON the loss
+    // would review as one changed line. --allow-name-loss when it is genuine.
+    if (existsSync(outPath)) {
+      const prev = JSON.parse(readFileSync(outPath, "utf8"));
+      const { lost, placeholder } = findRegressions(prev, table);
+      const report = (what, rows) =>
+        rows.slice(0, 20).map((r) => `    ${r.id}: "${r.was}"${what}`).join("\n") +
+        (rows.length > 20 ? `\n    … and ${rows.length - 20} more` : "");
+      if (lost.length || placeholder.length) {
+        console.error(`\n${out}: upstream would take names away — NOT written.`);
+        if (lost.length) {
+          console.error(`  ${lost.length} id(s) lost their name:`);
+          console.error(report(" → (gone)", lost));
+        }
+        if (placeholder.length) {
+          console.error(`  ${placeholder.length} id(s) became the client placeholder:`);
+          console.error(report(` → "${CLIENT_PLACEHOLDER_NAME}"`, placeholder));
+        }
+        console.error(
+          "  Fix it upstream in ragassets, or pin the names here " +
+            "(JOB_NAME_OVERRIDE / FOOD_STATUS_NAMES). Pass --allow-name-loss to " +
+            "write anyway.",
+        );
+        if (!args.allowNameLoss) process.exit(1);
+      }
+    }
+
     // Compact JSON (no pretty-print) keeps the bundled files small.
     writeFileSync(outPath, JSON.stringify(table));
     console.log(`${out}: ${Object.keys(table).length} entries → ${outPath}`);
@@ -325,9 +424,11 @@ function parseArgs(argv) {
     if (a === "--input") out.input = argv[++i];
     else if (a === "--url") out.url = argv[++i];
     else if (a === "--out") out.out = argv[++i];
+    else if (a === "--allow-name-loss") out.allowNameLoss = true;
     else {
       console.error(
-        "usage: node tools/sync-db.mjs [--input <raw-dir>] [--url <base-url>] [--out <dir>]",
+        "usage: node tools/sync-db.mjs [--input <raw-dir>] [--url <base-url>] " +
+          "[--out <dir>] [--allow-name-loss]",
       );
       process.exit(1);
     }
