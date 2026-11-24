@@ -6,12 +6,18 @@
 // overlay, and the class-name fallbacks. Nothing here touches the network — a
 // test that fetched from ragassets would go red on a client update, which is
 // exactly when we most need it green.
+//
+// The jobs and status fixtures carry the shape of an upstream extraction fault
+// on purpose (job 4060 with `name: null`, statuses 241/247/271 as a bare "%s"),
+// because that is what /raw has actually published; findRegressions is the floor
+// under both.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  CLIENT_PLACEHOLDER_NAME,
   FOOD_STATUS_NAMES,
   JOB_NAME_OVERRIDE,
   buildItems,
@@ -19,6 +25,7 @@ import {
   buildRandomOpt,
   buildSkills,
   buildStatus,
+  findRegressions,
 } from "./sync-db.mjs";
 
 const fixture = (name) =>
@@ -172,5 +179,50 @@ describe("buildStatus", () => {
     expect(Object.keys(status)).toHaveLength(
       new Set([...fixture("status").map((s) => String(s.id)), ...Object.keys(FOOD_STATUS_NAMES)]).size,
     );
+  });
+
+  it("never lets the client placeholder through for an id we name", () => {
+    // Every id FOOD_STATUS_NAMES covers arrives as "%s" in the 2026-11-24 /raw.
+    const all = buildStatus(Object.keys(FOOD_STATUS_NAMES).map((id) => ({
+      id: Number(id),
+      name: CLIENT_PLACEHOLDER_NAME,
+    })));
+    for (const id of Object.keys(FOOD_STATUS_NAMES)) {
+      expect(all[id].name).toBe(FOOD_STATUS_NAMES[id]);
+    }
+  });
+});
+
+describe("findRegressions", () => {
+  it("flags a name the rebuild would drop", () => {
+    // The 2026-11-24 jobs.json shape: the row survives, its name does not.
+    const { lost } = findRegressions({ 4060: "Cavaleiro Rúnico" }, {});
+    expect(lost).toEqual([{ id: "4060", was: "Cavaleiro Rúnico" }]);
+  });
+
+  it("flags a name the rebuild would replace with the client placeholder", () => {
+    const { placeholder } = findRegressions(
+      { 241: { name: "Comida de FOR" } },
+      { 241: { name: CLIENT_PLACEHOLDER_NAME } },
+    );
+    expect(placeholder).toEqual([{ id: "241", was: "Comida de FOR" }]);
+  });
+
+  it("is quiet about renames, additions and an unchanged table", () => {
+    // A sync is mostly these three, and none of them is a regression: 25155
+    // moved back to "Brasão de Honra" on 2026-11-24 and that is the client's
+    // own call.
+    const prev = { 25155: { name: "Marca de Honra de Schwartz" } };
+    const next = { 25155: { name: "Brasão de Honra" }, 32245: { name: "Anel dos Esquecidos" } };
+    expect(findRegressions(prev, next)).toEqual({ lost: [], placeholder: [] });
+    expect(findRegressions(next, next)).toEqual({ lost: [], placeholder: [] });
+  });
+
+  it("ignores ids that had no name to begin with", () => {
+    // status.json carries 21 rows that have been a bare "%s" since before this
+    // guard existed; it must not read those as a fresh regression.
+    const prev = { 41: { name: CLIENT_PLACEHOLDER_NAME } };
+    expect(findRegressions(prev, { 41: { name: CLIENT_PLACEHOLDER_NAME } }).placeholder).toEqual([]);
+    expect(findRegressions({ 9: null }, {}).lost).toEqual([]);
   });
 });
